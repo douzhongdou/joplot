@@ -5,12 +5,20 @@ export type DrawMode = 'lines' | 'lines+markers' | 'markers'
 export type RawCsvRow = Record<string, string>
 export type NumericRow = Record<string, number | null>
 
+export interface DashboardLayout {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
 export interface NormalizedRow {
   raw: RawCsvRow
   numeric: NumericRow
 }
 
 export interface CsvData {
+  fileName: string
   headers: string[]
   rows: NormalizedRow[]
   numericColumns: string[]
@@ -36,6 +44,7 @@ export interface ChartCard {
   lineWidth: number
   yMin: number | null
   yMax: number | null
+  layout: DashboardLayout
 }
 
 export interface ColumnSummary {

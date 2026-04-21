@@ -3,11 +3,18 @@ import assert from 'node:assert/strict'
 
 import {
   applyFilters,
+  appendCardWithLayout,
   buildDataset,
   createDefaultCard,
+  moveCardToLayout,
   sampleRows,
   summarizeNumericColumn,
 } from '../src/lib/workbench.ts'
+import {
+  buildAutorangeUpdate,
+  buildPlotLayout,
+} from '../src/lib/plotViewport.ts'
+import type { ChartCard } from '../src/types.ts'
 
 function createDataset() {
   return buildDataset(
@@ -44,6 +51,7 @@ test('createDefaultCard uses first column as x and falls back from second column
   assert.equal(defaultCard.kind, 'line')
   assert.equal(defaultCard.xColumn, 'date')
   assert.equal(defaultCard.yColumn, 'amount')
+  assert.deepEqual(defaultCard.layout, { x: 0, y: 0, w: 12, h: 8 })
 })
 
 test('applyFilters supports text contains and numeric greater-than together', () => {
@@ -83,3 +91,78 @@ test('sampleRows keeps first and last row when downsampling', () => {
   assert.equal(sampled[0].raw.x, '0')
   assert.equal(sampled[sampled.length - 1].raw.x, '9')
 })
+
+test('appendCardWithLayout assigns dashboard-friendly default placements', () => {
+  const dataset = createDataset()
+
+  const first = appendCardWithLayout([], createDefaultCard(dataset))
+  const second = appendCardWithLayout(first, {
+    ...createDefaultCard(dataset),
+    id: 'card-2',
+    kind: 'scatter',
+  })
+  const third = appendCardWithLayout(second, {
+    ...createDefaultCard(dataset),
+    id: 'card-3',
+    kind: 'bar',
+  })
+
+  assert.deepEqual(first[0].layout, { x: 0, y: 0, w: 12, h: 8 })
+  assert.deepEqual(third[1].layout, { x: 0, y: 8, w: 6, h: 7 })
+  assert.deepEqual(third[2].layout, { x: 6, y: 8, w: 6, h: 7 })
+})
+
+test('moveCardToLayout keeps the moved card in place and pushes overlaps downward', () => {
+  const dataset = createDataset()
+  const cards = appendCardWithLayout(
+    appendCardWithLayout(
+      appendCardWithLayout([], createDefaultCard(dataset)),
+      { ...createDefaultCard(dataset), id: 'card-2', kind: 'scatter' },
+    ),
+    { ...createDefaultCard(dataset), id: 'card-3', kind: 'bar' },
+  )
+
+  const moved = moveCardToLayout(cards, 'card-3', { x: 0, y: 0, w: 6, h: 6 })
+  const movedCard = moved.find((card) => card.id === 'card-3')
+
+  assert.deepEqual(movedCard?.layout, { x: 0, y: 0, w: 6, h: 6 })
+
+  for (let index = 0; index < moved.length; index += 1) {
+    for (let inner = index + 1; inner < moved.length; inner += 1) {
+      assert.equal(
+        layoutsOverlap(moved[index], moved[inner]),
+        false,
+        `cards ${moved[index].id} and ${moved[inner].id} should not overlap`,
+      )
+    }
+  }
+})
+
+test('buildAutorangeUpdate resets both axes to autorange', () => {
+  assert.deepEqual(
+    buildAutorangeUpdate(),
+    {
+      'xaxis.autorange': true,
+      'yaxis.autorange': true,
+    },
+  )
+})
+
+test('buildPlotLayout adds stable uirevision so rerenders keep user viewport', () => {
+  assert.deepEqual(
+    buildPlotLayout({ hovermode: 'x unified' }, 'card-1'),
+    {
+      hovermode: 'x unified',
+      uirevision: 'card-1',
+    },
+  )
+})
+
+function layoutsOverlap(left: ChartCard, right: ChartCard) {
+  return (
+    left.layout.x < right.layout.x + right.layout.w
+    && left.layout.x + left.layout.w > right.layout.x
+    && left.layout.y < right.layout.y + right.layout.h
+    && left.layout.y + left.layout.h > right.layout.y
+  )
+}

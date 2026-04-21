@@ -18,27 +18,26 @@ const OPERATORS: Array<{ value: FilterOperator; label: string }> = [
 
 export function FilterBar({ headers, filters, onAdd, onChange, onRemove }: Props) {
   return (
-    <div className="filter-shell">
-      <div className="toolbar">
+    <section className="filter-tray">
+      <div className="filter-tray-header">
         <div>
-          <h2 className="card-title">全局筛选</h2>
-          <div className="card-subtitle">筛选会同步影响所有图卡，但图卡配置本身互不干扰。</div>
+          <h2>全局筛选</h2>
+          <p>筛选会同时作用到所有图卡，但不会挤占主画布空间。</p>
         </div>
-        <div className="toolbar-actions">
-          <button type="button" onClick={onAdd}>新增筛选条件</button>
-        </div>
+        <button type="button" className="secondary-button" onClick={onAdd}>
+          新增条件
+        </button>
       </div>
 
-      {filters.length === 0 && <div className="card-subtitle">当前没有筛选条件，所有图卡都会读取完整数据集。</div>}
+      {filters.length === 0 && (
+        <div className="filter-empty">当前没有筛选条件，所有图卡都展示完整数据集。</div>
+      )}
 
       {filters.map((filter) => {
         const isBetween = filter.operator === 'between'
 
         return (
-          <div
-            key={filter.id}
-            className={`filter-row ${isBetween ? 'filter-between' : ''}`}
-          >
+          <div key={filter.id} className={`filter-row ${isBetween ? 'filter-row-between' : ''}`}>
             <select
               value={filter.column}
               onChange={(event) => onChange(filter.id, { column: event.target.value })}
@@ -47,6 +46,7 @@ export function FilterBar({ headers, filters, onAdd, onChange, onRemove }: Props
                 <option key={header} value={header}>{header}</option>
               ))}
             </select>
+
             <select
               value={filter.operator}
               onChange={(event) => onChange(filter.id, { operator: event.target.value as FilterOperator })}
@@ -55,12 +55,14 @@ export function FilterBar({ headers, filters, onAdd, onChange, onRemove }: Props
                 <option key={operator.value} value={operator.value}>{operator.label}</option>
               ))}
             </select>
+
             <input
               type="text"
               value={filter.value}
-              placeholder="值"
+              placeholder="起始值"
               onChange={(event) => onChange(filter.id, { value: event.target.value })}
             />
+
             {isBetween && (
               <input
                 type="text"
@@ -69,12 +71,15 @@ export function FilterBar({ headers, filters, onAdd, onChange, onRemove }: Props
                 onChange={(event) => onChange(filter.id, { valueTo: event.target.value })}
               />
             )}
-            <button type="button" className="secondary" onClick={() => onRemove(filter.id)}>
+
+            {!isBetween && <div className="filter-row-spacer" />}
+
+            <button type="button" className="ghost-button" onClick={() => onRemove(filter.id)}>
               删除
             </button>
           </div>
         )
       })}
-    </div>
+    </section>
   )
 }

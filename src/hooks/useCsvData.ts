@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import Papa from 'papaparse'
 import type { CsvData } from '../types'
 import { buildDataset } from '../lib/workbench'
@@ -21,9 +21,9 @@ export function useCsvData() {
             }, {}),
           )
 
-        setCsv(buildDataset(headers, rows))
+        setCsv(buildDataset(headers, rows, file.name))
       },
-      error: (err) => console.error('CSV parse error:', err),
+      error: (error) => console.error('CSV parse error:', error),
     })
   }, [])
 

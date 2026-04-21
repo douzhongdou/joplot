@@ -4,15 +4,19 @@ import { FileUploader } from './components/FileUploader'
 import { FilterBar } from './components/FilterBar'
 import { WorkbenchToolbar } from './components/WorkbenchToolbar'
 import { ChartCard } from './components/ChartCard'
+import { DashboardCanvas } from './components/DashboardCanvas'
 import {
+  appendCardWithLayout,
   applyFilters,
   createCard,
   createDefaultCard,
+  moveCardToLayout,
   sanitizeCardsForDataset,
 } from './lib/workbench'
 import type { ChartCard as ChartCardConfig, CsvData, FilterRule } from './types'
 
-const STORAGE_KEY = 'csv-workbench-mvp'
+const STORAGE_KEY = 'csv-workbench-dashboard'
+const CARD_ACCENTS = ['#155eef', '#dd6b20', '#0f766e', '#7a3e9d']
 
 interface PersistedState {
   cards: ChartCardConfig[]
@@ -32,6 +36,8 @@ export default function App() {
   const { csv, parse } = useCsvData()
   const [cards, setCards] = useState<ChartCardConfig[]>([])
   const [filters, setFilters] = useState<FilterRule[]>([])
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
   const filteredRows = useMemo(
     () => (csv ? applyFilters(csv.rows, filters.filter((filter) => filter.column)) : []),
@@ -40,14 +46,19 @@ export default function App() {
 
   useEffect(() => {
     if (!csv) {
+      setCards([])
+      setFilters([])
+      setSelectedCardId(null)
       return
     }
 
     const persistedRaw = window.localStorage.getItem(STORAGE_KEY)
 
     if (!persistedRaw) {
-      setCards([createDefaultCard(csv)])
+      const defaultCard = createDefaultCard(csv)
+      setCards([defaultCard])
       setFilters([])
+      setSelectedCardId(defaultCard.id)
       return
     }
 
@@ -63,9 +74,12 @@ export default function App() {
 
       setCards(nextCards)
       setFilters(nextFilters)
+      setSelectedCardId(nextCards[0]?.id ?? null)
     } catch {
-      setCards([createDefaultCard(csv)])
+      const defaultCard = createDefaultCard(csv)
+      setCards([defaultCard])
       setFilters([])
+      setSelectedCardId(defaultCard.id)
     }
   }, [csv])
 
@@ -78,12 +92,25 @@ export default function App() {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
   }, [cards, csv, filters])
 
+  useEffect(() => {
+    if (cards.length === 0) {
+      setSelectedCardId(null)
+      return
+    }
+
+    if (!selectedCardId || !cards.some((card) => card.id === selectedCardId)) {
+      setSelectedCardId(cards[0].id)
+    }
+  }, [cards, selectedCardId])
+
   function addCard(kind: ChartCardConfig['kind']) {
     if (!csv) {
       return
     }
 
-    setCards((prev) => [...prev, createCard(kind, csv, { color: `var(--card-accent-${(prev.length % 4) + 1})` })])
+    const nextCard = createCard(kind, csv, { color: CARD_ACCENTS[cards.length % CARD_ACCENTS.length] })
+    setCards((prev) => appendCardWithLayout(prev, nextCard))
+    setSelectedCardId(nextCard.id)
   }
 
   function updateCard(cardId: string, patch: Partial<ChartCardConfig>) {
@@ -97,14 +124,19 @@ export default function App() {
       return
     }
 
-    setCards((prev) => [
-      ...prev,
-      createCard(target.kind, csv, {
-        ...target,
-        id: `card-${Math.random().toString(36).slice(2, 10)}`,
-        title: `${target.title}（副本）`,
-      }),
-    ])
+    const nextCard = createCard(target.kind, csv, {
+      ...target,
+      id: `card-${Math.random().toString(36).slice(2, 10)}`,
+      title: `${target.title} 副本`,
+      layout: {
+        ...target.layout,
+        x: target.layout.x + 1,
+        y: target.layout.y + 1,
+      },
+    })
+
+    setCards((prev) => appendCardWithLayout(prev, nextCard))
+    setSelectedCardId(nextCard.id)
   }
 
   function removeCard(cardId: string) {
@@ -124,57 +156,54 @@ export default function App() {
   }
 
   return (
-    <div className="page-shell">
-      <header className="hero">
-        <div>
-          <p className="eyebrow">CSV Workbench MVP</p>
-          <h1>面向演示场景的通用 CSV 可视化工作台</h1>
-          <p className="hero-copy">
-            上传规整 CSV 后自动成图，再用多图卡工作台继续比较、筛选和统计。
-          </p>
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="brand">
+          <div className="brand-mark">PN</div>
+          <div>
+            <p className="brand-eyebrow">PlotNow Dashboard</p>
+            <h1>CSV 分析工作台</h1>
+          </div>
         </div>
+
+        <FileUploader onFile={parse} csv={csv} />
       </header>
 
-      <section className="panel">
-        <FileUploader onFile={parse} csv={csv} />
-      </section>
-
       {!csv && (
-        <section className="panel empty-state">
-          <h2>先上传一个 CSV 开始</h2>
-          <p>首版支持带表头、结构较规整的数据。默认会用第一列做 X 轴、第二列做 Y 轴生成折线图。</p>
-        </section>
+        <main className="empty-state-shell">
+          <section className="empty-state-panel">
+            <p className="empty-eyebrow">专业分析台</p>
+            <h2>先加载一份 CSV，再把注意力交给图表本身。</h2>
+            <p>
+              顶部只保留必要入口，主画布会为图表留出最大空间。
+              上传后你可以新增图卡、拖动位置、缩放大小，并通过全局筛选快速聚焦数据。
+            </p>
+          </section>
+        </main>
       )}
 
       {csv && csv.rowCount === 0 && (
-        <section className="panel empty-state">
-          <h2>没有可展示的数据</h2>
-          <p>这个文件没有解析出有效行，请换一个带表头的 CSV 再试。</p>
-        </section>
+        <main className="empty-state-shell">
+          <section className="empty-state-panel">
+            <p className="empty-eyebrow">无有效数据</p>
+            <h2>文件已读取，但没有解析出可展示的行。</h2>
+            <p>请换一份带表头、结构规整的 CSV 再试。</p>
+          </section>
+        </main>
       )}
 
       {csv && csv.rowCount > 0 && (
-        <>
-          <section className="panel workbench-summary">
-            <div>
-              <div className="summary-label">当前数据集</div>
-              <div className="summary-value">{csv.rowCount.toLocaleString()} 行</div>
-            </div>
-            <div>
-              <div className="summary-label">筛选后</div>
-              <div className="summary-value">{filteredRows.length.toLocaleString()} 行</div>
-            </div>
-            <div>
-              <div className="summary-label">字段数</div>
-              <div className="summary-value">{csv.headers.length}</div>
-            </div>
-            <div>
-              <div className="summary-label">数值列</div>
-              <div className="summary-value">{csv.numericColumns.length}</div>
-            </div>
-          </section>
+        <main className="workspace-shell">
+          <WorkbenchToolbar
+            csv={csv}
+            filteredCount={filteredRows.length}
+            filterCount={filters.length}
+            filtersOpen={filtersOpen}
+            onAdd={addCard}
+            onToggleFilters={() => setFiltersOpen((prev) => !prev)}
+          />
 
-          <section className="panel">
+          {filtersOpen && (
             <FilterBar
               headers={csv.headers}
               filters={filters}
@@ -182,26 +211,30 @@ export default function App() {
               onChange={updateFilter}
               onRemove={removeFilter}
             />
-          </section>
+          )}
 
-          <section className="panel">
-            <WorkbenchToolbar onAdd={addCard} />
-          </section>
-
-          <section className="card-grid">
-            {cards.map((card) => (
+          <DashboardCanvas
+            cards={cards}
+            selectedCardId={selectedCardId}
+            onSelectCard={setSelectedCardId}
+            onLayoutChange={(cardId, layout) => setCards((prev) => moveCardToLayout(prev, cardId, layout))}
+            renderCard={(card, controls) => (
               <ChartCard
                 key={card.id}
                 card={card}
                 csv={csv}
                 filteredRows={filteredRows}
+                selected={controls.selected}
                 onChange={(patch) => updateCard(card.id, patch)}
                 onDuplicate={() => duplicateCard(card.id)}
                 onRemove={() => removeCard(card.id)}
+                onSelect={controls.onSelect}
+                onDragStart={controls.onDragStart}
+                onResizeStart={controls.onResizeStart}
               />
-            ))}
-          </section>
-        </>
+            )}
+          />
+        </main>
       )}
     </div>
   )
