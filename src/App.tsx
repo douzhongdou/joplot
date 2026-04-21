@@ -3,6 +3,7 @@ import { useCsvData } from './hooks/useCsvData'
 import { FileUploader } from './components/FileUploader'
 import { FilterBar } from './components/FilterBar'
 import { WorkbenchToolbar } from './components/WorkbenchToolbar'
+import { CardInspector } from './components/CardInspector'
 import { ChartCard } from './components/ChartCard'
 import { DashboardCanvas } from './components/DashboardCanvas'
 import {
@@ -37,11 +38,15 @@ export default function App() {
   const [cards, setCards] = useState<ChartCardConfig[]>([])
   const [filters, setFilters] = useState<FilterRule[]>([])
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
-  const [filtersOpen, setFiltersOpen] = useState(false)
 
   const filteredRows = useMemo(
     () => (csv ? applyFilters(csv.rows, filters.filter((filter) => filter.column)) : []),
     [csv, filters],
+  )
+
+  const selectedCard = useMemo(
+    () => cards.find((card) => card.id === selectedCardId) ?? null,
+    [cards, selectedCardId],
   )
 
   useEffect(() => {
@@ -108,7 +113,10 @@ export default function App() {
       return
     }
 
-    const nextCard = createCard(kind, csv, { color: CARD_ACCENTS[cards.length % CARD_ACCENTS.length] })
+    const nextCard = createCard(kind, csv, {
+      color: CARD_ACCENTS[cards.length % CARD_ACCENTS.length],
+    })
+
     setCards((prev) => appendCardWithLayout(prev, nextCard))
     setSelectedCardId(nextCard.id)
   }
@@ -119,7 +127,6 @@ export default function App() {
 
   function duplicateCard(cardId: string) {
     const target = cards.find((card) => card.id === cardId)
-
     if (!target || !csv) {
       return
     }
@@ -160,12 +167,11 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark">PN</div>
-          <div>
+          <div className="brand-copy">
             <p className="brand-eyebrow">PlotNow Dashboard</p>
             <h1>CSV 分析工作台</h1>
           </div>
         </div>
-
         <FileUploader onFile={parse} csv={csv} />
       </header>
 
@@ -174,10 +180,7 @@ export default function App() {
           <section className="empty-state-panel">
             <p className="empty-eyebrow">专业分析台</p>
             <h2>先加载一份 CSV，再把注意力交给图表本身。</h2>
-            <p>
-              顶部只保留必要入口，主画布会为图表留出最大空间。
-              上传后你可以新增图卡、拖动位置、缩放大小，并通过全局筛选快速聚焦数据。
-            </p>
+            <p>主画布会为图表留出最大空间，右侧边栏承接新增图卡、筛选和当前图卡配置。</p>
           </section>
         </main>
       )}
@@ -193,17 +196,30 @@ export default function App() {
       )}
 
       {csv && csv.rowCount > 0 && (
-        <main className="workspace-shell">
-          <WorkbenchToolbar
-            csv={csv}
-            filteredCount={filteredRows.length}
-            filterCount={filters.length}
-            filtersOpen={filtersOpen}
-            onAdd={addCard}
-            onToggleFilters={() => setFiltersOpen((prev) => !prev)}
-          />
+        <main className="workspace-shell workspace-shell-sidebar">
+          <section className="canvas-column">
+            <DashboardCanvas
+              cards={cards}
+              selectedCardId={selectedCardId}
+              onSelectCard={setSelectedCardId}
+              onLayoutChange={(cardId, layout) => setCards((prev) => moveCardToLayout(prev, cardId, layout))}
+              renderCard={(card, controls) => (
+                <ChartCard
+                  key={card.id}
+                  card={card}
+                  filteredRows={filteredRows}
+                  selected={controls.selected}
+                  onSelect={controls.onSelect}
+                  onDragStart={controls.onDragStart}
+                  onResizeStart={controls.onResizeStart}
+                />
+              )}
+            />
+          </section>
 
-          {filtersOpen && (
+          <aside className="sidebar-column">
+            <WorkbenchToolbar csv={csv} filteredCount={filteredRows.length} onAdd={addCard} />
+
             <FilterBar
               headers={csv.headers}
               filters={filters}
@@ -211,29 +227,15 @@ export default function App() {
               onChange={updateFilter}
               onRemove={removeFilter}
             />
-          )}
 
-          <DashboardCanvas
-            cards={cards}
-            selectedCardId={selectedCardId}
-            onSelectCard={setSelectedCardId}
-            onLayoutChange={(cardId, layout) => setCards((prev) => moveCardToLayout(prev, cardId, layout))}
-            renderCard={(card, controls) => (
-              <ChartCard
-                key={card.id}
-                card={card}
-                csv={csv}
-                filteredRows={filteredRows}
-                selected={controls.selected}
-                onChange={(patch) => updateCard(card.id, patch)}
-                onDuplicate={() => duplicateCard(card.id)}
-                onRemove={() => removeCard(card.id)}
-                onSelect={controls.onSelect}
-                onDragStart={controls.onDragStart}
-                onResizeStart={controls.onResizeStart}
-              />
-            )}
-          />
+            <CardInspector
+              card={selectedCard}
+              csv={csv}
+              onChange={(patch) => selectedCard && updateCard(selectedCard.id, patch)}
+              onDuplicate={() => selectedCard && duplicateCard(selectedCard.id)}
+              onRemove={() => selectedCard && removeCard(selectedCard.id)}
+            />
+          </aside>
         </main>
       )}
     </div>

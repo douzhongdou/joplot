@@ -2,16 +2,12 @@ import { useMemo, useRef } from 'react'
 import type { PointerEvent } from 'react'
 import { PlotCanvas } from './PlotCanvas'
 import { sampleRows, summarizeNumericColumn } from '../lib/workbench'
-import type { ChartCard as ChartCardConfig, CsvData, NormalizedRow } from '../types'
+import type { ChartCard as ChartCardConfig, NormalizedRow } from '../types'
 
 interface Props {
   card: ChartCardConfig
-  csv: CsvData
   filteredRows: NormalizedRow[]
   selected: boolean
-  onChange: (patch: Partial<ChartCardConfig>) => void
-  onDuplicate: () => void
-  onRemove: () => void
   onSelect: () => void
   onDragStart: (event: PointerEvent<HTMLElement>) => void
   onResizeStart: (event: PointerEvent<HTMLButtonElement>) => void
@@ -34,21 +30,9 @@ function formatValue(value: number | null) {
   return value === null ? '—' : Number(value.toFixed(3)).toString()
 }
 
-export function ChartCard({
-  card,
-  csv,
-  filteredRows,
-  selected,
-  onChange,
-  onDuplicate,
-  onRemove,
-  onSelect,
-  onDragStart,
-  onResizeStart,
-}: Props) {
+export function ChartCard({ card, filteredRows, selected, onSelect, onDragStart, onResizeStart }: Props) {
   const sampledRows = useMemo(() => sampleRows(filteredRows, 3000), [filteredRows])
-  const numericOptions = csv.numericColumns
-  const canPlot = card.yColumn !== null && numericOptions.includes(card.yColumn)
+  const canPlot = card.yColumn !== null
   const plotRef = useRef<PlotCanvasApi>(null)
 
   const plotData = useMemo(() => {
@@ -74,7 +58,7 @@ export function ChartCard({
       mode: card.kind === 'scatter' ? 'markers' : card.drawMode,
       x,
       y,
-      marker: { color: card.color, size: 7 },
+      marker: { color: card.color, size: 6 },
       line: { color: card.color, width: card.lineWidth },
       name: card.title,
     }]
@@ -87,106 +71,18 @@ export function ChartCard({
 
   return (
     <article className={`chart-card ${selected ? 'chart-card-selected' : ''}`} onMouseDown={onSelect}>
-      <div className="card-toolbar">
-        <div className="card-toolbar-main">
-          <button type="button" className="drag-handle" onPointerDown={onDragStart} aria-label="拖动图卡">
-            拖动
-          </button>
+      <div className="chart-card-head">
+        <button type="button" className="drag-handle" onPointerDown={onDragStart} aria-label="拖动图卡">
+          拖动
+        </button>
 
-          <label className="compact-field compact-field-title">
-            <span>标题</span>
-            <input
-              type="text"
-              value={card.title}
-              onChange={(event) => onChange({ title: event.target.value })}
-            />
-          </label>
-
-          <label className="compact-field">
-            <span>类型</span>
-            <select
-              value={card.kind}
-              onChange={(event) => onChange({ kind: event.target.value as ChartCardConfig['kind'] })}
-            >
-              {Object.entries(KIND_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="compact-field">
-            <span>X</span>
-            <select
-              value={card.xColumn}
-              onChange={(event) => onChange({ xColumn: event.target.value })}
-            >
-              {csv.headers.map((header) => (
-                <option key={header} value={header}>{header}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="compact-field">
-            <span>Y</span>
-            <select
-              value={card.yColumn ?? ''}
-              onChange={(event) => onChange({ yColumn: event.target.value || null })}
-            >
-              <option value="">选择数值列</option>
-              {numericOptions.map((header) => (
-                <option key={header} value={header}>{header}</option>
-              ))}
-            </select>
-          </label>
-
-          {card.kind !== 'stats' && (
-            <>
-              <label className="compact-field compact-field-color">
-                <span>颜色</span>
-                <input
-                  type="color"
-                  value={card.color}
-                  onChange={(event) => onChange({ color: event.target.value })}
-                />
-              </label>
-
-              <label className="compact-field compact-field-small">
-                <span>线宽</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="6"
-                  value={card.lineWidth}
-                  onChange={(event) => onChange({ lineWidth: Number(event.target.value) || 1 })}
-                />
-              </label>
-
-              {card.kind === 'line' && (
-                <label className="compact-field">
-                  <span>绘制</span>
-                  <select
-                    value={card.drawMode}
-                    onChange={(event) => onChange({ drawMode: event.target.value as ChartCardConfig['drawMode'] })}
-                  >
-                    <option value="lines">折线</option>
-                    <option value="lines+markers">线+点</option>
-                    <option value="markers">仅点</option>
-                  </select>
-                </label>
-              )}
-            </>
-          )}
+        <div className="chart-card-titleblock">
+          <h3>{card.title}</h3>
+          <div className="card-meta">
+            <span>{KIND_LABELS[card.kind]}</span>
+            <span>显示 {sampledRows.length.toLocaleString()} / {filteredRows.length.toLocaleString()} 行</span>
+          </div>
         </div>
-
-        <div className="card-toolbar-actions">
-          <button type="button" className="ghost-button" onClick={onDuplicate}>复制</button>
-          <button type="button" className="ghost-button danger-button" onClick={onRemove}>删除</button>
-        </div>
-      </div>
-
-      <div className="card-meta">
-        <span>{KIND_LABELS[card.kind]}</span>
-        <span>当前显示 {sampledRows.length.toLocaleString()} / {filteredRows.length.toLocaleString()} 行</span>
       </div>
 
       <div className="card-visual-area">
@@ -224,6 +120,7 @@ export function ChartCard({
             <PlotCanvas
               ref={plotRef}
               data={plotData}
+              uirevision={`${card.id}:${card.xColumn}:${card.yColumn ?? 'none'}`}
               layout={{
                 xaxis: { title: { text: card.xColumn }, automargin: true, gridcolor: '#e9edf5' },
                 yaxis: {
@@ -241,17 +138,15 @@ export function ChartCard({
             />
 
             <div className="plot-toolbar" aria-label="图表工具栏">
-              <div className="plot-toolbar-group">
-                <button type="button" className="plot-tool-button" onClick={() => void plotRef.current?.autorange()}>
-                  Auto Scale
-                </button>
-                <button type="button" className="plot-tool-button" onClick={() => void plotRef.current?.copyImage()}>
-                  Copy
-                </button>
-                <button type="button" className="plot-tool-button" onClick={() => void plotRef.current?.downloadImage()}>
-                  Save
-                </button>
-              </div>
+              <button type="button" className="plot-tool-button" onClick={() => void plotRef.current?.autorange()}>
+                Auto Scale
+              </button>
+              <button type="button" className="plot-tool-button" onClick={() => void plotRef.current?.copyImage()}>
+                Copy
+              </button>
+              <button type="button" className="plot-tool-button" onClick={() => void plotRef.current?.downloadImage()}>
+                Save
+              </button>
             </div>
           </div>
         )}
@@ -260,7 +155,7 @@ export function ChartCard({
           <div className="placeholder">
             这张图卡还没有可绘制的数值列。
             <br />
-            先为 Y 轴选择一个数值字段即可。
+            先在右侧边栏为 Y 轴选择一个数值字段。
           </div>
         )}
       </div>

@@ -33,6 +33,11 @@ export function FileUploader({ onFile, csv }: Props) {
         {csv ? '更换 CSV' : '上传 CSV'}
       </button>
 
+      <div className="uploader-file">
+        <span className="uploader-file-label">当前文件</span>
+        <strong>{csv?.fileName ?? '未加载'}</strong>
+      </div>
+
       <div className="uploader-meta">
         <span>{csv ? `${csv.rowCount.toLocaleString()} 行` : '等待数据'}</span>
         <span>{csv ? `${csv.numericColumns.length} 个数值列` : '仅支持带表头 CSV'}</span>
