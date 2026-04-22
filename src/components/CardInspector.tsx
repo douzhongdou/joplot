@@ -38,6 +38,10 @@ const DRAW_MODE_OPTIONS: Array<{ value: NonNullable<ChartCard['drawMode']>; labe
   { value: 'markers', label: '仅点' },
 ]
 
+const fieldLabelClass = 'text-xs font-medium uppercase tracking-[0.12em] text-base-content/55'
+const inputClass = 'h-12 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-4 text-sm text-base-content outline-none transition placeholder:text-base-content/40 focus:border-primary/35 focus:ring-2 focus:ring-primary/20'
+const iconButtonClass = 'inline-grid size-10 place-items-center rounded-[var(--radius-box)] border border-base-300 bg-base-100 text-base-content/60 transition hover:border-primary/25 hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25'
+
 function getKindLabel(kind: ChartCard['kind']) {
   return KIND_OPTIONS.find((option) => option.value === kind)?.label ?? '图卡'
 }
@@ -50,9 +54,14 @@ function SelectShell({
   className?: string
 }) {
   return (
-    <div className={`inspector-control-shell ${className}`.trim()}>
+    <div className={`relative min-w-0 ${className}`.trim()}>
       {children}
-      <ChevronDown size={15} strokeWidth={2.1} className="inspector-control-icon" aria-hidden="true" />
+      <ChevronDown
+        size={16}
+        strokeWidth={2.1}
+        className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-base-content/55"
+        aria-hidden="true"
+      />
     </div>
   )
 }
@@ -118,12 +127,14 @@ export function CardInspector({
 
   if (!card) {
     return (
-      <section className="inspector-shell inspector-shell-empty">
-        <div className="inspector-empty-icon">
-          <Sparkles size={18} strokeWidth={2.2} />
+      <section className="grid min-h-full place-items-center bg-base-100 px-6 py-16 text-center">
+        <div className="grid max-w-xs justify-items-center gap-3">
+          <div className="inline-grid size-14 place-items-center rounded-[calc(var(--radius-box)+0.25rem)] bg-primary/10 text-primary">
+            <Sparkles size={22} strokeWidth={2.2} />
+          </div>
+          <strong className="text-lg font-semibold text-base-content">先选中一张图卡</strong>
+          <p className="text-sm leading-6 text-base-content/60">右侧会显示基础配置和显示设置。</p>
         </div>
-        <strong>先选中一张图卡</strong>
-        <p>右侧会显示基础配置和显示设置。</p>
       </section>
     )
   }
@@ -131,61 +142,70 @@ export function CardInspector({
   const activeDataset = activeDatasetId ? datasetsById[activeDatasetId] : null
 
   return (
-    <section ref={shellRef} className="inspector-shell">
-      <div className="inspector-header">
-        <div className="inspector-header-main">
-          <h2>{getKindLabel(card.kind)}</h2>
-          {activeDataset && <p>{activeDataset.fileName}</p>}
+    <section ref={shellRef} className="grid min-h-full content-start bg-base-100">
+      <div className="flex items-start justify-between gap-3 border-base-300 px-6 py-5">
+        <div className="grid gap-1">
+          <h2 className="text-4xl font-semibold tracking-tight text-base-content">{getKindLabel(card.kind)}</h2>
         </div>
 
-        <div className="inspector-header-actions">
-          <button type="button" className="inspector-icon-button" onClick={onDuplicate} aria-label="复制图卡" title="复制图卡">
+        <div className="flex items-center gap-2">
+          <button type="button" className={iconButtonClass} onClick={onDuplicate} aria-label="复制图卡" title="复制图卡">
             <Copy size={16} strokeWidth={2.1} />
           </button>
-          <button type="button" className="inspector-icon-button" onClick={onRemove} aria-label="删除图卡" title="删除图卡">
+          <button type="button" className={iconButtonClass} onClick={onRemove} aria-label="删除图卡" title="删除图卡">
             <Trash2 size={16} strokeWidth={2.1} />
           </button>
         </div>
       </div>
 
-      <div className="inspector-tabs">
+      <div className="flex items-center gap-6 border-b border-base-300 px-6">
         <button
           type="button"
-          className={`inspector-tab ${activeTab === 'base' ? 'inspector-tab-active' : ''}`}
+          className={`inline-flex h-14 items-center border-b-2 text-base font-semibold transition ${
+            activeTab === 'base'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-base-content/70 hover:text-base-content'
+          }`}
           onClick={() => setActiveTab('base')}
         >
           基础配置
         </button>
         <button
           type="button"
-          className={`inspector-tab ${activeTab === 'display' ? 'inspector-tab-active' : ''}`}
+          className={`inline-flex h-14 items-center border-b-2 text-base font-semibold transition ${
+            activeTab === 'display'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-base-content/70 hover:text-base-content'
+          }`}
           onClick={() => setActiveTab('display')}
         >
           显示设置
         </button>
       </div>
 
-      <div className="inspector-body">
+      <div className="px-6 pb-8">
         {activeTab === 'base' && (
           <>
-            <section className="inspector-section">
-              <div className="inspector-section-title">基础设置</div>
-              <div className="inspector-grid">
-                <label className="inspector-field inspector-field-span">
-                  <span>标题</span>
+            <section className="border-b border-base-300 py-6">
+              <div className="mb-4 text-lg font-semibold text-base-content">基础设置</div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="grid gap-2 md:col-span-2">
+                  <span className={fieldLabelClass}>标题</span>
                   <input
                     type="text"
                     value={card.title}
                     onChange={(event) => onChangeCard({ title: event.target.value })}
+                    className={inputClass}
                   />
                 </label>
 
-                <label className="inspector-field">
-                  <span>图表类型</span>
+                <label className="grid gap-2">
+                  <span className={fieldLabelClass}>图表类型</span>
                   <SelectShell>
                     <select
                       value={card.kind}
                       onChange={(event) => onChangeCard({ kind: event.target.value as ChartCard['kind'] })}
+                      className={`${inputClass} appearance-none pr-10`}
                     >
                       {KIND_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
@@ -194,12 +214,13 @@ export function CardInspector({
                   </SelectShell>
                 </label>
 
-                <label className="inspector-field">
-                  <span>公共 X 轴</span>
+                <label className="grid gap-2">
+                  <span className={fieldLabelClass}>公共 X 轴</span>
                   <SelectShell>
                     <select
                       value={card.xColumn}
                       onChange={(event) => onChangeCard({ xColumn: event.target.value })}
+                      className={`${inputClass} appearance-none pr-10`}
                     >
                       {allHeaders.map((header) => (
                         <option key={header} value={header}>{header}</option>
@@ -210,12 +231,13 @@ export function CardInspector({
 
                 {card.kind !== 'stats' && (
                   <>
-                    <label className="inspector-field">
-                      <span>绘制方式</span>
+                    <label className="grid gap-2">
+                      <span className={fieldLabelClass}>绘制方式</span>
                       <SelectShell>
                         <select
                           value={card.drawMode}
                           onChange={(event) => onChangeCard({ drawMode: event.target.value as ChartCard['drawMode'] })}
+                          className={`${inputClass} appearance-none pr-10`}
                         >
                           {DRAW_MODE_OPTIONS.map((option) => (
                             <option key={option.value} value={option.value}>{option.label}</option>
@@ -224,14 +246,15 @@ export function CardInspector({
                       </SelectShell>
                     </label>
 
-                    <label className="inspector-field">
-                      <span>线宽</span>
+                    <label className="grid gap-2">
+                      <span className={fieldLabelClass}>线宽</span>
                       <input
                         type="number"
                         min="1"
                         max="6"
                         value={card.lineWidth}
                         onChange={(event) => onChangeCard({ lineWidth: Number(event.target.value) || 1 })}
+                        className={inputClass}
                       />
                     </label>
                   </>
@@ -239,36 +262,38 @@ export function CardInspector({
               </div>
             </section>
 
-            <section className="inspector-section">
-              <div className="inspector-section-header">
-                <div className="inspector-section-title">数据系列</div>
+            <section className="py-6">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="text-lg font-semibold text-base-content">数据系列</div>
                 {card.kind !== 'stats' && (
                   <button
                     type="button"
-                    className="inspector-add-button"
+                    className="inline-grid size-11 place-items-center rounded-[var(--radius-box)] border border-primary/15 bg-primary/10 text-primary transition hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
                     onClick={() => onAddSeries(activeDatasetId ?? undefined)}
                     aria-label="新增系列"
                     title="新增系列"
                   >
-                    <Plus size={16} strokeWidth={2.2} />
+                    <Plus size={18} strokeWidth={2.2} />
                   </button>
                 )}
               </div>
 
-              <div className="inspector-series-list">
+              <div className="grid">
                 {card.series.map((series) => {
                   const dataset = datasetsById[series.datasetId]
                   const numericOptions = dataset?.numericColumns ?? []
                   const supportsX = dataset ? dataset.headers.includes(card.xColumn) : false
 
                   return (
-                    <div key={series.id} className="inspector-series-row">
-                      <div className="inspector-series-head">
-                        <strong>{series.label || dataset?.fileName || '新系列'}</strong>
-                        <div className="inspector-series-actions">
+                    <div key={series.id} className="grid gap-3 border-b border-base-300 py-4 last:border-b-0">
+                      <div className="flex items-center justify-between gap-3">
+                        <strong className="truncate text-sm font-semibold text-base-content">
+                          {series.label || dataset?.fileName || '新系列'}
+                        </strong>
+                        <div className="relative inspector-series-actions">
                           <button
                             type="button"
-                            className="inspector-icon-button"
+                            className={iconButtonClass}
                             onClick={() => setOpenMenuSeriesId((value) => value === series.id ? null : series.id)}
                             aria-label="系列菜单"
                             title="系列菜单"
@@ -277,12 +302,26 @@ export function CardInspector({
                           </button>
 
                           {openMenuSeriesId === series.id && (
-                            <div className="inspector-series-menu">
-                              <button type="button" onClick={() => setActiveTab('display')}>
+                            <div className="absolute right-0 top-[calc(100%+0.5rem)] z-20 grid min-w-36 gap-1 rounded-[calc(var(--radius-box)+0.25rem)] border border-base-300 bg-base-100 p-2 shadow-xl">
+                              <button
+                                type="button"
+                                className="inline-flex h-10 items-center rounded-[var(--radius-field)] px-3 text-left text-sm text-base-content transition hover:bg-base-200"
+                                onClick={() => {
+                                  setActiveTab('display')
+                                  setOpenMenuSeriesId(null)
+                                }}
+                              >
                                 打开显示设置
                               </button>
                               {card.series.length > 1 && (
-                                <button type="button" onClick={() => onRemoveSeries(series.id)}>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-10 items-center rounded-[var(--radius-field)] px-3 text-left text-sm text-error transition hover:bg-error/10"
+                                  onClick={() => {
+                                    onRemoveSeries(series.id)
+                                    setOpenMenuSeriesId(null)
+                                  }}
+                                >
                                   删除系列
                                 </button>
                               )}
@@ -291,11 +330,12 @@ export function CardInspector({
                         </div>
                       </div>
 
-                      <div className="inspector-series-body">
-                        <SelectShell className="inspector-series-select">
+                      <div className="grid gap-3">
+                        <SelectShell>
                           <select
                             value={series.datasetId}
                             onChange={(event) => onChangeSeries(series.id, { datasetId: event.target.value })}
+                            className={`${inputClass} appearance-none pr-10`}
                           >
                             {datasets.map((option) => (
                               <option key={option.id} value={option.id}>{option.fileName}</option>
@@ -303,10 +343,11 @@ export function CardInspector({
                           </select>
                         </SelectShell>
 
-                        <SelectShell className="inspector-series-select">
+                        <SelectShell>
                           <select
                             value={series.yColumn ?? ''}
                             onChange={(event) => onChangeSeries(series.id, { yColumn: event.target.value || null })}
+                            className={`${inputClass} appearance-none pr-10`}
                           >
                             <option value="">选择字段</option>
                             {numericOptions.map((header) => (
@@ -317,7 +358,7 @@ export function CardInspector({
                       </div>
 
                       {!supportsX && (
-                        <div className="inspector-series-warning">
+                        <div className="rounded-[var(--radius-box)] bg-error/10 px-3 py-2 text-sm leading-6 text-error">
                           当前数据集不包含公共 X 轴 {card.xColumn}，这条系列不会参与绘图。
                         </div>
                       )}
@@ -331,30 +372,33 @@ export function CardInspector({
 
         {activeTab === 'display' && (
           <>
-            <section className="inspector-section">
-              <div className="inspector-section-title">系列显示</div>
-              <div className="inspector-display-list">
+            <section className="border-b border-base-300 py-6">
+              <div className="mb-4 text-lg font-semibold text-base-content">系列显示</div>
+              <div className="grid">
                 {card.series.map((series) => (
-                  <div key={series.id} className="inspector-display-row">
-                    <strong>{series.label || datasetsById[series.datasetId]?.fileName || '新系列'}</strong>
-                    <div className="inspector-display-fields">
+                  <div key={series.id} className="grid gap-3 border-b border-base-300 py-4 last:border-b-0">
+                    <strong className="text-sm font-semibold text-base-content">
+                      {series.label || datasetsById[series.datasetId]?.fileName || '新系列'}
+                    </strong>
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_160px]">
                       <input
-                        className="inspector-display-input"
                         type="text"
                         value={series.label}
                         onChange={(event) => onChangeSeries(series.id, { label: event.target.value })}
+                        className={inputClass}
                       />
 
-                      <label className="inspector-color-trigger">
-                        <span className="inspector-color-swatch" style={{ background: series.color }} />
-                        <span>{series.color.toUpperCase()}</span>
-                        <span className="inspector-color-icon" aria-hidden="true">
+                      <label className="relative flex h-12 items-center gap-3 rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-4 text-sm text-base-content">
+                        <span className="size-5 rounded-md border border-base-300" style={{ background: series.color }} />
+                        <span className="font-medium">{series.color.toUpperCase()}</span>
+                        <span className="ml-auto text-base-content/55">
                           <Palette size={15} strokeWidth={2.1} />
                         </span>
                         <input
                           type="color"
                           value={series.color}
                           onChange={(event) => onChangeSeries(series.id, { color: event.target.value })}
+                          className="absolute inset-0 cursor-pointer opacity-0"
                         />
                       </label>
                     </div>
@@ -363,37 +407,46 @@ export function CardInspector({
               </div>
             </section>
 
-            <section className="inspector-section">
-              <div className="inspector-section-title">图表显示</div>
-              <div className="inspector-toggle-grid">
-                <button
-                  type="button"
-                  className={`inspector-toggle-chip ${card.showLegend ? 'inspector-toggle-chip-active' : ''}`}
-                  onClick={() => onChangeCard({ showLegend: !card.showLegend })}
-                >
-                  <span>图例</span>
-                  <span>{card.showLegend ? '开启' : '关闭'}</span>
-                </button>
+            <section className="py-6">
+              <div className="mb-4 text-lg font-semibold text-base-content">图表显示</div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {[
+                  {
+                    label: '图例',
+                    active: card.showLegend,
+                    onClick: () => onChangeCard({ showLegend: !card.showLegend }),
+                  },
+                  {
+                    label: '网格线',
+                    active: card.showGrid,
+                    onClick: () => onChangeCard({ showGrid: !card.showGrid }),
+                  },
+                  {
+                    label: '坐标轴',
+                    active: card.showAxes,
+                    onClick: () => onChangeCard({ showAxes: !card.showAxes }),
+                  },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    className={`flex h-12 items-center justify-between rounded-[var(--radius-box)] border px-4 text-sm font-medium transition ${
+                      item.active
+                        ? 'border-primary/15 bg-primary/10 text-primary'
+                        : 'border-base-300 bg-base-100 text-base-content/70 hover:border-primary/20 hover:text-base-content'
+                    }`}
+                    onClick={item.onClick}
+                  >
+                    <span>{item.label}</span>
+                    <span>{item.active ? '开启' : '关闭'}</span>
+                  </button>
+                ))}
 
                 <button
                   type="button"
-                  className={`inspector-toggle-chip ${card.showGrid ? 'inspector-toggle-chip-active' : ''}`}
-                  onClick={() => onChangeCard({ showGrid: !card.showGrid })}
+                  className="flex h-12 items-center justify-between rounded-[var(--radius-box)] border border-base-300 bg-base-200 text-sm font-medium text-base-content/40"
+                  disabled
                 >
-                  <span>网格线</span>
-                  <span>{card.showGrid ? '开启' : '关闭'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  className={`inspector-toggle-chip ${card.showAxes ? 'inspector-toggle-chip-active' : ''}`}
-                  onClick={() => onChangeCard({ showAxes: !card.showAxes })}
-                >
-                  <span>坐标轴</span>
-                  <span>{card.showAxes ? '开启' : '关闭'}</span>
-                </button>
-
-                <button type="button" className="inspector-toggle-chip inspector-toggle-chip-disabled" disabled>
                   <span>主题色</span>
                   <span>暂不可用</span>
                 </button>

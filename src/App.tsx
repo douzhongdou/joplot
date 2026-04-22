@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import appIcon from './icon.svg'
 import { useCsvData } from './hooks/useCsvData'
-import { FileUploader } from './components/FileUploader'
+import { AppNavbar } from './components/AppNavbar'
 import { CardInspector } from './components/CardInspector'
 import { ChartCard } from './components/ChartCard'
 import { DashboardCanvas } from './components/DashboardCanvas'
@@ -16,16 +15,18 @@ import {
   moveCardToLayout,
   sanitizeCardsForDatasets,
 } from './lib/workbench'
+import { getChartColor } from './lib/theme'
 import { pickCsvFiles } from './lib/upload'
-import type { ChartCard as ChartCardConfig, ChartSeries, CsvData, FilterRule, FiltersByDataset } from './types'
+import type { ChartCard as ChartCardConfig, ChartSeries, CsvData, FilterJoinOperator, FilterRule } from './types'
 
 const STORAGE_KEY = 'csv-workbench-dashboard'
-const CARD_ACCENTS = ['#155eef', '#dd6b20', '#0f766e', '#7a3e9d']
 
 interface PersistedState {
   cards?: ChartCardConfig[]
   filters?: FilterRule[]
-  filtersByDataset?: FiltersByDataset
+  filtersByDataset?: Record<string, FilterRule[]>
+  workspaceFilters?: FilterRule[]
+  filterJoinOperator?: FilterJoinOperator
   activeDatasetId?: string | null
 }
 
@@ -70,12 +71,12 @@ function buildAutoBoundSeries(
   if (autoSeries.length > 0) {
     return autoSeries.map((series, index) => ({
       ...series,
-      color: CARD_ACCENTS[index % CARD_ACCENTS.length],
+      color: getChartColor(index),
     }))
   }
 
   const fallbackSeries = createCardSeries(primaryDataset, xColumn, {
-    color: CARD_ACCENTS[0],
+    color: getChartColor(0),
   })
 
   return fallbackSeries.yColumn ? [fallbackSeries] : []
@@ -113,35 +114,53 @@ function createAutoBoundCard(
   return card
 }
 
-function normalizeFiltersForDatasets(persisted: PersistedState, datasets: CsvData[]): FiltersByDataset {
-  const result: FiltersByDataset = {}
+function normalizeWorkspaceFilters(persisted: PersistedState, datasets: CsvData[]): FilterRule[] {
+  const availableHeaders = new Set(datasets.flatMap((dataset) => dataset.headers))
 
-  if (persisted.filtersByDataset) {
-    for (const dataset of datasets) {
-      const sourceFilters = persisted.filtersByDataset[dataset.id] ?? []
-      result[dataset.id] = sourceFilters.map((filter) => ({
-        ...filter,
-        column: dataset.headers.includes(filter.column) ? filter.column : dataset.headers[0] ?? '',
-      }))
+  const normalizeRule = (filter: FilterRule): FilterRule | null => {
+    if (!availableHeaders.has(filter.column)) {
+      return null
     }
 
-    return result
-  }
-
-  if (persisted.filters && datasets[0]) {
-    result[datasets[0].id] = persisted.filters.map((filter) => ({
+    return {
       ...filter,
-      column: datasets[0].headers.includes(filter.column) ? filter.column : datasets[0].headers[0] ?? '',
-    }))
+      column: filter.column,
+    }
   }
 
-  return result
+  if (persisted.workspaceFilters) {
+    return persisted.workspaceFilters
+      .map(normalizeRule)
+      .filter((filter): filter is FilterRule => filter !== null)
+  }
+
+  const activeDatasetId = persisted.activeDatasetId
+
+  if (persisted.filtersByDataset) {
+    const fallbackDatasetId = activeDatasetId && persisted.filtersByDataset[activeDatasetId]
+      ? activeDatasetId
+      : datasets[0]?.id
+    const legacyFilters = fallbackDatasetId ? persisted.filtersByDataset[fallbackDatasetId] ?? [] : []
+
+    return legacyFilters
+      .map(normalizeRule)
+      .filter((filter): filter is FilterRule => filter !== null)
+  }
+
+  if (persisted.filters) {
+    return persisted.filters
+      .map(normalizeRule)
+      .filter((filter): filter is FilterRule => filter !== null)
+  }
+
+  return []
 }
 
 export default function App() {
   const { datasets, parseFiles } = useCsvData()
   const [cards, setCards] = useState<ChartCardConfig[]>([])
-  const [filtersByDataset, setFiltersByDataset] = useState<FiltersByDataset>({})
+  const [workspaceFilters, setWorkspaceFilters] = useState<FilterRule[]>([])
+  const [filterJoinOperator, setFilterJoinOperator] = useState<FilterJoinOperator>('and')
   const [activeDatasetId, setActiveDatasetId] = useState<string | null>(null)
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
   const [recentDatasetIds, setRecentDatasetIds] = useState<string[]>([])
@@ -160,11 +179,9 @@ export default function App() {
   )
 
   const filteredRowsByDataset = useMemo(
-    () => buildFilteredRowsByDataset(datasets, filtersByDataset),
-    [datasets, filtersByDataset],
+    () => buildFilteredRowsByDataset(datasets, workspaceFilters, filterJoinOperator),
+    [datasets, filterJoinOperator, workspaceFilters],
   )
-
-  const activeFilters = activeDataset ? (filtersByDataset[activeDataset.id] ?? []) : []
 
   const selectedCard = useMemo(
     () => cards.find((card) => card.id === selectedCardId) ?? null,
@@ -175,7 +192,8 @@ export default function App() {
     if (datasets.length === 0) {
       previousDatasetCountRef.current = 0
       setCards([])
-      setFiltersByDataset({})
+      setWorkspaceFilters([])
+      setFilterJoinOperator('and')
       setActiveDatasetId(null)
       setSelectedCardId(null)
       setRecentDatasetIds([])
@@ -190,7 +208,8 @@ export default function App() {
       if (!persistedRaw) {
         const defaultCard = createAutoBoundCard(datasets, datasets[0], 'line', '默认折线图')
         setCards([defaultCard])
-        setFiltersByDataset({})
+        setWorkspaceFilters([])
+        setFilterJoinOperator('and')
         setActiveDatasetId(datasets[0].id)
         setSelectedCardId(defaultCard.id)
         setRecentDatasetIds(datasets.map((dataset) => dataset.id))
@@ -206,27 +225,26 @@ export default function App() {
         const restoredCards = persisted.cards && persisted.cards.length > 0
           ? sanitizeCardsForDatasets(persisted.cards, datasets, restoredActiveDatasetId)
           : [createAutoBoundCard(datasets, datasets[0], 'line', '默认折线图')]
-        const restoredFilters = normalizeFiltersForDatasets(persisted, datasets)
+        const restoredFilters = normalizeWorkspaceFilters(persisted, datasets)
 
         setCards(restoredCards)
-        setFiltersByDataset(restoredFilters)
+        setWorkspaceFilters(restoredFilters)
+        setFilterJoinOperator(persisted.filterJoinOperator ?? 'and')
         setActiveDatasetId(restoredActiveDatasetId)
         setSelectedCardId(restoredCards[0]?.id ?? null)
         setRecentDatasetIds(datasets.map((dataset) => dataset.id))
       } catch {
         const defaultCard = createAutoBoundCard(datasets, datasets[0], 'line', '默认折线图')
         setCards([defaultCard])
-        setFiltersByDataset({})
+        setWorkspaceFilters([])
+        setFilterJoinOperator('and')
         setActiveDatasetId(datasets[0].id)
         setSelectedCardId(defaultCard.id)
         setRecentDatasetIds(datasets.map((dataset) => dataset.id))
       }
     } else {
       setCards((prev) => sanitizeCardsForDatasets(prev, datasets, activeDatasetId))
-      setFiltersByDataset((prev) => {
-        const nextEntries = datasets.map((dataset) => [dataset.id, prev[dataset.id] ?? []] as const)
-        return Object.fromEntries(nextEntries)
-      })
+      setWorkspaceFilters((prev) => prev.filter((filter) => datasets.some((dataset) => dataset.headers.includes(filter.column))))
       setActiveDatasetId((prev) => (prev && datasetsById[prev] ? prev : datasets[0].id))
     }
 
@@ -238,9 +256,14 @@ export default function App() {
       return
     }
 
-    const payload: PersistedState = { cards, filtersByDataset, activeDatasetId }
+    const payload: PersistedState = {
+      cards,
+      workspaceFilters,
+      filterJoinOperator,
+      activeDatasetId,
+    }
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-  }, [activeDatasetId, cards, datasets.length, filtersByDataset])
+  }, [activeDatasetId, cards, datasets.length, filterJoinOperator, workspaceFilters])
 
   useEffect(() => {
     if (cards.length === 0) {
@@ -337,7 +360,7 @@ export default function App() {
       : datasets
     const autoSeries = buildAutoBoundSeries(scopedDatasets, activeDataset, kind).map((series, index) => ({
       ...series,
-      color: CARD_ACCENTS[(cards.length + index) % CARD_ACCENTS.length],
+      color: getChartColor(cards.length + index),
     }))
     const nextXColumn = pickBestSharedXColumn(scopedDatasets, activeDataset)
     const nextCard = createCard(kind, activeDataset, {
@@ -387,7 +410,7 @@ export default function App() {
     setCards((prev) => prev.map((card) => (
       card.id === cardId
         ? appendCardSeries(card, dataset, {
-            color: CARD_ACCENTS[card.series.length % CARD_ACCENTS.length],
+            color: getChartColor(card.series.length),
           })
         : card
     )))
@@ -464,80 +487,62 @@ export default function App() {
   }
 
   function addFilter() {
-    if (!activeDataset) {
+    if (datasets.length === 0) {
       return
     }
 
-    setFiltersByDataset((prev) => ({
-      ...prev,
-      [activeDataset.id]: [...(prev[activeDataset.id] ?? []), createFilterRule(activeDataset)],
-    }))
+    setWorkspaceFilters((prev) => [...prev, createFilterRule(activeDataset)])
   }
 
   function updateFilter(filterId: string, patch: Partial<FilterRule>) {
-    if (!activeDataset) {
-      return
-    }
-
-    setFiltersByDataset((prev) => ({
-      ...prev,
-      [activeDataset.id]: (prev[activeDataset.id] ?? []).map((filter) => (
+    setWorkspaceFilters((prev) =>
+      prev.map((filter) => (
         filter.id === filterId ? { ...filter, ...patch } : filter
       )),
-    }))
+    )
   }
 
   function removeFilter(filterId: string) {
-    if (!activeDataset) {
-      return
-    }
-
-    setFiltersByDataset((prev) => ({
-      ...prev,
-      [activeDataset.id]: (prev[activeDataset.id] ?? []).filter((filter) => filter.id !== filterId),
-    }))
+    setWorkspaceFilters((prev) => prev.filter((filter) => filter.id !== filterId))
   }
 
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true">
-            <img src={appIcon} alt="" className="brand-mark-image" />
-          </div>
-          <div className="brand-copy">
-            <h1>joplot</h1>
-            <p className="brand-file">
-              {activeDataset ? `${activeDataset.fileName} · 已加载 ${datasets.length} 份 CSV` : '未加载数据集'}
-            </p>
-          </div>
-        </div>
-        <FileUploader hasDatasets={datasets.length > 0} onFiles={handleIncomingFiles} />
-      </header>
+    <div className="grid h-full grid-rows-[var(--navbar-height)_minmax(0,1fr)] bg-base-200 text-base-content">
+      <AppNavbar
+        activeFileName={activeDataset?.fileName ?? null}
+        datasetCount={datasets.length}
+        onFiles={handleIncomingFiles}
+      />
 
-      <main className="workspace-shell workspace-shell-sidebar">
-        <section className="canvas-column">
+      <main className="grid min-h-0 grid-cols-[minmax(0,1fr)_var(--inspector-width)] max-[920px]:block">
+        <section className="min-h-0 min-w-0 overflow-auto bg-base-100">
           {datasets.length > 0 && activeDataset && (
             <WorkbenchHeader
               datasets={datasets}
               activeDatasetId={activeDataset.id}
               datasetGroupCount={recentDatasetIds.length || datasets.length}
               filteredCount={(filteredRowsByDataset[activeDataset.id] ?? activeDataset.rows).length}
-              filters={activeFilters}
+              filters={workspaceFilters}
+              filterJoinOperator={filterJoinOperator}
               onSelectDataset={setActiveDatasetId}
               onAddComponent={addCard}
               onAddFilter={addFilter}
+              onChangeFilterJoinOperator={setFilterJoinOperator}
               onChangeFilter={updateFilter}
               onRemoveFilter={removeFilter}
             />
           )}
 
           {datasets.length === 0 && (
-            <div className="canvas-empty-state">
-              <div className="canvas-empty-state-panel">
-                <p className="canvas-empty-kicker">Ready</p>
-                <h2>拖拽一个或多个 CSV 到页面任意位置</h2>
-                <p>加载后你可以分别查看，也可以把多个 CSV 叠到同一张图里。</p>
+            <div className="grid min-h-full place-items-center px-6 py-12">
+              <div className="grid w-full max-w-2xl gap-4 text-center">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Ready</p>
+                <h2 className="text-4xl font-semibold leading-tight tracking-tight text-base-content">
+                  拖拽一个或多个 CSV 到页面任意位置
+                </h2>
+                <p className="text-base leading-7 text-base-content/60">
+                  加载后你可以分别查看，也可以把多个 CSV 叠到同一张图里。
+                </p>
               </div>
             </div>
           )}
@@ -564,16 +569,16 @@ export default function App() {
           )}
         </section>
 
-        <aside className="sidebar-column">
+        <aside className="min-h-0 overflow-auto border-l border-base-300 bg-base-100 max-[920px]:border-l-0 max-[920px]:border-t">
           {datasets.length === 0 && (
-            <section className="sidebar-panel">
-              <div className="sidebar-panel-header">
-                <div>
-                  <p className="sidebar-kicker">Upload</p>
-                  <h2>准备上传</h2>
-                </div>
+            <section className="grid gap-4 border-b border-base-300 px-6 py-6">
+              <div className="grid gap-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Upload</p>
+                <h2 className="text-2xl font-semibold tracking-tight text-base-content">准备上传</h2>
               </div>
-              <div className="sidebar-empty">拖拽一个或多个 CSV 到页面任意位置，或从顶部工具栏点击上传。</div>
+              <div className="text-sm leading-6 text-base-content/60">
+                拖拽一个或多个 CSV 到页面任意位置，或从顶部工具栏点击上传。
+              </div>
             </section>
           )}
 
@@ -594,10 +599,10 @@ export default function App() {
       </main>
 
       {dragActive && (
-        <div className="drag-overlay" aria-hidden="true">
-          <div className="drag-overlay-panel">
-            <p className="drag-overlay-kicker">CSV Upload</p>
-            <strong>释放以上传一个或多个 CSV</strong>
+        <div className="pointer-events-none fixed inset-0 z-40 grid place-items-center bg-neutral/10">
+          <div className="grid min-w-[min(420px,calc(100vw-32px))] gap-3 rounded-[calc(var(--radius-box)+0.25rem)] border border-primary/35 bg-base-100/95 px-6 py-6 text-center shadow-2xl backdrop-blur-md">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">CSV Upload</p>
+            <strong className="text-lg font-semibold text-base-content">释放以上传一个或多个 CSV</strong>
           </div>
         </div>
       )}

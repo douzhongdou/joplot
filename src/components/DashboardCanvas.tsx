@@ -119,19 +119,24 @@ export function DashboardCanvas({
   }
 
   return (
-    <section className="dashboard-shell">
+    <section className="min-h-full">
       <div
         ref={containerRef}
-        className="dashboard-grid"
+        className="grid gap-4 bg-base-200 px-5 py-6"
         style={{
           gridTemplateColumns: `repeat(${GRID_COLUMNS}, minmax(0, 1fr))`,
           gridTemplateRows: `repeat(${totalRows}, minmax(${GRID_ROW_HEIGHT}px, ${GRID_ROW_HEIGHT}px))`,
+          backgroundImage: `
+            linear-gradient(color-mix(in oklab, var(--color-base-content) 6%, transparent) 1px, transparent 1px),
+            linear-gradient(90deg, color-mix(in oklab, var(--color-base-content) 6%, transparent) 1px, transparent 1px)
+          `,
+          backgroundSize: `100% ${GRID_ROW_HEIGHT}px, calc(100% / ${GRID_COLUMNS}) 100%`,
         }}
       >
         {cards.map((card) => (
           <div
             key={card.id}
-            className={`dashboard-item ${selectedCardId === card.id ? 'dashboard-item-selected' : ''}`}
+            className="min-h-0 min-w-0"
             style={{
               gridColumn: `${card.layout.x + 1} / span ${card.layout.w}`,
               gridRow: `${card.layout.y + 1} / span ${card.layout.h}`,

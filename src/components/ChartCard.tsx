@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { PlotCanvas } from './PlotCanvas'
 import { summarizeNumericColumn } from '../lib/workbench'
+import { resolveThemeColor } from '../lib/theme'
 import type { ChartCard as ChartCardConfig, CsvData, NormalizedRow } from '../types'
 import type { CopyImageResult } from './PlotCanvas'
 
@@ -134,14 +135,16 @@ export function ChartCard({
       title: { text: card.showAxes ? card.xColumn : '' },
       automargin: true,
       showgrid: card.showGrid,
-      gridcolor: '#e9edf5',
+      gridcolor: resolveThemeColor('--chart-grid', 'rgba(15, 23, 42, 0.08)'),
+      color: resolveThemeColor('--chart-axis', 'rgba(15, 23, 42, 0.72)'),
       visible: card.showAxes,
     },
     yaxis: {
       title: { text: card.showAxes ? (validSeries[0]?.series.yColumn ?? '') : '' },
       automargin: true,
       showgrid: card.showGrid,
-      gridcolor: '#e9edf5',
+      gridcolor: resolveThemeColor('--chart-grid', 'rgba(15, 23, 42, 0.08)'),
+      color: resolveThemeColor('--chart-axis', 'rgba(15, 23, 42, 0.72)'),
       visible: card.showAxes,
       range:
         card.yMin !== null && card.yMax !== null && card.yMin < card.yMax
@@ -172,11 +175,18 @@ export function ChartCard({
   }
 
   return (
-    <article className={`chart-card ${selected ? 'chart-card-selected' : ''}`} onMouseDown={onSelect}>
-      <div className="chart-card-head">
+    <article
+      className={`relative flex h-full min-h-0 flex-col rounded-[calc(var(--radius-box)+0.25rem)] border bg-base-100 p-3 shadow-sm transition ${
+        selected
+          ? 'border-primary/40 ring-1 ring-primary/15'
+          : 'border-base-300 hover:border-primary/20'
+      }`}
+      onMouseDown={onSelect}
+    >
+      <div className="grid grid-cols-[36px_minmax(0,1fr)] items-start gap-3 pb-3">
         <button
           type="button"
-          className="drag-handle"
+          className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border border-base-300 bg-base-200 text-base-content/60 transition hover:border-primary/25 hover:bg-primary/10 hover:text-primary active:cursor-grabbing"
           onPointerDown={onDragStart}
           aria-label="拖动画布卡片"
           title="拖动画布卡片"
@@ -184,47 +194,40 @@ export function ChartCard({
           <GripVertical size={16} strokeWidth={2.2} />
         </button>
 
-        <div className="chart-card-titleblock">
-          <h3>{card.title}</h3>
-          <div className="card-meta">
-            <span>{KIND_LABELS[card.kind]}</span>
-            <span>{validSeries.length} 个系列</span>
+        <div className="grid min-w-0 gap-2">
+          <h3 className="break-words text-xl font-semibold leading-none text-base-content">{card.title}</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex h-7 items-center rounded-full border border-base-300 bg-base-200 px-3 text-xs font-medium text-base-content/70">
+              {KIND_LABELS[card.kind]}
+            </span>
+            <span className="inline-flex h-7 items-center rounded-full border border-base-300 bg-base-200 px-3 text-xs font-medium text-base-content/70">
+              {validSeries.length} 个系列
+            </span>
           </div>
         </div>
       </div>
 
-      <div className="card-visual-area">
+      <div className="flex min-h-0 flex-1 flex-col">
         {card.kind === 'stats' && summary && primarySeries && (
-          <div className="stats-grid">
-            <div className="stat-tile">
-              <div className="stat-label">数据集</div>
-              <div className="stat-value">{primarySeries.dataset.fileName}</div>
-            </div>
-            <div className="stat-tile">
-              <div className="stat-label">有效值</div>
-              <div className="stat-value">{summary.count}</div>
-            </div>
-            <div className="stat-tile">
-              <div className="stat-label">空值</div>
-              <div className="stat-value">{summary.missing}</div>
-            </div>
-            <div className="stat-tile">
-              <div className="stat-label">最小值</div>
-              <div className="stat-value">{formatValue(summary.min)}</div>
-            </div>
-            <div className="stat-tile">
-              <div className="stat-label">最大值</div>
-              <div className="stat-value">{formatValue(summary.max)}</div>
-            </div>
-            <div className="stat-tile">
-              <div className="stat-label">均值</div>
-              <div className="stat-value">{formatValue(summary.mean)}</div>
-            </div>
+          <div className="grid flex-1 grid-cols-3 gap-3 max-md:grid-cols-1">
+            {[
+              ['数据集', primarySeries.dataset.fileName],
+              ['有效值', String(summary.count)],
+              ['空值', String(summary.missing)],
+              ['最小值', formatValue(summary.min)],
+              ['最大值', formatValue(summary.max)],
+              ['均值', formatValue(summary.mean)],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-[var(--radius-box)] border border-base-300 bg-base-200/50 p-4">
+                <div className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{label}</div>
+                <div className="mt-2 break-words text-2xl font-semibold text-base-content">{value}</div>
+              </div>
+            ))}
           </div>
         )}
 
         {card.kind !== 'stats' && validSeries.length > 0 && (
-          <div className="plot-panel">
+          <div className="flex min-h-0 flex-1 flex-col gap-3">
             <PlotCanvas
               ref={plotRef}
               data={plotData}
@@ -232,10 +235,10 @@ export function ChartCard({
               layout={plotLayout}
             />
 
-            <div className="plot-toolbar" aria-label="图表工具栏">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                className="plot-tool-button"
+                className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border border-base-300 bg-base-100 text-base-content/65 transition hover:border-primary/25 hover:bg-primary/10 hover:text-primary"
                 onClick={() => void plotRef.current?.autorange()}
                 aria-label="自动缩放"
                 title="自动缩放"
@@ -244,7 +247,7 @@ export function ChartCard({
               </button>
               <button
                 type="button"
-                className="plot-tool-button"
+                className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border border-base-300 bg-base-100 text-base-content/65 transition hover:border-primary/25 hover:bg-primary/10 hover:text-primary"
                 onClick={() => void handleCopyImage()}
                 aria-label="复制图像"
                 title="复制图像"
@@ -253,35 +256,37 @@ export function ChartCard({
               </button>
               <button
                 type="button"
-                className="plot-tool-button"
+                className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border border-base-300 bg-base-100 text-base-content/65 transition hover:border-primary/25 hover:bg-primary/10 hover:text-primary"
                 onClick={() => void plotRef.current?.downloadImage()}
                 aria-label="下载图像"
                 title="下载图像"
               >
                 <Download size={15} strokeWidth={2.1} />
               </button>
-            </div>
 
-            {copyToast && (
-              <div className="plot-toolbar-feedback" role="status">
-                {copyToast}
-              </div>
-            )}
+              {copyToast && (
+                <div className="inline-flex h-9 items-center rounded-full bg-primary/10 px-3 text-xs font-semibold text-primary">
+                  {copyToast}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
         {((card.kind === 'stats' && !summary) || (card.kind !== 'stats' && validSeries.length === 0)) && (
-          <div className="placeholder">
-            当前图卡没有可绘制的有效数据系列。
-            <br />
-            请在右侧为它选择可用的数据集和字段。
+          <div className="flex flex-1 items-center justify-center rounded-[var(--radius-box)] border border-dashed border-base-300 bg-base-200/50 p-6 text-center text-sm leading-6 text-base-content/55">
+            <div>
+              当前图卡没有可绘制的有效数据系列。
+              <br />
+              请在右侧为它选择可用的数据集和字段。
+            </div>
           </div>
         )}
       </div>
 
       <button
         type="button"
-        className="resize-handle"
+        className="absolute bottom-3 right-3 inline-grid size-9 place-items-center rounded-[var(--radius-box)] border border-base-300 bg-base-100 text-base-content/60 transition hover:border-primary/25 hover:bg-primary/10 hover:text-primary"
         onPointerDown={onResizeStart}
         aria-label="缩放图卡"
         title="缩放图卡"

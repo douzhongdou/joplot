@@ -5,13 +5,13 @@ import type {
   ColumnSummary,
   CsvData,
   DashboardLayout,
+  FilterJoinOperator,
   FilterRule,
-  FiltersByDataset,
   NormalizedRow,
   RawCsvRow,
 } from '../types'
+import { getChartColor, isHexChartColor } from './theme'
 
-const CARD_COLORS = ['#155eef', '#dd6b20', '#0f766e', '#b93815', '#3b3f98', '#7a3e9d']
 export const DASHBOARD_COLUMNS = 12
 export const DASHBOARD_MIN_WIDTH = 3
 export const DASHBOARD_MIN_HEIGHT = 4
@@ -201,7 +201,7 @@ export function createCardSeries(
     datasetId: dataset.id,
     label: getSeriesLabel(dataset, '数据系列'),
     yColumn: getDefaultYColumn(dataset, xColumn),
-    color: CARD_COLORS[0],
+    color: getChartColor(0),
     ...overrides,
   }
 }
@@ -262,7 +262,7 @@ export function appendCardSeries(
   }
 
   const nextSeries = createCardSeries(dataset, card.xColumn, {
-    color: CARD_COLORS[card.series.length % CARD_COLORS.length],
+    color: getChartColor(card.series.length),
     ...overrides,
   })
 
@@ -284,7 +284,7 @@ export function createAutoSeriesForDatasets(
   return datasets
     .filter((dataset) => dataset.headers.includes(xColumn))
     .map((dataset, index) => createCardSeries(dataset, xColumn, {
-      color: CARD_COLORS[index % CARD_COLORS.length],
+      color: getChartColor(index),
     }))
     .filter((series) => series.yColumn !== null)
     .slice(0, limit ?? datasets.length)
@@ -314,41 +314,50 @@ export function moveCardToLayout(cards: ChartCard[], cardId: string, layout: Das
   )
 }
 
-export function applyFilters(rows: NormalizedRow[], filters: FilterRule[]): NormalizedRow[] {
-  return rows.filter((row) =>
-    filters.every((filter) => {
-      const rawValue = row.raw[filter.column] ?? ''
-      const numericValue = row.numeric[filter.column]
+function evaluateFilter(row: NormalizedRow, filter: FilterRule): boolean {
+  const rawValue = row.raw[filter.column] ?? ''
+  const numericValue = row.numeric[filter.column]
 
-      switch (filter.operator) {
-        case 'contains':
-          return rawValue.toLowerCase().includes(filter.value.toLowerCase())
-        case 'equals':
-          return rawValue === filter.value
-        case 'gt':
-          return numericValue !== null && numericValue > Number(filter.value)
-        case 'lt':
-          return numericValue !== null && numericValue < Number(filter.value)
-        case 'between': {
-          const lower = Number(filter.value)
-          const upper = Number(filter.valueTo ?? filter.value)
-          return numericValue !== null && numericValue >= lower && numericValue <= upper
-        }
-        default:
-          return true
-      }
-    }),
-  )
+  switch (filter.operator) {
+    case 'contains':
+      return rawValue.toLowerCase().includes(filter.value.toLowerCase())
+    case 'equals':
+      return rawValue === filter.value
+    case 'gt':
+      return numericValue !== null && numericValue > Number(filter.value)
+    case 'lt':
+      return numericValue !== null && numericValue < Number(filter.value)
+    case 'between': {
+      const lower = Number(filter.value)
+      const upper = Number(filter.valueTo ?? filter.value)
+      return numericValue !== null && numericValue >= lower && numericValue <= upper
+    }
+    default:
+      return true
+  }
 }
 
 export function buildFilteredRowsByDataset(
   datasets: CsvData[],
-  filtersByDataset: FiltersByDataset,
+  filters: FilterRule[],
+  joinOperator: FilterJoinOperator,
 ): Record<string, NormalizedRow[]> {
   return Object.fromEntries(
     datasets.map((dataset) => [
       dataset.id,
-      applyFilters(dataset.rows, filtersByDataset[dataset.id] ?? []),
+      dataset.rows.filter((row) => {
+        const applicableFilters = filters.filter((filter) => dataset.headers.includes(filter.column))
+
+        if (applicableFilters.length === 0) {
+          return true
+        }
+
+        if (joinOperator === 'or') {
+          return applicableFilters.some((filter) => evaluateFilter(row, filter))
+        }
+
+        return applicableFilters.every((filter) => evaluateFilter(row, filter))
+      }),
     ]),
   )
 }
@@ -422,7 +431,7 @@ export function sanitizeCardsForDatasets(
       ? legacyCard.series
       : [createCardSeries(fallbackDataset, legacyCard.xColumn ?? fallbackDataset.headers[0] ?? '', {
           yColumn: legacyCard.yColumn ?? getDefaultYColumn(fallbackDataset, legacyCard.xColumn ?? fallbackDataset.headers[0] ?? ''),
-          color: legacyCard.color ?? CARD_COLORS[0],
+          color: legacyCard.color ?? getChartColor(0),
         })]
     const primaryDataset =
       rawSeries
@@ -450,12 +459,12 @@ export function sanitizeCardsForDatasets(
 
         return {
           ...createCardSeries(dataset, xColumn, {
-            color: CARD_COLORS[seriesIndex % CARD_COLORS.length],
+            color: getChartColor(seriesIndex),
           }),
           ...series,
           yColumn,
           label: series.label || getSeriesLabel(dataset, `数据系列 ${seriesIndex + 1}`),
-          color: series.color || CARD_COLORS[seriesIndex % CARD_COLORS.length],
+          color: isHexChartColor(series.color) ? series.color : getChartColor(seriesIndex),
         }
       })
       .filter((series): series is ChartSeries => series !== null)
