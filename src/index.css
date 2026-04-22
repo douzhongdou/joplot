@@ -63,7 +63,7 @@
   --chart-grid: color-mix(in oklab, var(--color-base-content) 10%, transparent);
   --chart-axis: color-mix(in oklab, var(--color-base-content) 70%, transparent);
   --chart-selection: color-mix(in oklab, var(--color-primary) 35%, transparent);
-  --navbar-height: 4.75rem;
+  --navbar-height: 3.75rem;
   --inspector-width: 28rem;
   --dashboard-row-height: 72px;
 }
@@ -107,7 +107,7 @@
   --chart-grid: color-mix(in oklab, var(--color-base-content) 12%, transparent);
   --chart-axis: color-mix(in oklab, var(--color-base-content) 68%, transparent);
   --chart-selection: color-mix(in oklab, var(--color-primary) 40%, transparent);
-  --navbar-height: 4.75rem;
+  --navbar-height: 3.75rem;
   --inspector-width: 28rem;
   --dashboard-row-height: 72px;
 }

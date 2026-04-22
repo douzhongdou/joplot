@@ -10,7 +10,7 @@ import type {
   NormalizedRow,
   RawCsvRow,
 } from '../types'
-import { getChartColor, isHexChartColor } from './theme'
+import { getChartColor, isHexChartColor } from './theme.ts'
 
 export const DASHBOARD_COLUMNS = 12
 export const DASHBOARD_MIN_WIDTH = 3
@@ -87,6 +87,35 @@ function getDefaultYColumn(dataset: CsvData, xColumn: string) {
   return dataset.numericColumns.find((column) => column !== xColumn)
     ?? dataset.numericColumns[0]
     ?? null
+}
+
+function buildSeriesBindingKey(datasetId: string, yColumn: string | null) {
+  return yColumn ? `${datasetId}:${yColumn}` : null
+}
+
+function listPreferredYColumns(dataset: CsvData, xColumn: string) {
+  const nonXColumns = dataset.numericColumns.filter((column) => column !== xColumn)
+  const xColumnFallback = dataset.numericColumns.includes(xColumn) ? [xColumn] : []
+
+  return [...nonXColumns, ...xColumnFallback]
+}
+
+export function listAvailableSeriesYColumns(
+  card: Pick<ChartCard, 'xColumn' | 'series'>,
+  dataset: CsvData,
+  options: {
+    excludeSeriesId?: string | null
+  } = {},
+) {
+  const usedBindings = new Set(
+    card.series
+      .filter((series) => series.id !== options.excludeSeriesId)
+      .map((series) => buildSeriesBindingKey(series.datasetId, series.yColumn))
+      .filter((binding): binding is string => binding !== null),
+  )
+
+  return listPreferredYColumns(dataset, card.xColumn)
+    .filter((column) => !usedBindings.has(buildSeriesBindingKey(dataset.id, column)!))
 }
 
 function getSeriesLabel(dataset: CsvData, fallback: string) {
@@ -206,6 +235,40 @@ export function createCardSeries(
   }
 }
 
+export function findAvailableSeriesYColumn(
+  card: Pick<ChartCard, 'xColumn' | 'series'>,
+  dataset: CsvData,
+  options: {
+    preferredYColumn?: string | null
+    excludeSeriesId?: string | null
+  } = {},
+) {
+  if (!dataset.headers.includes(card.xColumn)) {
+    return null
+  }
+
+  const usedBindings = new Set(
+    card.series
+      .filter((series) => series.id !== options.excludeSeriesId)
+      .map((series) => buildSeriesBindingKey(series.datasetId, series.yColumn))
+      .filter((binding): binding is string => binding !== null),
+  )
+  const candidateColumns = listAvailableSeriesYColumns(card, dataset, {
+    excludeSeriesId: options.excludeSeriesId,
+  })
+
+  if (
+    options.preferredYColumn
+    && listPreferredYColumns(dataset, card.xColumn).includes(options.preferredYColumn)
+    && !usedBindings.has(buildSeriesBindingKey(dataset.id, options.preferredYColumn)!)
+  ) {
+    return options.preferredYColumn
+  }
+
+  return candidateColumns.find((column) => !usedBindings.has(buildSeriesBindingKey(dataset.id, column)!))
+    ?? null
+}
+
 export function createCard(
   kind: ChartKind,
   dataset: CsvData,
@@ -261,8 +324,17 @@ export function appendCardSeries(
     return card
   }
 
+  const nextYColumn = findAvailableSeriesYColumn(card, dataset, {
+    preferredYColumn: overrides.yColumn,
+  })
+
+  if (nextYColumn === null) {
+    return card
+  }
+
   const nextSeries = createCardSeries(dataset, card.xColumn, {
     color: getChartColor(card.series.length),
+    yColumn: nextYColumn,
     ...overrides,
   })
 
@@ -281,13 +353,33 @@ export function createAutoSeriesForDatasets(
   xColumn: string,
   limit?: number,
 ): ChartSeries[] {
-  return datasets
-    .filter((dataset) => dataset.headers.includes(xColumn))
-    .map((dataset, index) => createCardSeries(dataset, xColumn, {
-      color: getChartColor(index),
+  const series: ChartSeries[] = []
+
+  for (const dataset of datasets) {
+    if (!dataset.headers.includes(xColumn)) {
+      continue
+    }
+
+    const nextYColumn = findAvailableSeriesYColumn(
+      { xColumn, series },
+      dataset,
+    )
+
+    if (nextYColumn === null) {
+      continue
+    }
+
+    series.push(createCardSeries(dataset, xColumn, {
+      color: getChartColor(series.length),
+      yColumn: nextYColumn,
     }))
-    .filter((series) => series.yColumn !== null)
-    .slice(0, limit ?? datasets.length)
+
+    if (series.length >= (limit ?? datasets.length)) {
+      break
+    }
+  }
+
+  return series
 }
 
 export function appendCardWithLayout(cards: ChartCard[], card: ChartCard): ChartCard[] {
@@ -441,6 +533,7 @@ export function sanitizeCardsForDatasets(
 
     const fallbackXColumn = primaryDataset.headers[0] ?? ''
     const xColumn = primaryDataset.headers.includes(card.xColumn) ? card.xColumn : fallbackXColumn
+    const seenBindings = new Set<string>()
     const validSeries = rawSeries
       .map<ChartSeries | null>((series, seriesIndex) => {
         const dataset = datasetMap[series.datasetId]
@@ -456,6 +549,14 @@ export function sanitizeCardsForDatasets(
         if (yColumn === null) {
           return null
         }
+
+        const bindingKey = buildSeriesBindingKey(dataset.id, yColumn)
+
+        if (!bindingKey || seenBindings.has(bindingKey)) {
+          return null
+        }
+
+        seenBindings.add(bindingKey)
 
         return {
           ...createCardSeries(dataset, xColumn, {

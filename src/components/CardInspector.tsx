@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
 import {
-  ChevronDown,
   Copy,
   MoreHorizontal,
   Palette,
@@ -10,6 +8,9 @@ import {
   Trash2,
 } from 'lucide-react'
 import type { ChartCard, ChartSeries, CsvData } from '../types'
+import { listAvailableSeriesYColumns } from '../lib/workbench'
+import { SelectMenu } from './SelectMenu'
+import { useI18n } from '../i18n'
 
 interface Props {
   card: ChartCard | null
@@ -25,46 +26,9 @@ interface Props {
 
 type InspectorTab = 'base' | 'display'
 
-const KIND_OPTIONS: Array<{ value: ChartCard['kind']; label: string }> = [
-  { value: 'line', label: '折线图' },
-  { value: 'scatter', label: '散点图' },
-  { value: 'bar', label: '柱状图' },
-  { value: 'stats', label: '统计卡' },
-]
-
-const DRAW_MODE_OPTIONS: Array<{ value: NonNullable<ChartCard['drawMode']>; label: string }> = [
-  { value: 'lines', label: '折线' },
-  { value: 'lines+markers', label: '线 + 点' },
-  { value: 'markers', label: '仅点' },
-]
-
 const fieldLabelClass = 'text-xs font-medium uppercase tracking-[0.12em] text-base-content/55'
 const inputClass = 'h-12 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-4 text-sm text-base-content outline-none transition placeholder:text-base-content/40 focus:border-primary/35 focus:ring-2 focus:ring-primary/20'
-const iconButtonClass = 'inline-grid size-10 place-items-center rounded-[var(--radius-box)] border border-base-300 bg-base-100 text-base-content/60 transition hover:border-primary/25 hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25'
-
-function getKindLabel(kind: ChartCard['kind']) {
-  return KIND_OPTIONS.find((option) => option.value === kind)?.label ?? '图卡'
-}
-
-function SelectShell({
-  children,
-  className = '',
-}: {
-  children: ReactNode
-  className?: string
-}) {
-  return (
-    <div className={`relative min-w-0 ${className}`.trim()}>
-      {children}
-      <ChevronDown
-        size={16}
-        strokeWidth={2.1}
-        className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-base-content/55"
-        aria-hidden="true"
-      />
-    </div>
-  )
-}
+const iconButtonClass = 'inline-grid size-10 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary focus-visible:outline-none focus-visible:ring-0'
 
 export function CardInspector({
   card,
@@ -77,9 +41,23 @@ export function CardInspector({
   onDuplicate,
   onRemove,
 }: Props) {
+  const { t, formatNumber } = useI18n()
   const shellRef = useRef<HTMLElement>(null)
   const [activeTab, setActiveTab] = useState<InspectorTab>('base')
   const [openMenuSeriesId, setOpenMenuSeriesId] = useState<string | null>(null)
+
+  const kindOptions: Array<{ value: ChartCard['kind']; label: string }> = [
+    { value: 'line', label: t('chartKinds.line') },
+    { value: 'scatter', label: t('chartKinds.scatter') },
+    { value: 'bar', label: t('chartKinds.bar') },
+    { value: 'stats', label: t('chartKinds.stats') },
+  ]
+
+  const drawModeOptions: Array<{ value: NonNullable<ChartCard['drawMode']>; label: string }> = [
+    { value: 'lines', label: t('drawModes.lines') },
+    { value: 'lines+markers', label: t('drawModes.lines+markers') },
+    { value: 'markers', label: t('drawModes.markers') },
+  ]
 
   const allHeaders = useMemo(
     () => Array.from(new Set(datasets.flatMap((dataset) => dataset.headers))),
@@ -132,27 +110,27 @@ export function CardInspector({
           <div className="inline-grid size-14 place-items-center rounded-[calc(var(--radius-box)+0.25rem)] bg-primary/10 text-primary">
             <Sparkles size={22} strokeWidth={2.2} />
           </div>
-          <strong className="text-lg font-semibold text-base-content">先选中一张图卡</strong>
-          <p className="text-sm leading-6 text-base-content/60">右侧会显示基础配置和显示设置。</p>
+          <strong className="text-lg font-semibold text-base-content">{t('inspector.emptyTitle')}</strong>
+          <p className="text-sm leading-6 text-base-content/60">{t('inspector.emptyDescription')}</p>
         </div>
       </section>
     )
   }
 
-  const activeDataset = activeDatasetId ? datasetsById[activeDatasetId] : null
+  const currentKindLabel = kindOptions.find((option) => option.value === card.kind)?.label ?? t('chartKinds.fallback')
 
   return (
     <section ref={shellRef} className="grid min-h-full content-start bg-base-100">
       <div className="flex items-start justify-between gap-3 border-base-300 px-6 py-5">
         <div className="grid gap-1">
-          <h2 className="text-4xl font-semibold tracking-tight text-base-content">{getKindLabel(card.kind)}</h2>
+          <h2 className="text-4xl font-semibold tracking-tight text-base-content">{currentKindLabel}</h2>
         </div>
 
         <div className="flex items-center gap-2">
-          <button type="button" className={iconButtonClass} onClick={onDuplicate} aria-label="复制图卡" title="复制图卡">
+          <button type="button" className={iconButtonClass} onClick={onDuplicate} aria-label={t('inspector.duplicateCard')} title={t('inspector.duplicateCard')}>
             <Copy size={16} strokeWidth={2.1} />
           </button>
-          <button type="button" className={iconButtonClass} onClick={onRemove} aria-label="删除图卡" title="删除图卡">
+          <button type="button" className={iconButtonClass} onClick={onRemove} aria-label={t('inspector.deleteCard')} title={t('inspector.deleteCard')}>
             <Trash2 size={16} strokeWidth={2.1} />
           </button>
         </div>
@@ -168,7 +146,7 @@ export function CardInspector({
           }`}
           onClick={() => setActiveTab('base')}
         >
-          基础配置
+          {t('inspector.baseTab')}
         </button>
         <button
           type="button"
@@ -179,7 +157,7 @@ export function CardInspector({
           }`}
           onClick={() => setActiveTab('display')}
         >
-          显示设置
+          {t('inspector.displayTab')}
         </button>
       </div>
 
@@ -187,10 +165,10 @@ export function CardInspector({
         {activeTab === 'base' && (
           <>
             <section className="border-b border-base-300 py-6">
-              <div className="mb-4 text-lg font-semibold text-base-content">基础设置</div>
+              <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.baseSectionTitle')}</div>
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="grid gap-2 md:col-span-2">
-                  <span className={fieldLabelClass}>标题</span>
+                  <span className={fieldLabelClass}>{t('inspector.title')}</span>
                   <input
                     type="text"
                     value={card.title}
@@ -200,54 +178,42 @@ export function CardInspector({
                 </label>
 
                 <label className="grid gap-2">
-                  <span className={fieldLabelClass}>图表类型</span>
-                  <SelectShell>
-                    <select
-                      value={card.kind}
-                      onChange={(event) => onChangeCard({ kind: event.target.value as ChartCard['kind'] })}
-                      className={`${inputClass} appearance-none pr-10`}
-                    >
-                      {KIND_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </SelectShell>
+                  <span className={fieldLabelClass}>{t('inspector.chartKind')}</span>
+                  <SelectMenu
+                    value={card.kind}
+                    options={kindOptions}
+                    onChange={(value) => onChangeCard({ kind: value })}
+                    buttonClassName="shadow-none"
+                  />
                 </label>
 
                 <label className="grid gap-2">
-                  <span className={fieldLabelClass}>公共 X 轴</span>
-                  <SelectShell>
-                    <select
-                      value={card.xColumn}
-                      onChange={(event) => onChangeCard({ xColumn: event.target.value })}
-                      className={`${inputClass} appearance-none pr-10`}
-                    >
-                      {allHeaders.map((header) => (
-                        <option key={header} value={header}>{header}</option>
-                      ))}
-                    </select>
-                  </SelectShell>
+                  <span className={fieldLabelClass}>{t('inspector.sharedXAxis')}</span>
+                  <SelectMenu
+                    value={card.xColumn}
+                    options={allHeaders.map((header) => ({
+                      value: header,
+                      label: header,
+                    }))}
+                    onChange={(value) => onChangeCard({ xColumn: value })}
+                    buttonClassName="shadow-none"
+                  />
                 </label>
 
                 {card.kind !== 'stats' && (
                   <>
                     <label className="grid gap-2">
-                      <span className={fieldLabelClass}>绘制方式</span>
-                      <SelectShell>
-                        <select
-                          value={card.drawMode}
-                          onChange={(event) => onChangeCard({ drawMode: event.target.value as ChartCard['drawMode'] })}
-                          className={`${inputClass} appearance-none pr-10`}
-                        >
-                          {DRAW_MODE_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
-                          ))}
-                        </select>
-                      </SelectShell>
+                      <span className={fieldLabelClass}>{t('inspector.drawMode')}</span>
+                      <SelectMenu
+                        value={card.drawMode}
+                        options={drawModeOptions}
+                        onChange={(value) => onChangeCard({ drawMode: value })}
+                        buttonClassName="shadow-none"
+                      />
                     </label>
 
                     <label className="grid gap-2">
-                      <span className={fieldLabelClass}>线宽</span>
+                      <span className={fieldLabelClass}>{t('inspector.lineWidth')}</span>
                       <input
                         type="number"
                         min="1"
@@ -264,14 +230,14 @@ export function CardInspector({
 
             <section className="py-6">
               <div className="mb-4 flex items-center justify-between gap-3">
-                <div className="text-lg font-semibold text-base-content">数据系列</div>
+                <div className="text-lg font-semibold text-base-content">{t('inspector.seriesSectionTitle')}</div>
                 {card.kind !== 'stats' && (
                   <button
                     type="button"
-                    className="inline-grid size-11 place-items-center rounded-[var(--radius-box)] border border-primary/15 bg-primary/10 text-primary transition hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
+                    className="inline-grid size-11 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-primary transition hover:bg-transparent hover:text-primary/80 focus-visible:outline-none focus-visible:ring-0"
                     onClick={() => onAddSeries(activeDatasetId ?? undefined)}
-                    aria-label="新增系列"
-                    title="新增系列"
+                    aria-label={t('inspector.addSeries')}
+                    title={t('inspector.addSeries')}
                   >
                     <Plus size={18} strokeWidth={2.2} />
                   </button>
@@ -281,28 +247,43 @@ export function CardInspector({
               <div className="grid">
                 {card.series.map((series) => {
                   const dataset = datasetsById[series.datasetId]
-                  const numericOptions = dataset?.numericColumns ?? []
+                  const numericOptions = dataset
+                    ? listAvailableSeriesYColumns(card, dataset, { excludeSeriesId: series.id })
+                    : []
                   const supportsX = dataset ? dataset.headers.includes(card.xColumn) : false
+                  const datasetOptions = datasets
+                    .filter((option) => (
+                      option.id === series.datasetId
+                      || (
+                        option.headers.includes(card.xColumn)
+                        && listAvailableSeriesYColumns(card, option, { excludeSeriesId: series.id }).length > 0
+                      )
+                    ))
+                    .map((option) => ({
+                      value: option.id,
+                      label: option.fileName,
+                      description: t('common.rowCount', { count: formatNumber(option.rowCount) }),
+                    }))
 
                   return (
                     <div key={series.id} className="grid gap-3 border-b border-base-300 py-4 last:border-b-0">
                       <div className="flex items-center justify-between gap-3">
                         <strong className="truncate text-sm font-semibold text-base-content">
-                          {series.label || dataset?.fileName || '新系列'}
+                          {series.label || dataset?.fileName || t('cards.unnamedSeries')}
                         </strong>
                         <div className="relative inspector-series-actions">
                           <button
                             type="button"
                             className={iconButtonClass}
                             onClick={() => setOpenMenuSeriesId((value) => value === series.id ? null : series.id)}
-                            aria-label="系列菜单"
-                            title="系列菜单"
+                            aria-label={t('inspector.seriesMenu')}
+                            title={t('inspector.seriesMenu')}
                           >
                             <MoreHorizontal size={16} strokeWidth={2.1} />
                           </button>
 
                           {openMenuSeriesId === series.id && (
-                            <div className="absolute right-0 top-[calc(100%+0.5rem)] z-20 grid min-w-36 gap-1 rounded-[calc(var(--radius-box)+0.25rem)] border border-base-300 bg-base-100 p-2 shadow-xl">
+                            <div className="absolute right-0 top-[calc(100%+0.5rem)] z-20 grid min-w-36 gap-1 rounded-[calc(var(--radius-box)+0.25rem)] border border-base-300 bg-base-100 p-2">
                               <button
                                 type="button"
                                 className="inline-flex h-10 items-center rounded-[var(--radius-field)] px-3 text-left text-sm text-base-content transition hover:bg-base-200"
@@ -311,7 +292,7 @@ export function CardInspector({
                                   setOpenMenuSeriesId(null)
                                 }}
                               >
-                                打开显示设置
+                                {t('inspector.openDisplaySettings')}
                               </button>
                               {card.series.length > 1 && (
                                 <button
@@ -322,7 +303,7 @@ export function CardInspector({
                                     setOpenMenuSeriesId(null)
                                   }}
                                 >
-                                  删除系列
+                                  {t('inspector.removeSeries')}
                                 </button>
                               )}
                             </div>
@@ -331,35 +312,28 @@ export function CardInspector({
                       </div>
 
                       <div className="grid gap-3">
-                        <SelectShell>
-                          <select
-                            value={series.datasetId}
-                            onChange={(event) => onChangeSeries(series.id, { datasetId: event.target.value })}
-                            className={`${inputClass} appearance-none pr-10`}
-                          >
-                            {datasets.map((option) => (
-                              <option key={option.id} value={option.id}>{option.fileName}</option>
-                            ))}
-                          </select>
-                        </SelectShell>
+                        <SelectMenu
+                          value={series.datasetId}
+                          options={datasetOptions}
+                          onChange={(value) => onChangeSeries(series.id, { datasetId: value })}
+                          buttonClassName="shadow-none"
+                        />
 
-                        <SelectShell>
-                          <select
-                            value={series.yColumn ?? ''}
-                            onChange={(event) => onChangeSeries(series.id, { yColumn: event.target.value || null })}
-                            className={`${inputClass} appearance-none pr-10`}
-                          >
-                            <option value="">选择字段</option>
-                            {numericOptions.map((header) => (
-                              <option key={header} value={header}>{header}</option>
-                            ))}
-                          </select>
-                        </SelectShell>
+                        <SelectMenu
+                          value={series.yColumn}
+                          options={numericOptions.map((header) => ({
+                            value: header,
+                            label: header,
+                          }))}
+                          onChange={(value) => onChangeSeries(series.id, { yColumn: value })}
+                          placeholder={t('inspector.chooseField')}
+                          buttonClassName="shadow-none"
+                        />
                       </div>
 
                       {!supportsX && (
                         <div className="rounded-[var(--radius-box)] bg-error/10 px-3 py-2 text-sm leading-6 text-error">
-                          当前数据集不包含公共 X 轴 {card.xColumn}，这条系列不会参与绘图。
+                          {t('inspector.incompatibleSeries', { xColumn: card.xColumn })}
                         </div>
                       )}
                     </div>
@@ -373,34 +347,45 @@ export function CardInspector({
         {activeTab === 'display' && (
           <>
             <section className="border-b border-base-300 py-6">
-              <div className="mb-4 text-lg font-semibold text-base-content">系列显示</div>
+              <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.seriesDisplaySectionTitle')}</div>
               <div className="grid">
                 {card.series.map((series) => (
                   <div key={series.id} className="grid gap-3 border-b border-base-300 py-4 last:border-b-0">
-                    <strong className="text-sm font-semibold text-base-content">
-                      {series.label || datasetsById[series.datasetId]?.fileName || '新系列'}
-                    </strong>
+                    <div className="grid gap-1">
+                      <span className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{t('inspector.dataSource')}</span>
+                      <strong className="text-sm font-semibold text-base-content">
+                        {datasetsById[series.datasetId]?.fileName || t('cards.unnamedSeries')}
+                      </strong>
+                    </div>
                     <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_160px]">
-                      <input
-                        type="text"
-                        value={series.label}
-                        onChange={(event) => onChangeSeries(series.id, { label: event.target.value })}
-                        className={inputClass}
-                      />
-
-                      <label className="relative flex h-12 items-center gap-3 rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-4 text-sm text-base-content">
-                        <span className="size-5 rounded-md border border-base-300" style={{ background: series.color }} />
-                        <span className="font-medium">{series.color.toUpperCase()}</span>
-                        <span className="ml-auto text-base-content/55">
-                          <Palette size={15} strokeWidth={2.1} />
-                        </span>
+                      <label className="grid gap-2">
+                        <span className={fieldLabelClass}>{t('inspector.displayName')}</span>
                         <input
-                          type="color"
-                          value={series.color}
-                          onChange={(event) => onChangeSeries(series.id, { color: event.target.value })}
-                          className="absolute inset-0 cursor-pointer opacity-0"
+                          type="text"
+                          value={series.label}
+                          placeholder={datasetsById[series.datasetId]?.fileName || t('inspector.displayNamePlaceholder')}
+                          onChange={(event) => onChangeSeries(series.id, { label: event.target.value })}
+                          className={inputClass}
                         />
                       </label>
+
+                      <div className="grid gap-2">
+                        <span className={fieldLabelClass}>{t('inspector.seriesColor')}</span>
+                        <label className="relative flex h-12 items-center gap-3 rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-4 text-sm text-base-content">
+                          <span className="size-5 rounded-md border border-base-300" style={{ background: series.color }} />
+                          <span className="font-medium">{series.color.toUpperCase()}</span>
+                          <span className="ml-auto text-base-content/55">
+                            <Palette size={15} strokeWidth={2.1} />
+                          </span>
+                          <input
+                            type="color"
+                            value={series.color}
+                            onChange={(event) => onChangeSeries(series.id, { color: event.target.value })}
+                            className="absolute inset-0 cursor-pointer opacity-0"
+                            aria-label={t('inspector.seriesColor')}
+                          />
+                        </label>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -408,21 +393,21 @@ export function CardInspector({
             </section>
 
             <section className="py-6">
-              <div className="mb-4 text-lg font-semibold text-base-content">图表显示</div>
+              <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.chartDisplaySectionTitle')}</div>
               <div className="grid gap-3 md:grid-cols-2">
                 {[
                   {
-                    label: '图例',
+                    label: t('inspector.legend'),
                     active: card.showLegend,
                     onClick: () => onChangeCard({ showLegend: !card.showLegend }),
                   },
                   {
-                    label: '网格线',
+                    label: t('inspector.gridLines'),
                     active: card.showGrid,
                     onClick: () => onChangeCard({ showGrid: !card.showGrid }),
                   },
                   {
-                    label: '坐标轴',
+                    label: t('inspector.axes'),
                     active: card.showAxes,
                     onClick: () => onChangeCard({ showAxes: !card.showAxes }),
                   },
@@ -438,7 +423,7 @@ export function CardInspector({
                     onClick={item.onClick}
                   >
                     <span>{item.label}</span>
-                    <span>{item.active ? '开启' : '关闭'}</span>
+                    <span>{item.active ? t('common.on') : t('common.off')}</span>
                   </button>
                 ))}
 
@@ -447,8 +432,8 @@ export function CardInspector({
                   className="flex h-12 items-center justify-between rounded-[var(--radius-box)] border border-base-300 bg-base-200 text-sm font-medium text-base-content/40"
                   disabled
                 >
-                  <span>主题色</span>
-                  <span>暂不可用</span>
+                  <span>{t('inspector.themeColor')}</span>
+                  <span>{t('common.notAvailableYet')}</span>
                 </button>
               </div>
             </section>

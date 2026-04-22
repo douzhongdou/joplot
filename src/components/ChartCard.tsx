@@ -13,6 +13,7 @@ import { summarizeNumericColumn } from '../lib/workbench'
 import { resolveThemeColor } from '../lib/theme'
 import type { ChartCard as ChartCardConfig, CsvData, NormalizedRow } from '../types'
 import type { CopyImageResult } from './PlotCanvas'
+import { useI18n } from '../i18n'
 
 interface Props {
   card: ChartCardConfig
@@ -30,28 +31,8 @@ interface PlotCanvasApi {
   downloadImage: () => Promise<void>
 }
 
-const KIND_LABELS: Record<ChartCardConfig['kind'], string> = {
-  line: '折线图',
-  scatter: '散点图',
-  bar: '柱状图',
-  stats: '统计卡',
-}
-
 function formatValue(value: number | null) {
-  return value === null ? '—' : Number(value.toFixed(3)).toString()
-}
-
-function getCopyToastLabel(mode: CopyImageResult | null) {
-  switch (mode) {
-    case 'binary':
-    case 'html':
-    case 'text':
-      return '已复制'
-    case 'downloaded':
-      return '剪贴板不可用，已下载'
-    default:
-      return ''
-  }
+  return value === null ? '-' : Number(value.toFixed(3)).toString()
 }
 
 export function ChartCard({
@@ -63,8 +44,16 @@ export function ChartCard({
   onDragStart,
   onResizeStart,
 }: Props) {
+  const { t, formatNumber } = useI18n()
   const plotRef = useRef<PlotCanvasApi>(null)
   const [copyToast, setCopyToast] = useState('')
+
+  const kindLabels: Record<ChartCardConfig['kind'], string> = {
+    line: t('chartKinds.line'),
+    scatter: t('chartKinds.scatter'),
+    bar: t('chartKinds.bar'),
+    stats: t('chartKinds.stats'),
+  }
 
   useEffect(() => {
     if (!copyToast) {
@@ -167,16 +156,29 @@ export function ChartCard({
 
   async function handleCopyImage() {
     const mode = await plotRef.current?.copyImage()
-    const label = getCopyToastLabel(mode ?? null)
+    let nextLabel = ''
 
-    if (label) {
-      setCopyToast(label)
+    switch (mode) {
+      case 'binary':
+      case 'html':
+      case 'text':
+        nextLabel = t('chartCard.copySuccess')
+        break
+      case 'downloaded':
+        nextLabel = t('chartCard.copyDownloadedFallback')
+        break
+      default:
+        nextLabel = ''
+    }
+
+    if (nextLabel) {
+      setCopyToast(nextLabel)
     }
   }
 
   return (
     <article
-      className={`relative flex h-full min-h-0 flex-col rounded-[calc(var(--radius-box)+0.25rem)] border bg-base-100 p-3 shadow-sm transition ${
+      className={`relative flex h-full min-h-0 flex-col rounded-[calc(var(--radius-box)+0.25rem)] border bg-base-100 p-3 transition ${
         selected
           ? 'border-primary/40 ring-1 ring-primary/15'
           : 'border-base-300 hover:border-primary/20'
@@ -188,8 +190,8 @@ export function ChartCard({
           type="button"
           className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border border-base-300 bg-base-200 text-base-content/60 transition hover:border-primary/25 hover:bg-primary/10 hover:text-primary active:cursor-grabbing"
           onPointerDown={onDragStart}
-          aria-label="拖动画布卡片"
-          title="拖动画布卡片"
+          aria-label={t('chartCard.dragCard')}
+          title={t('chartCard.dragCard')}
         >
           <GripVertical size={16} strokeWidth={2.2} />
         </button>
@@ -198,10 +200,10 @@ export function ChartCard({
           <h3 className="break-words text-xl font-semibold leading-none text-base-content">{card.title}</h3>
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex h-7 items-center rounded-full border border-base-300 bg-base-200 px-3 text-xs font-medium text-base-content/70">
-              {KIND_LABELS[card.kind]}
+              {kindLabels[card.kind]}
             </span>
             <span className="inline-flex h-7 items-center rounded-full border border-base-300 bg-base-200 px-3 text-xs font-medium text-base-content/70">
-              {validSeries.length} 个系列
+              {t('chartCard.seriesCount', { count: formatNumber(validSeries.length) })}
             </span>
           </div>
         </div>
@@ -211,12 +213,12 @@ export function ChartCard({
         {card.kind === 'stats' && summary && primarySeries && (
           <div className="grid flex-1 grid-cols-3 gap-3 max-md:grid-cols-1">
             {[
-              ['数据集', primarySeries.dataset.fileName],
-              ['有效值', String(summary.count)],
-              ['空值', String(summary.missing)],
-              ['最小值', formatValue(summary.min)],
-              ['最大值', formatValue(summary.max)],
-              ['均值', formatValue(summary.mean)],
+              [t('chartCard.stats.dataset'), primarySeries.dataset.fileName],
+              [t('chartCard.stats.validValues'), String(summary.count)],
+              [t('chartCard.stats.missingValues'), String(summary.missing)],
+              [t('chartCard.stats.min'), formatValue(summary.min)],
+              [t('chartCard.stats.max'), formatValue(summary.max)],
+              [t('chartCard.stats.mean'), formatValue(summary.mean)],
             ].map(([label, value]) => (
               <div key={label} className="rounded-[var(--radius-box)] border border-base-300 bg-base-200/50 p-4">
                 <div className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{label}</div>
@@ -240,8 +242,8 @@ export function ChartCard({
                 type="button"
                 className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border border-base-300 bg-base-100 text-base-content/65 transition hover:border-primary/25 hover:bg-primary/10 hover:text-primary"
                 onClick={() => void plotRef.current?.autorange()}
-                aria-label="自动缩放"
-                title="自动缩放"
+                aria-label={t('chartCard.autorange')}
+                title={t('chartCard.autorange')}
               >
                 <ScanSearch size={15} strokeWidth={2.1} />
               </button>
@@ -249,8 +251,8 @@ export function ChartCard({
                 type="button"
                 className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border border-base-300 bg-base-100 text-base-content/65 transition hover:border-primary/25 hover:bg-primary/10 hover:text-primary"
                 onClick={() => void handleCopyImage()}
-                aria-label="复制图像"
-                title="复制图像"
+                aria-label={t('chartCard.copyImage')}
+                title={t('chartCard.copyImage')}
               >
                 {copyToast ? <CopyCheck size={15} strokeWidth={2.1} /> : <Copy size={15} strokeWidth={2.1} />}
               </button>
@@ -258,8 +260,8 @@ export function ChartCard({
                 type="button"
                 className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border border-base-300 bg-base-100 text-base-content/65 transition hover:border-primary/25 hover:bg-primary/10 hover:text-primary"
                 onClick={() => void plotRef.current?.downloadImage()}
-                aria-label="下载图像"
-                title="下载图像"
+                aria-label={t('chartCard.downloadImage')}
+                title={t('chartCard.downloadImage')}
               >
                 <Download size={15} strokeWidth={2.1} />
               </button>
@@ -275,11 +277,7 @@ export function ChartCard({
 
         {((card.kind === 'stats' && !summary) || (card.kind !== 'stats' && validSeries.length === 0)) && (
           <div className="flex flex-1 items-center justify-center rounded-[var(--radius-box)] border border-dashed border-base-300 bg-base-200/50 p-6 text-center text-sm leading-6 text-base-content/55">
-            <div>
-              当前图卡没有可绘制的有效数据系列。
-              <br />
-              请在右侧为它选择可用的数据集和字段。
-            </div>
+            <div>{t('chartCard.noValidSeries')}</div>
           </div>
         )}
       </div>
@@ -288,8 +286,8 @@ export function ChartCard({
         type="button"
         className="absolute bottom-3 right-3 inline-grid size-9 place-items-center rounded-[var(--radius-box)] border border-base-300 bg-base-100 text-base-content/60 transition hover:border-primary/25 hover:bg-primary/10 hover:text-primary"
         onPointerDown={onResizeStart}
-        aria-label="缩放图卡"
-        title="缩放图卡"
+        aria-label={t('chartCard.resizeCard')}
+        title={t('chartCard.resizeCard')}
       >
         <MoveDiagonal2 size={15} strokeWidth={2.1} />
       </button>

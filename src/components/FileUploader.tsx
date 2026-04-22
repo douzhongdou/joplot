@@ -1,7 +1,8 @@
 import { useRef } from 'react'
 import type { ChangeEvent } from 'react'
 import { Plus } from 'lucide-react'
-import { buildUploadHint, pickCsvFiles } from '../lib/upload'
+import { pickCsvFiles } from '../lib/upload'
+import { useI18n } from '../i18n'
 
 interface Props {
   hasDatasets: boolean
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function FileUploader({ hasDatasets, onFiles }: Props) {
+  const { t } = useI18n()
   const inputRef = useRef<HTMLInputElement>(null)
 
   function handleChange(event: ChangeEvent<HTMLInputElement>) {
@@ -21,11 +23,7 @@ export function FileUploader({ hasDatasets, onFiles }: Props) {
   }
 
   return (
-    <div className="flex min-w-0 items-center gap-3">
-      <span className="hidden text-sm text-base-content/55 xl:block">
-        {buildUploadHint(hasDatasets)}
-      </span>
-
+    <div className="flex min-w-0 items-center justify-center">
       <input
         ref={inputRef}
         type="file"
@@ -41,7 +39,7 @@ export function FileUploader({ hasDatasets, onFiles }: Props) {
         onClick={() => inputRef.current?.click()}
       >
         <Plus size={16} strokeWidth={2.2} />
-        {hasDatasets ? '添加 CSV' : '上传 CSV'}
+        {hasDatasets ? t('uploader.addCsv') : t('uploader.uploadCsv')}
       </button>
     </div>
   )
