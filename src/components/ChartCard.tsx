@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react'
 import type { PointerEvent } from 'react'
 import { PlotCanvas } from './PlotCanvas'
-import { sampleRows, summarizeNumericColumn } from '../lib/workbench'
+import { summarizeNumericColumn } from '../lib/workbench'
 import type { ChartCard as ChartCardConfig, NormalizedRow } from '../types'
 
 interface Props {
@@ -31,7 +31,6 @@ function formatValue(value: number | null) {
 }
 
 export function ChartCard({ card, filteredRows, selected, onSelect, onDragStart, onResizeStart }: Props) {
-  const sampledRows = useMemo(() => sampleRows(filteredRows, 3000), [filteredRows])
   const canPlot = card.yColumn !== null
   const plotRef = useRef<PlotCanvasApi>(null)
 
@@ -40,8 +39,9 @@ export function ChartCard({ card, filteredRows, selected, onSelect, onDragStart,
       return []
     }
 
-    const x = sampledRows.map((row) => row.raw[card.xColumn] ?? '')
-    const y = sampledRows.map((row) => row.numeric[card.yColumn!])
+    const yColumn = card.yColumn
+    const x = filteredRows.map((row) => row.raw[card.xColumn] ?? '')
+    const y = filteredRows.map((row) => row.numeric[yColumn])
 
     if (card.kind === 'bar') {
       return [{
@@ -54,15 +54,31 @@ export function ChartCard({ card, filteredRows, selected, onSelect, onDragStart,
     }
 
     return [{
-      type: 'scatter' as const,
+      type: 'scattergl' as const,
       mode: card.kind === 'scatter' ? 'markers' : card.drawMode,
       x,
       y,
       marker: { color: card.color, size: 6 },
       line: { color: card.color, width: card.lineWidth },
       name: card.title,
+      connectgaps: false,
     }]
-  }, [canPlot, card.color, card.drawMode, card.kind, card.lineWidth, card.title, card.xColumn, card.yColumn, sampledRows])
+  }, [canPlot, card.color, card.drawMode, card.kind, card.lineWidth, card.title, card.xColumn, card.yColumn, filteredRows])
+
+  const plotLayout = useMemo(() => ({
+    xaxis: { title: { text: card.xColumn }, automargin: true, gridcolor: '#e9edf5' },
+    yaxis: {
+      title: { text: card.yColumn ?? '' },
+      automargin: true,
+      gridcolor: '#e9edf5',
+      range:
+        card.yMin !== null && card.yMax !== null && card.yMin < card.yMax
+          ? [card.yMin, card.yMax]
+          : undefined,
+    },
+    showlegend: false,
+    hovermode: 'x unified',
+  }), [card.xColumn, card.yColumn, card.yMin, card.yMax])
 
   const summary = useMemo(
     () => (card.yColumn ? summarizeNumericColumn(filteredRows, card.yColumn) : null),
@@ -72,7 +88,7 @@ export function ChartCard({ card, filteredRows, selected, onSelect, onDragStart,
   return (
     <article className={`chart-card ${selected ? 'chart-card-selected' : ''}`} onMouseDown={onSelect}>
       <div className="chart-card-head">
-        <button type="button" className="drag-handle" onPointerDown={onDragStart} aria-label="拖动图卡">
+        <button type="button" className="drag-handle" onPointerDown={onDragStart} aria-label="拖动画布卡片">
           拖动
         </button>
 
@@ -80,7 +96,7 @@ export function ChartCard({ card, filteredRows, selected, onSelect, onDragStart,
           <h3>{card.title}</h3>
           <div className="card-meta">
             <span>{KIND_LABELS[card.kind]}</span>
-            <span>显示 {sampledRows.length.toLocaleString()} / {filteredRows.length.toLocaleString()} 行</span>
+            <span>{filteredRows.length.toLocaleString()} 行</span>
           </div>
         </div>
       </div>
@@ -121,20 +137,7 @@ export function ChartCard({ card, filteredRows, selected, onSelect, onDragStart,
               ref={plotRef}
               data={plotData}
               uirevision={`${card.id}:${card.xColumn}:${card.yColumn ?? 'none'}`}
-              layout={{
-                xaxis: { title: { text: card.xColumn }, automargin: true, gridcolor: '#e9edf5' },
-                yaxis: {
-                  title: { text: card.yColumn ?? '' },
-                  automargin: true,
-                  gridcolor: '#e9edf5',
-                  range:
-                    card.yMin !== null && card.yMax !== null && card.yMin < card.yMax
-                      ? [card.yMin, card.yMax]
-                      : undefined,
-                },
-                showlegend: false,
-                hovermode: 'x unified',
-              }}
+              layout={plotLayout}
             />
 
             <div className="plot-toolbar" aria-label="图表工具栏">
@@ -155,7 +158,7 @@ export function ChartCard({ card, filteredRows, selected, onSelect, onDragStart,
           <div className="placeholder">
             这张图卡还没有可绘制的数值列。
             <br />
-            先在右侧边栏为 Y 轴选择一个数值字段。
+            先在右侧边栏里为 Y 轴选择一个数值字段。
           </div>
         )}
       </div>

@@ -89,7 +89,7 @@ export default function App() {
   }, [csv])
 
   useEffect(() => {
-    if (!csv || cards.length === 0) {
+    if (!csv) {
       return
     }
 
@@ -170,6 +170,7 @@ export default function App() {
           <div className="brand-copy">
             <p className="brand-eyebrow">PlotNow Dashboard</p>
             <h1>CSV 分析工作台</h1>
+            <p className="brand-file">{csv?.fileName ?? '未加载文件'}</p>
           </div>
         </div>
         <FileUploader onFile={parse} csv={csv} />
@@ -180,7 +181,7 @@ export default function App() {
           <section className="empty-state-panel">
             <p className="empty-eyebrow">专业分析台</p>
             <h2>先加载一份 CSV，再把注意力交给图表本身。</h2>
-            <p>主画布会为图表留出最大空间，右侧边栏承接新增图卡、筛选和当前图卡配置。</p>
+            <p>主画布会给可视化留出最大空间，右侧边栏承接新增图卡、筛选和当前图卡配置。</p>
           </section>
         </main>
       )}

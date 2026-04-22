@@ -14,6 +14,7 @@ import {
   buildAutorangeUpdate,
   buildPlotLayout,
 } from '../src/lib/plotViewport.ts'
+import { copyPngDataUrlToClipboard } from '../src/lib/clipboard.ts'
 import type { ChartCard } from '../src/types.ts'
 
 function createDataset() {
@@ -156,6 +157,60 @@ test('buildPlotLayout adds stable uirevision so rerenders keep user viewport', (
       uirevision: 'card-1',
     },
   )
+})
+
+test('copyPngDataUrlToClipboard falls back to html clipboard payload when png write fails', async () => {
+  const writeCalls: unknown[][] = []
+  const clipboard = {
+    async write(items: unknown[]) {
+      writeCalls.push(items)
+
+      if (writeCalls.length === 1) {
+        throw new Error('image clipboard blocked')
+      }
+    },
+  }
+
+  class FakeClipboardItem {
+    readonly items: Record<string, Blob>
+
+    constructor(items: Record<string, Blob>) {
+      this.items = items
+    }
+  }
+
+  const mode = await copyPngDataUrlToClipboard({
+    blob: new Blob(['png-bytes'], { type: 'image/png' }),
+    dataUrl: 'data:image/png;base64,AAAA',
+    clipboard,
+    ClipboardItemCtor: FakeClipboardItem,
+  })
+
+  assert.equal(mode, 'html')
+  assert.equal(writeCalls.length, 2)
+  assert.deepEqual(
+    Object.keys((writeCalls[1][0] as FakeClipboardItem).items),
+    ['text/html', 'text/plain'],
+  )
+})
+
+test('copyPngDataUrlToClipboard falls back to text when ClipboardItem is unavailable', async () => {
+  let copiedText = ''
+  const clipboard = {
+    async writeText(value: string) {
+      copiedText = value
+    },
+  }
+
+  const mode = await copyPngDataUrlToClipboard({
+    blob: new Blob(['png-bytes'], { type: 'image/png' }),
+    dataUrl: 'data:image/png;base64,BBBB',
+    clipboard,
+    ClipboardItemCtor: null,
+  })
+
+  assert.equal(mode, 'text')
+  assert.equal(copiedText, 'data:image/png;base64,BBBB')
 })
 
 function layoutsOverlap(left: ChartCard, right: ChartCard) {

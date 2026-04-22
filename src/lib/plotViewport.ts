@@ -1,4 +1,4 @@
-import type { Layout } from 'plotly.js/dist/plotly-basic.min.js'
+import type { Layout } from 'plotly.js/dist/plotly.min.js'
 
 export function buildAutorangeUpdate() {
   return {

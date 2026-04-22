@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
-import Plotly from 'plotly.js/dist/plotly-basic.min.js'
-import type { Config, Data, Layout } from 'plotly.js/dist/plotly-basic.min.js'
+import Plotly from 'plotly.js/dist/plotly.min.js'
+import type { Config, Data, Layout } from 'plotly.js/dist/plotly.min.js'
+import { copyPngDataUrlToClipboard } from '../lib/clipboard'
 import { buildAutorangeUpdate, buildPlotLayout } from '../lib/plotViewport'
 
 interface PlotCanvasApi {
@@ -27,7 +28,7 @@ type PlotlyRuntime = typeof Plotly & {
 
 const plotlyRuntime = Plotly as PlotlyRuntime
 
-async function createPlotBlob(graphDiv: HTMLDivElement) {
+async function createPlotImagePayload(graphDiv: HTMLDivElement) {
   const dataUrl = await plotlyRuntime.toImage(graphDiv, {
     format: 'png',
     width: graphDiv.clientWidth || undefined,
@@ -36,7 +37,9 @@ async function createPlotBlob(graphDiv: HTMLDivElement) {
   })
 
   const response = await fetch(dataUrl)
-  return response.blob()
+  const blob = await response.blob()
+
+  return { dataUrl, blob }
 }
 
 export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
@@ -60,24 +63,25 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
         return
       }
 
-      const supportsClipboardWrite =
-        typeof window !== 'undefined'
-        && 'ClipboardItem' in window
-        && typeof navigator !== 'undefined'
-        && !!navigator.clipboard?.write
+      try {
+        const { dataUrl, blob } = await createPlotImagePayload(graphDiv)
 
-      if (!supportsClipboardWrite) {
+        await copyPngDataUrlToClipboard({
+          blob,
+          dataUrl,
+          clipboard: typeof navigator !== 'undefined'
+            ? navigator.clipboard as unknown as import('../lib/clipboard').ClipboardPort
+            : undefined,
+          ClipboardItemCtor: typeof ClipboardItem !== 'undefined' ? ClipboardItem : null,
+        })
+      } catch (error) {
+        console.error('Copy chart failed, falling back to download.', error)
         await plotlyRuntime.downloadImage(graphDiv, {
           format: 'png',
           filename: 'plotnow-chart',
           scale: 2,
         })
-        return
       }
-
-      const blob = await createPlotBlob(graphDiv)
-      const clipboardItem = new ClipboardItem({ [blob.type]: blob })
-      await navigator.clipboard.write([clipboardItem])
     },
     async downloadImage() {
       const graphDiv = containerRef.current
@@ -94,12 +98,14 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
   }), [])
 
   useEffect(() => {
-    if (!containerRef.current) {
+    const graphDiv = containerRef.current
+
+    if (!graphDiv) {
       return
     }
 
     void Plotly.react(
-      containerRef.current,
+      graphDiv,
       data,
       buildPlotLayout({
         margin: { l: 52, r: 18, t: 18, b: 44 },
@@ -116,13 +122,17 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
         ...config,
       },
     )
+  }, [config, data, layout, uirevision])
+
+  useEffect(() => {
+    const graphDiv = containerRef.current
 
     return () => {
-      if (containerRef.current) {
-        void Plotly.purge(containerRef.current)
+      if (graphDiv) {
+        Plotly.purge(graphDiv)
       }
     }
-  }, [config, data, layout, uirevision])
+  }, [])
 
   useEffect(() => {
     if (!containerRef.current) {

@@ -79,7 +79,7 @@ button:hover {
   justify-content: space-between;
   gap: 12px;
   align-items: center;
-  padding: 10px 14px;
+  padding: 8px 12px;
 }
 
 .brand {
@@ -92,9 +92,9 @@ button:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 14px;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
   background: linear-gradient(135deg, #155eef, #0f766e);
   color: white;
   font-weight: 800;
@@ -103,7 +103,7 @@ button:hover {
 
 .brand-copy {
   display: grid;
-  gap: 2px;
+  gap: 1px;
 }
 
 .brand-eyebrow,
@@ -123,26 +123,26 @@ button:hover {
 }
 
 .brand h1 {
-  font-size: 1.1rem;
+  font-size: 1rem;
+  line-height: 1.1;
+}
+
+.brand-file {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  max-width: 40vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .uploader-inline {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
-}
-
-.uploader-file {
-  display: grid;
-  gap: 2px;
-  min-width: 180px;
-}
-
-.uploader-file-label {
-  color: var(--muted);
-  font-size: 0.72rem;
 }
 
 .uploader-meta {
@@ -154,8 +154,8 @@ button:hover {
 .uploader-meta span {
   display: inline-flex;
   align-items: center;
-  min-height: 32px;
-  padding: 0 12px;
+  min-height: 30px;
+  padding: 0 10px;
   border-radius: 999px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   background: rgba(255, 255, 255, 0.84);
@@ -166,8 +166,8 @@ button:hover {
 .secondary-button,
 .ghost-button,
 .plot-tool-button {
-  min-height: 38px;
-  padding: 0 14px;
+  min-height: 34px;
+  padding: 0 12px;
   border-radius: 999px;
   cursor: pointer;
 }
@@ -242,7 +242,7 @@ button:hover {
 .sidebar-panel {
   display: grid;
   gap: 12px;
-  padding: 14px;
+  padding: 13px;
 }
 
 .sidebar-panel-header {
@@ -328,8 +328,8 @@ button:hover {
 
 .dashboard-grid {
   display: grid;
-  gap: 10px;
-  padding: 12px;
+  gap: 8px;
+  padding: 10px;
   background:
     linear-gradient(rgba(21, 94, 239, 0.035) 1px, transparent 1px),
     linear-gradient(90deg, rgba(21, 94, 239, 0.035) 1px, transparent 1px),
@@ -348,8 +348,8 @@ button:hover {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding: 12px;
-  border-radius: 18px;
+  padding: 10px;
+  border-radius: 16px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   background: var(--panel-strong);
   box-shadow: 0 14px 36px rgba(15, 23, 42, 0.06);
@@ -363,28 +363,29 @@ button:hover {
 
 .chart-card-head {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: start;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .chart-card-titleblock {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
 }
 
 .chart-card-titleblock h3 {
   margin: 0;
-  font-size: 1rem;
+  font-size: 0.95rem;
+  line-height: 1.2;
 }
 
 .drag-handle {
-  min-height: 34px;
+  min-height: 30px;
   border-radius: 10px;
   border: 1px dashed rgba(15, 23, 42, 0.14);
   background: rgba(243, 247, 252, 0.92);
-  padding: 0 12px;
+  padding: 0 10px;
   cursor: grab;
 }
 
@@ -401,12 +402,13 @@ button:hover {
 .card-meta span {
   display: inline-flex;
   align-items: center;
-  min-height: 30px;
-  padding: 0 10px;
+  min-height: 26px;
+  padding: 0 9px;
   border-radius: 999px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   background: rgba(255, 255, 255, 0.88);
   color: var(--muted);
+  font-size: 0.76rem;
 }
 
 .card-visual-area,
@@ -425,7 +427,7 @@ button:hover {
 }
 
 .plot-panel {
-  gap: 8px;
+  gap: 6px;
 }
 
 .plot-shell,
@@ -440,11 +442,12 @@ button:hover {
   display: flex;
   gap: 8px;
   justify-content: flex-start;
-  padding: 0 2px;
+  padding: 0;
 }
 
 .plot-tool-button {
-  min-height: 34px;
+  min-height: 30px;
+  border-radius: 10px;
 }
 
 .placeholder {
