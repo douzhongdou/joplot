@@ -97,19 +97,27 @@ export function ChartCard({
   }, [card.drawMode, card.kind, card.lineWidth, card.xColumn, validSeries])
 
   const plotLayout = useMemo(() => ({
-    xaxis: { title: { text: card.xColumn }, automargin: true, gridcolor: '#e9edf5' },
-    yaxis: {
-      title: { text: validSeries[0]?.series.yColumn ?? '' },
+    xaxis: {
+      title: { text: card.showAxes ? card.xColumn : '' },
       automargin: true,
+      showgrid: card.showGrid,
       gridcolor: '#e9edf5',
+      visible: card.showAxes,
+    },
+    yaxis: {
+      title: { text: card.showAxes ? (validSeries[0]?.series.yColumn ?? '') : '' },
+      automargin: true,
+      showgrid: card.showGrid,
+      gridcolor: '#e9edf5',
+      visible: card.showAxes,
       range:
         card.yMin !== null && card.yMax !== null && card.yMin < card.yMax
           ? [card.yMin, card.yMax]
           : undefined,
     },
-    showlegend: validSeries.length > 1,
+    showlegend: card.showLegend && validSeries.length > 1,
     hovermode: 'x unified',
-  }), [card.xColumn, card.yMax, card.yMin, validSeries])
+  }), [card.showAxes, card.showGrid, card.showLegend, card.xColumn, card.yMax, card.yMin, validSeries])
 
   const primarySeries = validSeries[0] ?? null
   const summary = useMemo(

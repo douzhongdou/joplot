@@ -4,3 +4,4 @@ data
 .venv
 dist
 __pycache__
+.superpowers

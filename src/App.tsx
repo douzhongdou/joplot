@@ -1,18 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCsvData } from './hooks/useCsvData'
 import { FileUploader } from './components/FileUploader'
-import { FilterBar } from './components/FilterBar'
-import { WorkbenchToolbar } from './components/WorkbenchToolbar'
 import { CardInspector } from './components/CardInspector'
 import { ChartCard } from './components/ChartCard'
 import { DashboardCanvas } from './components/DashboardCanvas'
-import { DatasetSidebar } from './components/DatasetSidebar'
+import { WorkbenchHeader } from './components/WorkbenchHeader'
 import {
   appendCardSeries,
   appendCardWithLayout,
   buildFilteredRowsByDataset,
   createCard,
-  createDefaultCard,
+  createCardSeries,
+  createAutoSeriesForDatasets,
   moveCardToLayout,
   sanitizeCardsForDatasets,
 } from './lib/workbench'
@@ -54,6 +53,65 @@ function cloneSeries(series: ChartSeries): ChartSeries {
   }
 }
 
+function buildAutoBoundSeries(
+  datasets: CsvData[],
+  primaryDataset: CsvData,
+  kind: ChartCardConfig['kind'],
+): ChartSeries[] {
+  const xColumn = pickBestSharedXColumn(datasets, primaryDataset)
+
+  const autoSeries = createAutoSeriesForDatasets(
+    datasets,
+    xColumn,
+    kind === 'stats' ? 1 : undefined,
+  )
+
+  if (autoSeries.length > 0) {
+    return autoSeries.map((series, index) => ({
+      ...series,
+      color: CARD_ACCENTS[index % CARD_ACCENTS.length],
+    }))
+  }
+
+  const fallbackSeries = createCardSeries(primaryDataset, xColumn, {
+    color: CARD_ACCENTS[0],
+  })
+
+  return fallbackSeries.yColumn ? [fallbackSeries] : []
+}
+
+function pickBestSharedXColumn(datasets: CsvData[], primaryDataset: CsvData) {
+  const scoredHeaders = primaryDataset.headers.map((header) => ({
+    header,
+    count: datasets.filter((dataset) => dataset.headers.includes(header)).length,
+  }))
+
+  return scoredHeaders.sort((left, right) => right.count - left.count)[0]?.header
+    ?? primaryDataset.headers[0]
+    ?? ''
+}
+
+function createAutoBoundCard(
+  datasets: CsvData[],
+  primaryDataset: CsvData,
+  kind: ChartCardConfig['kind'],
+  title?: string,
+): ChartCardConfig {
+  const xColumn = primaryDataset.headers[0] ?? ''
+  const series = buildAutoBoundSeries(datasets, primaryDataset, kind)
+  const card = createCard(kind, primaryDataset, {
+    title: title ?? createCard(kind, primaryDataset).title,
+    xColumn,
+    series,
+  })
+
+  if (series.length > 0) {
+    card.series = series
+  }
+
+  return card
+}
+
 function normalizeFiltersForDatasets(persisted: PersistedState, datasets: CsvData[]): FiltersByDataset {
   const result: FiltersByDataset = {}
 
@@ -85,6 +143,7 @@ export default function App() {
   const [filtersByDataset, setFiltersByDataset] = useState<FiltersByDataset>({})
   const [activeDatasetId, setActiveDatasetId] = useState<string | null>(null)
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
+  const [recentDatasetIds, setRecentDatasetIds] = useState<string[]>([])
   const [dragActive, setDragActive] = useState(false)
   const dragDepthRef = useRef(0)
   const previousDatasetCountRef = useRef(0)
@@ -118,6 +177,7 @@ export default function App() {
       setFiltersByDataset({})
       setActiveDatasetId(null)
       setSelectedCardId(null)
+      setRecentDatasetIds([])
       return
     }
 
@@ -127,11 +187,12 @@ export default function App() {
       const persistedRaw = window.localStorage.getItem(STORAGE_KEY)
 
       if (!persistedRaw) {
-        const defaultCard = createDefaultCard(datasets[0])
+        const defaultCard = createAutoBoundCard(datasets, datasets[0], 'line', '默认折线图')
         setCards([defaultCard])
         setFiltersByDataset({})
         setActiveDatasetId(datasets[0].id)
         setSelectedCardId(defaultCard.id)
+        setRecentDatasetIds(datasets.map((dataset) => dataset.id))
         previousDatasetCountRef.current = datasets.length
         return
       }
@@ -143,19 +204,21 @@ export default function App() {
           : datasets[0].id
         const restoredCards = persisted.cards && persisted.cards.length > 0
           ? sanitizeCardsForDatasets(persisted.cards, datasets, restoredActiveDatasetId)
-          : [createDefaultCard(datasets[0])]
+          : [createAutoBoundCard(datasets, datasets[0], 'line', '默认折线图')]
         const restoredFilters = normalizeFiltersForDatasets(persisted, datasets)
 
         setCards(restoredCards)
         setFiltersByDataset(restoredFilters)
         setActiveDatasetId(restoredActiveDatasetId)
         setSelectedCardId(restoredCards[0]?.id ?? null)
+        setRecentDatasetIds(datasets.map((dataset) => dataset.id))
       } catch {
-        const defaultCard = createDefaultCard(datasets[0])
+        const defaultCard = createAutoBoundCard(datasets, datasets[0], 'line', '默认折线图')
         setCards([defaultCard])
         setFiltersByDataset({})
         setActiveDatasetId(datasets[0].id)
         setSelectedCardId(defaultCard.id)
+        setRecentDatasetIds(datasets.map((dataset) => dataset.id))
       }
     } else {
       setCards((prev) => sanitizeCardsForDatasets(prev, datasets, activeDatasetId))
@@ -194,6 +257,7 @@ export default function App() {
 
     if (parsed.length > 0) {
       setActiveDatasetId(parsed[0].id)
+      setRecentDatasetIds(parsed.map((dataset) => dataset.id))
     }
   }
 
@@ -267,11 +331,17 @@ export default function App() {
       return
     }
 
+    const scopedDatasets = recentDatasetIds.length > 0
+      ? datasets.filter((dataset) => recentDatasetIds.includes(dataset.id))
+      : datasets
+    const autoSeries = buildAutoBoundSeries(scopedDatasets, activeDataset, kind).map((series, index) => ({
+      ...series,
+      color: CARD_ACCENTS[(cards.length + index) % CARD_ACCENTS.length],
+    }))
+    const nextXColumn = pickBestSharedXColumn(scopedDatasets, activeDataset)
     const nextCard = createCard(kind, activeDataset, {
-      series: createCard(kind, activeDataset).series.map((series, index) => ({
-        ...series,
-        color: CARD_ACCENTS[(cards.length + index) % CARD_ACCENTS.length],
-      })),
+      xColumn: nextXColumn,
+      series: autoSeries.length > 0 ? autoSeries : createCard(kind, activeDataset).series,
     })
 
     setCards((prev) => appendCardWithLayout(prev, nextCard))
@@ -295,7 +365,19 @@ export default function App() {
   }
 
   function addSeries(cardId: string, datasetId?: string) {
-    const dataset = (datasetId ? datasetsById[datasetId] : undefined) ?? activeDataset
+    const targetCard = cards.find((card) => card.id === cardId)
+    const scopedDatasets = recentDatasetIds.length > 0
+      ? datasets.filter((dataset) => recentDatasetIds.includes(dataset.id))
+      : datasets
+    const boundDatasetIds = new Set(targetCard?.series.map((series) => series.datasetId) ?? [])
+    const unboundDataset = targetCard
+      ? scopedDatasets.find((dataset) => (
+          !boundDatasetIds.has(dataset.id)
+          && dataset.headers.includes(targetCard.xColumn)
+          && createCardSeries(dataset, targetCard.xColumn).yColumn !== null
+        ))
+      : null
+    const dataset = (datasetId ? datasetsById[datasetId] : undefined) ?? unboundDataset ?? activeDataset
 
     if (!dataset) {
       return
@@ -432,6 +514,20 @@ export default function App() {
 
       <main className="workspace-shell workspace-shell-sidebar">
         <section className="canvas-column">
+          {datasets.length > 0 && activeDataset && (
+            <WorkbenchHeader
+              datasets={datasets}
+              activeDatasetId={activeDataset.id}
+              filteredCount={(filteredRowsByDataset[activeDataset.id] ?? activeDataset.rows).length}
+              filters={activeFilters}
+              onSelectDataset={setActiveDatasetId}
+              onAddComponent={addCard}
+              onAddFilter={addFilter}
+              onChangeFilter={updateFilter}
+              onRemoveFilter={removeFilter}
+            />
+          )}
+
           {datasets.length === 0 && (
             <div className="canvas-empty-state">
               <div className="canvas-empty-state-panel">
@@ -478,41 +574,17 @@ export default function App() {
           )}
 
           {datasets.length > 0 && activeDataset && (
-            <>
-              <DatasetSidebar
-                datasets={datasets}
-                activeDatasetId={activeDataset.id}
-                onSelect={setActiveDatasetId}
-              />
-
-              <WorkbenchToolbar
-                dataset={activeDataset}
-                datasetCount={datasets.length}
-                filteredCount={(filteredRowsByDataset[activeDataset.id] ?? activeDataset.rows).length}
-                onAdd={addCard}
-              />
-
-              <FilterBar
-                datasetName={activeDataset.fileName}
-                headers={activeDataset.headers}
-                filters={activeFilters}
-                onAdd={addFilter}
-                onChange={updateFilter}
-                onRemove={removeFilter}
-              />
-
-              <CardInspector
-                card={selectedCard}
-                datasets={datasets}
-                activeDatasetId={activeDataset.id}
-                onChangeCard={(patch) => selectedCard && updateCard(selectedCard.id, patch)}
-                onAddSeries={(datasetId) => selectedCard && addSeries(selectedCard.id, datasetId)}
-                onChangeSeries={(seriesId, patch) => selectedCard && updateSeries(selectedCard.id, seriesId, patch)}
-                onRemoveSeries={(seriesId) => selectedCard && removeSeries(selectedCard.id, seriesId)}
-                onDuplicate={() => selectedCard && duplicateCard(selectedCard.id)}
-                onRemove={() => selectedCard && removeCard(selectedCard.id)}
-              />
-            </>
+            <CardInspector
+              card={selectedCard}
+              datasets={datasets}
+              activeDatasetId={activeDataset.id}
+              onChangeCard={(patch) => selectedCard && updateCard(selectedCard.id, patch)}
+              onAddSeries={(datasetId) => selectedCard && addSeries(selectedCard.id, datasetId)}
+              onChangeSeries={(seriesId, patch) => selectedCard && updateSeries(selectedCard.id, seriesId, patch)}
+              onRemoveSeries={(seriesId) => selectedCard && removeSeries(selectedCard.id, seriesId)}
+              onDuplicate={() => selectedCard && duplicateCard(selectedCard.id)}
+              onRemove={() => selectedCard && removeCard(selectedCard.id)}
+            />
           )}
         </aside>
       </main>

@@ -222,6 +222,9 @@ export function createCard(
     series: [initialSeries],
     drawMode: kind === 'scatter' ? 'markers' : 'lines',
     lineWidth: 2,
+    showLegend: true,
+    showGrid: true,
+    showAxes: true,
     yMin: null,
     yMax: null,
     layout: createPresetLayout(0, kind),
@@ -271,6 +274,20 @@ export function appendCardSeries(
     ...card,
     series: [...card.series, nextSeries],
   }
+}
+
+export function createAutoSeriesForDatasets(
+  datasets: CsvData[],
+  xColumn: string,
+  limit?: number,
+): ChartSeries[] {
+  return datasets
+    .filter((dataset) => dataset.headers.includes(xColumn))
+    .map((dataset, index) => createCardSeries(dataset, xColumn, {
+      color: CARD_COLORS[index % CARD_COLORS.length],
+    }))
+    .filter((series) => series.yColumn !== null)
+    .slice(0, limit ?? datasets.length)
 }
 
 export function appendCardWithLayout(cards: ChartCard[], card: ChartCard): ChartCard[] {

@@ -51,6 +51,9 @@ export interface ChartCard {
   series: ChartSeries[]
   drawMode: DrawMode
   lineWidth: number
+  showLegend: boolean
+  showGrid: boolean
+  showAxes: boolean
   yMin: number | null
   yMax: number | null
   layout: DashboardLayout
