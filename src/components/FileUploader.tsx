@@ -1,42 +1,40 @@
 import { useRef } from 'react'
 import type { ChangeEvent } from 'react'
-import type { CsvData } from '../types'
+import { buildUploadHint, pickCsvFiles } from '../lib/upload'
 
 interface Props {
-  onFile: (file: File) => void
-  csv: CsvData | null
+  hasDatasets: boolean
+  onFiles: (files: File[]) => void | Promise<void>
 }
 
-export function FileUploader({ onFile, csv }: Props) {
+export function FileUploader({ hasDatasets, onFiles }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   function handleChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
+    const files = pickCsvFiles(Array.from(event.target.files ?? []))
 
-    if (file) {
-      onFile(file)
+    if (files.length > 0) {
+      void onFiles(files)
       event.target.value = ''
     }
   }
 
   return (
-    <div className="uploader-inline">
+    <div className="nav-upload">
+      <span className="nav-upload-hint">{buildUploadHint(hasDatasets)}</span>
+
       <input
         ref={inputRef}
         type="file"
         accept=".csv"
+        multiple
         className="sr-only"
         onChange={handleChange}
       />
 
-      <button type="button" className="primary-button" onClick={() => inputRef.current?.click()}>
-        {csv ? '更换 CSV' : '上传 CSV'}
+      <button type="button" className="toolbar-upload-button" onClick={() => inputRef.current?.click()}>
+        {hasDatasets ? '添加 CSV' : '上传 CSV'}
       </button>
-
-      <div className="uploader-meta">
-        <span>{csv ? `${csv.rowCount.toLocaleString()} 行` : '等待数据'}</span>
-        <span>{csv ? `${csv.numericColumns.length} 个数值列` : '仅支持带表头 CSV'}</span>
-      </div>
     </div>
   )
 }

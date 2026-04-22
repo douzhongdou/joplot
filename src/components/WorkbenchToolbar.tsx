@@ -1,7 +1,8 @@
 import type { ChartKind, CsvData } from '../types'
 
 interface Props {
-  csv: CsvData
+  dataset: CsvData
+  datasetCount: number
   filteredCount: number
   onAdd: (kind: ChartKind) => void
 }
@@ -13,7 +14,7 @@ const OPTIONS: Array<{ kind: ChartKind; label: string }> = [
   { kind: 'stats', label: '新增统计卡' },
 ]
 
-export function WorkbenchToolbar({ csv, filteredCount, onAdd }: Props) {
+export function WorkbenchToolbar({ dataset, datasetCount, filteredCount, onAdd }: Props) {
   return (
     <section className="sidebar-panel">
       <div className="sidebar-panel-header">
@@ -25,20 +26,20 @@ export function WorkbenchToolbar({ csv, filteredCount, onAdd }: Props) {
 
       <div className="summary-grid">
         <div className="summary-card">
-          <span>数据量</span>
-          <strong>{csv.rowCount.toLocaleString()}</strong>
+          <span>当前数据集</span>
+          <strong>{dataset.fileName}</strong>
+        </div>
+        <div className="summary-card">
+          <span>已加载</span>
+          <strong>{datasetCount}</strong>
         </div>
         <div className="summary-card">
           <span>筛选后</span>
           <strong>{filteredCount.toLocaleString()}</strong>
         </div>
         <div className="summary-card">
-          <span>字段</span>
-          <strong>{csv.headers.length}</strong>
-        </div>
-        <div className="summary-card">
           <span>数值列</span>
-          <strong>{csv.numericColumns.length}</strong>
+          <strong>{dataset.numericColumns.length}</strong>
         </div>
       </div>
 

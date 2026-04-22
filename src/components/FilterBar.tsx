@@ -1,6 +1,7 @@
 import type { FilterOperator, FilterRule } from '../types'
 
 interface Props {
+  datasetName: string
   headers: string[]
   filters: FilterRule[]
   onAdd: () => void
@@ -16,13 +17,13 @@ const OPERATORS: Array<{ value: FilterOperator; label: string }> = [
   { value: 'between', label: '区间' },
 ]
 
-export function FilterBar({ headers, filters, onAdd, onChange, onRemove }: Props) {
+export function FilterBar({ datasetName, headers, filters, onAdd, onChange, onRemove }: Props) {
   return (
     <section className="sidebar-panel">
       <div className="sidebar-panel-header">
         <div>
-          <p className="sidebar-kicker">Filter</p>
-          <h2>全局筛选</h2>
+          <p className="sidebar-kicker">Filters</p>
+          <h2>{datasetName} 筛选</h2>
         </div>
         <button type="button" className="secondary-button" onClick={onAdd}>
           新增条件
@@ -30,7 +31,7 @@ export function FilterBar({ headers, filters, onAdd, onChange, onRemove }: Props
       </div>
 
       {filters.length === 0 && (
-        <div className="sidebar-empty">当前没有筛选条件，所有图卡都读取完整数据集。</div>
+        <div className="sidebar-empty">当前数据集没有筛选条件。</div>
       )}
 
       <div className="sidebar-filter-list">

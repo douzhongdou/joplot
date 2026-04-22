@@ -4,6 +4,7 @@ export type DrawMode = 'lines' | 'lines+markers' | 'markers'
 
 export type RawCsvRow = Record<string, string>
 export type NumericRow = Record<string, number | null>
+export type FiltersByDataset = Record<string, FilterRule[]>
 
 export interface DashboardLayout {
   x: number
@@ -18,6 +19,7 @@ export interface NormalizedRow {
 }
 
 export interface CsvData {
+  id: string
   fileName: string
   headers: string[]
   rows: NormalizedRow[]
@@ -33,13 +35,20 @@ export interface FilterRule {
   valueTo?: string
 }
 
+export interface ChartSeries {
+  id: string
+  datasetId: string
+  label: string
+  yColumn: string | null
+  color: string
+}
+
 export interface ChartCard {
   id: string
   kind: ChartKind
   title: string
   xColumn: string
-  yColumn: string | null
-  color: string
+  series: ChartSeries[]
   drawMode: DrawMode
   lineWidth: number
   yMin: number | null

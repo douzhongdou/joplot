@@ -2,9 +2,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
-  applyFilters,
+  appendCardSeries,
   appendCardWithLayout,
+  applyFilters,
   buildDataset,
+  buildFilteredRowsByDataset,
   createDefaultCard,
   moveCardToLayout,
   sampleRows,
@@ -26,6 +28,30 @@ function createDataset() {
       { time: '2026-01-03', value: '30', status: 'ok', score: '' },
       { time: '2026-01-04', value: '', status: 'error', score: '9' },
     ],
+    'primary.csv',
+  )
+}
+
+function createSecondaryDataset() {
+  return buildDataset(
+    ['time', 'temperature', 'status'],
+    [
+      { time: '2026-01-01', temperature: '21', status: 'ok' },
+      { time: '2026-01-02', temperature: '24', status: 'ok' },
+      { time: '2026-01-03', temperature: '20', status: 'hold' },
+    ],
+    'secondary.csv',
+  )
+}
+
+function createIncompatibleDataset() {
+  return buildDataset(
+    ['batch', 'temperature'],
+    [
+      { batch: 'A', temperature: '18' },
+      { batch: 'B', temperature: '22' },
+    ],
+    'batch.csv',
   )
 }
 
@@ -38,21 +64,61 @@ test('buildDataset treats invalid numeric values as null and keeps numeric colum
   assert.equal(dataset.rows[2].numeric.score, null)
 })
 
-test('createDefaultCard uses first column as x and falls back from second column to first numeric column', () => {
+test('createDefaultCard uses first column as x and creates a default series from the first compatible numeric column', () => {
   const fallbackDataset = buildDataset(
     ['date', 'label', 'amount'],
     [
       { date: '2026-01-01', label: 'A', amount: '10' },
       { date: '2026-01-02', label: 'B', amount: '12' },
     ],
+    'fallback.csv',
   )
 
   const defaultCard = createDefaultCard(fallbackDataset)
 
   assert.equal(defaultCard.kind, 'line')
   assert.equal(defaultCard.xColumn, 'date')
-  assert.equal(defaultCard.yColumn, 'amount')
+  assert.equal(defaultCard.series.length, 1)
+  assert.equal(defaultCard.series[0].datasetId, fallbackDataset.id)
+  assert.equal(defaultCard.series[0].yColumn, 'amount')
   assert.deepEqual(defaultCard.layout, { x: 0, y: 0, w: 12, h: 8 })
+})
+
+test('appendCardSeries adds a compatible dataset as a new series on the same chart', () => {
+  const primary = createDataset()
+  const secondary = createSecondaryDataset()
+  const defaultCard = createDefaultCard(primary)
+
+  const nextCard = appendCardSeries(defaultCard, secondary)
+
+  assert.equal(nextCard.series.length, 2)
+  assert.equal(nextCard.series[1].datasetId, secondary.id)
+  assert.equal(nextCard.series[1].yColumn, 'temperature')
+})
+
+test('appendCardSeries ignores datasets that do not have the current x column', () => {
+  const primary = createDataset()
+  const incompatible = createIncompatibleDataset()
+  const defaultCard = createDefaultCard(primary)
+
+  const nextCard = appendCardSeries(defaultCard, incompatible)
+
+  assert.equal(nextCard.series.length, 1)
+  assert.deepEqual(nextCard, defaultCard)
+})
+
+test('buildFilteredRowsByDataset applies each dataset filter set independently', () => {
+  const primary = createDataset()
+  const secondary = createSecondaryDataset()
+
+  const filtered = buildFilteredRowsByDataset([primary, secondary], {
+    [primary.id]: [{ id: '1', column: 'status', operator: 'contains', value: 'ok' }],
+    [secondary.id]: [{ id: '2', column: 'temperature', operator: 'gt', value: '21' }],
+  })
+
+  assert.equal(filtered[primary.id].length, 2)
+  assert.equal(filtered[secondary.id].length, 1)
+  assert.equal(filtered[secondary.id][0].raw.time, '2026-01-02')
 })
 
 test('applyFilters supports text contains and numeric greater-than together', () => {

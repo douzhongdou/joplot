@@ -2,11 +2,12 @@ import { useMemo, useRef } from 'react'
 import type { PointerEvent } from 'react'
 import { PlotCanvas } from './PlotCanvas'
 import { summarizeNumericColumn } from '../lib/workbench'
-import type { ChartCard as ChartCardConfig, NormalizedRow } from '../types'
+import type { ChartCard as ChartCardConfig, CsvData, NormalizedRow } from '../types'
 
 interface Props {
   card: ChartCardConfig
-  filteredRows: NormalizedRow[]
+  datasetsById: Record<string, CsvData>
+  filteredRowsByDataset: Record<string, NormalizedRow[]>
   selected: boolean
   onSelect: () => void
   onDragStart: (event: PointerEvent<HTMLElement>) => void
@@ -30,45 +31,75 @@ function formatValue(value: number | null) {
   return value === null ? '—' : Number(value.toFixed(3)).toString()
 }
 
-export function ChartCard({ card, filteredRows, selected, onSelect, onDragStart, onResizeStart }: Props) {
-  const canPlot = card.yColumn !== null
+export function ChartCard({
+  card,
+  datasetsById,
+  filteredRowsByDataset,
+  selected,
+  onSelect,
+  onDragStart,
+  onResizeStart,
+}: Props) {
   const plotRef = useRef<PlotCanvasApi>(null)
 
+  const validSeries = useMemo(() => (
+    card.series
+      .map((series) => {
+        const dataset = datasetsById[series.datasetId]
+
+        if (!dataset || !dataset.headers.includes(card.xColumn) || !series.yColumn) {
+          return null
+        }
+
+        if (!dataset.numericColumns.includes(series.yColumn)) {
+          return null
+        }
+
+        return {
+          series,
+          dataset,
+          rows: filteredRowsByDataset[series.datasetId] ?? dataset.rows,
+        }
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+  ), [card.series, card.xColumn, datasetsById, filteredRowsByDataset])
+
   const plotData = useMemo(() => {
-    if (!canPlot || card.yColumn === null) {
+    if (card.kind === 'stats') {
       return []
     }
 
-    const yColumn = card.yColumn
-    const x = filteredRows.map((row) => row.raw[card.xColumn] ?? '')
-    const y = filteredRows.map((row) => row.numeric[yColumn])
+    return validSeries.map(({ series, rows }) => {
+      const x = rows.map((row) => row.raw[card.xColumn] ?? '')
+      const y = rows.map((row) => row.numeric[series.yColumn!])
 
-    if (card.kind === 'bar') {
-      return [{
-        type: 'bar' as const,
+      if (card.kind === 'bar') {
+        return {
+          type: 'bar' as const,
+          x,
+          y,
+          marker: { color: series.color },
+          name: series.label,
+        }
+      }
+
+      return {
+        type: 'scattergl' as const,
+        mode: card.kind === 'scatter' ? 'markers' : card.drawMode,
         x,
         y,
-        marker: { color: card.color },
-        name: card.title,
-      }]
-    }
-
-    return [{
-      type: 'scattergl' as const,
-      mode: card.kind === 'scatter' ? 'markers' : card.drawMode,
-      x,
-      y,
-      marker: { color: card.color, size: 6 },
-      line: { color: card.color, width: card.lineWidth },
-      name: card.title,
-      connectgaps: false,
-    }]
-  }, [canPlot, card.color, card.drawMode, card.kind, card.lineWidth, card.title, card.xColumn, card.yColumn, filteredRows])
+        marker: { color: series.color, size: 6 },
+        line: { color: series.color, width: card.lineWidth },
+        name: series.label,
+        connectgaps: false,
+      }
+    })
+  }, [card.drawMode, card.kind, card.lineWidth, card.xColumn, validSeries])
 
   const plotLayout = useMemo(() => ({
     xaxis: { title: { text: card.xColumn }, automargin: true, gridcolor: '#e9edf5' },
     yaxis: {
-      title: { text: card.yColumn ?? '' },
+      title: { text: validSeries[0]?.series.yColumn ?? '' },
       automargin: true,
       gridcolor: '#e9edf5',
       range:
@@ -76,13 +107,18 @@ export function ChartCard({ card, filteredRows, selected, onSelect, onDragStart,
           ? [card.yMin, card.yMax]
           : undefined,
     },
-    showlegend: false,
+    showlegend: validSeries.length > 1,
     hovermode: 'x unified',
-  }), [card.xColumn, card.yColumn, card.yMin, card.yMax])
+  }), [card.xColumn, card.yMax, card.yMin, validSeries])
 
+  const primarySeries = validSeries[0] ?? null
   const summary = useMemo(
-    () => (card.yColumn ? summarizeNumericColumn(filteredRows, card.yColumn) : null),
-    [card.yColumn, filteredRows],
+    () => (
+      primarySeries?.series.yColumn
+        ? summarizeNumericColumn(primarySeries.rows, primarySeries.series.yColumn)
+        : null
+    ),
+    [primarySeries],
   )
 
   return (
@@ -96,14 +132,18 @@ export function ChartCard({ card, filteredRows, selected, onSelect, onDragStart,
           <h3>{card.title}</h3>
           <div className="card-meta">
             <span>{KIND_LABELS[card.kind]}</span>
-            <span>{filteredRows.length.toLocaleString()} 行</span>
+            <span>{validSeries.length} 个系列</span>
           </div>
         </div>
       </div>
 
       <div className="card-visual-area">
-        {card.kind === 'stats' && summary && (
+        {card.kind === 'stats' && summary && primarySeries && (
           <div className="stats-grid">
+            <div className="stat-tile">
+              <div className="stat-label">数据集</div>
+              <div className="stat-value">{primarySeries.dataset.fileName}</div>
+            </div>
             <div className="stat-tile">
               <div className="stat-label">有效值</div>
               <div className="stat-value">{summary.count}</div>
@@ -124,19 +164,15 @@ export function ChartCard({ card, filteredRows, selected, onSelect, onDragStart,
               <div className="stat-label">均值</div>
               <div className="stat-value">{formatValue(summary.mean)}</div>
             </div>
-            <div className="stat-tile">
-              <div className="stat-label">中位数</div>
-              <div className="stat-value">{formatValue(summary.median)}</div>
-            </div>
           </div>
         )}
 
-        {card.kind !== 'stats' && canPlot && (
+        {card.kind !== 'stats' && validSeries.length > 0 && (
           <div className="plot-panel">
             <PlotCanvas
               ref={plotRef}
               data={plotData}
-              uirevision={`${card.id}:${card.xColumn}:${card.yColumn ?? 'none'}`}
+              uirevision={`${card.id}:${card.xColumn}:${card.series.map((series) => series.id).join('|')}`}
               layout={plotLayout}
             />
 
@@ -154,11 +190,11 @@ export function ChartCard({ card, filteredRows, selected, onSelect, onDragStart,
           </div>
         )}
 
-        {card.kind !== 'stats' && !canPlot && (
+        {((card.kind === 'stats' && !summary) || (card.kind !== 'stats' && validSeries.length === 0)) && (
           <div className="placeholder">
-            这张图卡还没有可绘制的数值列。
+            当前图卡没有可绘制的有效数据系列。
             <br />
-            先在右侧边栏里为 Y 轴选择一个数值字段。
+            请在右侧为它选择可用的数据集和字段。
           </div>
         )}
       </div>
