@@ -1,6 +1,9 @@
-import type { ChartKind } from '../types'
+import type { ChartKind, CsvData } from '../types'
 
 interface Props {
+  dataset: CsvData
+  datasetCount: number
+  filteredCount: number
   onAdd: (kind: ChartKind) => void
 }
 
@@ -11,20 +14,42 @@ const OPTIONS: Array<{ kind: ChartKind; label: string }> = [
   { kind: 'stats', label: '新增统计卡' },
 ]
 
-export function WorkbenchToolbar({ onAdd }: Props) {
+export function WorkbenchToolbar({ dataset, datasetCount, filteredCount, onAdd }: Props) {
   return (
-    <div className="toolbar">
-      <div>
-        <h2 className="card-title">工作台</h2>
-        <div className="card-subtitle">多张图卡共享同一份数据集，配置彼此独立。</div>
+    <section className="sidebar-panel">
+      <div className="sidebar-panel-header">
+        <div>
+          <p className="sidebar-kicker">Workspace</p>
+          <h2>工作台</h2>
+        </div>
       </div>
-      <div className="toolbar-actions">
+
+      <div className="summary-grid">
+        <div className="summary-card">
+          <span>当前数据集</span>
+          <strong>{dataset.fileName}</strong>
+        </div>
+        <div className="summary-card">
+          <span>已加载</span>
+          <strong>{datasetCount}</strong>
+        </div>
+        <div className="summary-card">
+          <span>筛选后</span>
+          <strong>{filteredCount.toLocaleString()}</strong>
+        </div>
+        <div className="summary-card">
+          <span>数值列</span>
+          <strong>{dataset.numericColumns.length}</strong>
+        </div>
+      </div>
+
+      <div className="sidebar-actions">
         {OPTIONS.map((option) => (
-          <button key={option.kind} type="button" onClick={() => onAdd(option.kind)}>
+          <button key={option.kind} type="button" className="ghost-button" onClick={() => onAdd(option.kind)}>
             {option.label}
           </button>
         ))}
       </div>
-    </div>
+    </section>
   )
 }

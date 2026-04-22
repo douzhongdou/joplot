@@ -1,60 +1,40 @@
-import { useRef, useState } from 'react'
-import type { CsvData } from '../types'
+import { useRef } from 'react'
+import type { ChangeEvent } from 'react'
+import { buildUploadHint, pickCsvFiles } from '../lib/upload'
 
 interface Props {
-  onFile: (file: File) => void
-  csv: CsvData | null
+  hasDatasets: boolean
+  onFiles: (files: File[]) => void | Promise<void>
 }
 
-export function FileUploader({ onFile, csv }: Props) {
+export function FileUploader({ hasDatasets, onFiles }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [dragging, setDragging] = useState(false)
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (file) onFile(file)
-  }
+  function handleChange(event: ChangeEvent<HTMLInputElement>) {
+    const files = pickCsvFiles(Array.from(event.target.files ?? []))
 
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault()
-    setDragging(false)
-    const file = e.dataTransfer.files[0]
-    if (file && file.name.endsWith('.csv')) onFile(file)
+    if (files.length > 0) {
+      void onFiles(files)
+      event.target.value = ''
+    }
   }
 
   return (
-    <div className="upload-shell">
-      <div
-        className={`upload-dropzone ${
-          dragging
-            ? 'upload-dropzone-dragging'
-            : ''
-        }`}
-        onClick={() => inputRef.current?.click()}
-        onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={handleDrop}
-      >
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".csv"
-          className="sr-only"
-          onChange={handleChange}
-        />
-        <div className="upload-icon">CSV</div>
-        <div className="upload-title">拖拽 CSV 文件到此处，或点击选择</div>
-        <div className="upload-subtitle">
-          适合带表头、结构较规整的数据。空值或不合法数值会按空处理。
-        </div>
-      </div>
+    <div className="nav-upload">
+      <span className="nav-upload-hint">{buildUploadHint(hasDatasets)}</span>
 
-      {csv && (
-        <div className="upload-meta">
-          <div className="upload-meta-value">{csv.rowCount.toLocaleString()} 行</div>
-          <div>{csv.numericColumns.length} 个可用数值列</div>
-        </div>
-      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".csv"
+        multiple
+        className="sr-only"
+        onChange={handleChange}
+      />
+
+      <button type="button" className="toolbar-upload-button" onClick={() => inputRef.current?.click()}>
+        {hasDatasets ? '添加 CSV' : '上传 CSV'}
+      </button>
     </div>
   )
 }

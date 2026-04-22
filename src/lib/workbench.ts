@@ -1,14 +1,20 @@
 import type {
   ChartCard,
   ChartKind,
+  ChartSeries,
   ColumnSummary,
   CsvData,
+  DashboardLayout,
   FilterRule,
+  FiltersByDataset,
   NormalizedRow,
   RawCsvRow,
 } from '../types'
 
-const CARD_COLORS = ['#1f77b4', '#ff7f0e', '#2a9d8f', '#e76f51', '#264653', '#8ab17d']
+const CARD_COLORS = ['#155eef', '#dd6b20', '#0f766e', '#b93815', '#3b3f98', '#7a3e9d']
+export const DASHBOARD_COLUMNS = 12
+export const DASHBOARD_MIN_WIDTH = 3
+export const DASHBOARD_MIN_HEIGHT = 4
 
 function toNumber(value: string | undefined): number | null {
   if (value === undefined) {
@@ -16,7 +22,6 @@ function toNumber(value: string | undefined): number | null {
   }
 
   const trimmed = value.trim()
-
   if (trimmed === '') {
     return null
   }
@@ -25,11 +30,139 @@ function toNumber(value: string | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+function slugify(value: string) {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  return normalized || 'dataset'
+}
+
 function makeCardId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-export function buildDataset(headers: string[], rawRows: RawCsvRow[]): CsvData {
+function makeSeriesId(prefix: string): string {
+  return `${prefix}-series-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function createCardTitle(kind: ChartKind): string {
+  switch (kind) {
+    case 'line':
+      return '折线图'
+    case 'scatter':
+      return '散点图'
+    case 'bar':
+      return '柱状图'
+    case 'stats':
+      return '统计卡'
+    default:
+      return '图卡'
+  }
+}
+
+function createPresetLayout(index: number, kind: ChartKind): DashboardLayout {
+  if (index === 0) {
+    return { x: 0, y: 0, w: 12, h: 8 }
+  }
+
+  const slot = index - 1
+  const baseY = 8 + Math.floor(slot / 2) * 7
+
+  return {
+    x: (slot % 2) * 6,
+    y: baseY,
+    w: 6,
+    h: kind === 'stats' ? 5 : 7,
+  }
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function getDefaultYColumn(dataset: CsvData, xColumn: string) {
+  return dataset.numericColumns.find((column) => column !== xColumn)
+    ?? dataset.numericColumns[0]
+    ?? null
+}
+
+function getSeriesLabel(dataset: CsvData, fallback: string) {
+  return dataset.fileName || fallback
+}
+
+function buildDatasetMap(datasets: CsvData[]) {
+  return Object.fromEntries(datasets.map((dataset) => [dataset.id, dataset]))
+}
+
+export function clampLayout(layout: DashboardLayout): DashboardLayout {
+  const w = clamp(Math.round(layout.w), DASHBOARD_MIN_WIDTH, DASHBOARD_COLUMNS)
+  const h = Math.max(Math.round(layout.h), DASHBOARD_MIN_HEIGHT)
+  const x = clamp(Math.round(layout.x), 0, DASHBOARD_COLUMNS - w)
+  const y = Math.max(Math.round(layout.y), 0)
+
+  return { x, y, w, h }
+}
+
+function layoutsOverlap(left: DashboardLayout, right: DashboardLayout) {
+  return (
+    left.x < right.x + right.w
+    && left.x + left.w > right.x
+    && left.y < right.y + right.h
+    && left.y + left.h > right.y
+  )
+}
+
+function resolveCardLayouts(cards: ChartCard[], pinnedId?: string): ChartCard[] {
+  const pinnedCard = pinnedId ? cards.find((card) => card.id === pinnedId) ?? null : null
+  const placed = new Map<string, ChartCard>()
+  const occupied: ChartCard[] = []
+
+  if (pinnedCard) {
+    const clampedPinned = { ...pinnedCard, layout: clampLayout(pinnedCard.layout) }
+    placed.set(clampedPinned.id, clampedPinned)
+    occupied.push(clampedPinned)
+  }
+
+  for (const card of cards) {
+    if (card.id === pinnedId) {
+      continue
+    }
+
+    let nextLayout = clampLayout(card.layout)
+
+    while (occupied.some((occupiedCard) => layoutsOverlap(nextLayout, occupiedCard.layout))) {
+      const blockers = occupied.filter((occupiedCard) => layoutsOverlap(nextLayout, occupiedCard.layout))
+      nextLayout = {
+        ...nextLayout,
+        y: Math.max(...blockers.map((occupiedCard) => occupiedCard.layout.y + occupiedCard.layout.h)),
+      }
+    }
+
+    const nextCard = { ...card, layout: nextLayout }
+    placed.set(nextCard.id, nextCard)
+    occupied.push(nextCard)
+  }
+
+  return cards.map((card, index) => {
+    const placedCard = placed.get(card.id)
+    if (placedCard) {
+      return placedCard
+    }
+
+    const fallback = { ...card, layout: createPresetLayout(index, card.kind) }
+    return { ...fallback, layout: clampLayout(fallback.layout) }
+  })
+}
+
+export function buildDataset(
+  headers: string[],
+  rawRows: RawCsvRow[],
+  fileName = '',
+  id = slugify(fileName || 'dataset'),
+): CsvData {
   const rows = rawRows.map<NormalizedRow>((rawRow) => {
     const normalizedRaw = headers.reduce<RawCsvRow>((accumulator, header) => {
       accumulator[header] = rawRow[header] ?? ''
@@ -49,10 +182,27 @@ export function buildDataset(headers: string[], rawRows: RawCsvRow[]): CsvData {
   )
 
   return {
+    id,
+    fileName,
     headers,
     rows,
     numericColumns,
     rowCount: rows.length,
+  }
+}
+
+export function createCardSeries(
+  dataset: CsvData,
+  xColumn: string,
+  overrides: Partial<ChartSeries> = {},
+): ChartSeries {
+  return {
+    id: makeSeriesId(dataset.id),
+    datasetId: dataset.id,
+    label: getSeriesLabel(dataset, '数据系列'),
+    yColumn: getDefaultYColumn(dataset, xColumn),
+    color: CARD_COLORS[0],
+    ...overrides,
   }
 }
 
@@ -62,22 +212,22 @@ export function createCard(
   overrides: Partial<ChartCard> = {},
 ): ChartCard {
   const xColumn = dataset.headers[0] ?? ''
-  const defaultY =
-    dataset.numericColumns.find((column) => column !== xColumn)
-    ?? dataset.numericColumns[0]
-    ?? null
+  const initialSeries = createCardSeries(dataset, xColumn)
 
   return {
     id: makeCardId(kind),
     kind,
-    title: kind === 'stats' ? '统计指标卡' : `${kind.toUpperCase()} 图表`,
+    title: createCardTitle(kind),
     xColumn,
-    yColumn: defaultY,
-    color: CARD_COLORS[0],
+    series: [initialSeries],
     drawMode: kind === 'scatter' ? 'markers' : 'lines',
     lineWidth: 2,
+    showLegend: true,
+    showGrid: true,
+    showAxes: true,
     yMin: null,
     yMax: null,
+    layout: createPresetLayout(0, kind),
     ...overrides,
   }
 }
@@ -85,19 +235,83 @@ export function createCard(
 export function createDefaultCard(dataset: CsvData): ChartCard {
   const xColumn = dataset.headers[0] ?? ''
   const secondColumn = dataset.headers[1]
-  const fallbackY =
-    dataset.numericColumns.find((column) => column !== xColumn)
-    ?? dataset.numericColumns[0]
-    ?? null
+  const fallbackY = getDefaultYColumn(dataset, xColumn)
 
   return createCard('line', dataset, {
     title: '默认折线图',
     xColumn,
-    yColumn:
-      secondColumn && dataset.numericColumns.includes(secondColumn)
-        ? secondColumn
-        : fallbackY,
+    series: [
+      createCardSeries(dataset, xColumn, {
+        yColumn:
+          secondColumn && dataset.numericColumns.includes(secondColumn)
+            ? secondColumn
+            : fallbackY,
+      }),
+    ],
+    layout: createPresetLayout(0, 'line'),
   })
+}
+
+export function appendCardSeries(
+  card: ChartCard,
+  dataset: CsvData,
+  overrides: Partial<ChartSeries> = {},
+): ChartCard {
+  if (!dataset.headers.includes(card.xColumn)) {
+    return card
+  }
+
+  const nextSeries = createCardSeries(dataset, card.xColumn, {
+    color: CARD_COLORS[card.series.length % CARD_COLORS.length],
+    ...overrides,
+  })
+
+  if (nextSeries.yColumn === null) {
+    return card
+  }
+
+  return {
+    ...card,
+    series: [...card.series, nextSeries],
+  }
+}
+
+export function createAutoSeriesForDatasets(
+  datasets: CsvData[],
+  xColumn: string,
+  limit?: number,
+): ChartSeries[] {
+  return datasets
+    .filter((dataset) => dataset.headers.includes(xColumn))
+    .map((dataset, index) => createCardSeries(dataset, xColumn, {
+      color: CARD_COLORS[index % CARD_COLORS.length],
+    }))
+    .filter((series) => series.yColumn !== null)
+    .slice(0, limit ?? datasets.length)
+}
+
+export function appendCardWithLayout(cards: ChartCard[], card: ChartCard): ChartCard[] {
+  const nextCard = {
+    ...card,
+    layout: clampLayout(card.layout ?? createPresetLayout(cards.length, card.kind)),
+  }
+
+  if (!card.layout) {
+    nextCard.layout = createPresetLayout(cards.length, card.kind)
+  } else if (cards.some((existingCard) => existingCard.id === card.id)) {
+    nextCard.layout = createPresetLayout(cards.length, card.kind)
+  } else if (nextCard.layout.x === 0 && nextCard.layout.y === 0 && cards.length > 0) {
+    nextCard.layout = createPresetLayout(cards.length, card.kind)
+  }
+
+  return resolveCardLayouts([...cards, nextCard], nextCard.id)
+}
+
+export function moveCardToLayout(cards: ChartCard[], cardId: string, layout: DashboardLayout): ChartCard[] {
+  return resolveCardLayouts(
+    cards.map((card) => (card.id === cardId ? { ...card, layout } : card)),
+    cardId,
+  )
 }
 
 export function applyFilters(rows: NormalizedRow[], filters: FilterRule[]): NormalizedRow[] {
@@ -124,6 +338,18 @@ export function applyFilters(rows: NormalizedRow[], filters: FilterRule[]): Norm
           return true
       }
     }),
+  )
+}
+
+export function buildFilteredRowsByDataset(
+  datasets: CsvData[],
+  filtersByDataset: FiltersByDataset,
+): Record<string, NormalizedRow[]> {
+  return Object.fromEntries(
+    datasets.map((dataset) => [
+      dataset.id,
+      applyFilters(dataset.rows, filtersByDataset[dataset.id] ?? []),
+    ]),
   )
 }
 
@@ -176,20 +402,72 @@ export function sampleRows(rows: NormalizedRow[], maxPoints: number): Normalized
   return result
 }
 
-export function sanitizeCardsForDataset(cards: ChartCard[], dataset: CsvData): ChartCard[] {
-  return cards.map((card, index) => {
-    const fallback = createCard(card.kind, dataset, { color: CARD_COLORS[index % CARD_COLORS.length] })
-    const xColumn = dataset.headers.includes(card.xColumn) ? card.xColumn : fallback.xColumn
-    const yColumn = card.yColumn && dataset.numericColumns.includes(card.yColumn)
-      ? card.yColumn
-      : fallback.yColumn
+export function sanitizeCardsForDatasets(
+  cards: ChartCard[],
+  datasets: CsvData[],
+  activeDatasetId?: string | null,
+): ChartCard[] {
+  if (datasets.length === 0) {
+    return []
+  }
+
+  const datasetMap = buildDatasetMap(datasets)
+  const fallbackDataset =
+    (activeDatasetId ? datasetMap[activeDatasetId] : undefined)
+    ?? datasets[0]
+
+  return resolveCardLayouts(cards.map((card, index) => {
+    const legacyCard = card as ChartCard & { yColumn?: string | null; color?: string }
+    const rawSeries = Array.isArray(legacyCard.series) && legacyCard.series.length > 0
+      ? legacyCard.series
+      : [createCardSeries(fallbackDataset, legacyCard.xColumn ?? fallbackDataset.headers[0] ?? '', {
+          yColumn: legacyCard.yColumn ?? getDefaultYColumn(fallbackDataset, legacyCard.xColumn ?? fallbackDataset.headers[0] ?? ''),
+          color: legacyCard.color ?? CARD_COLORS[0],
+        })]
+    const primaryDataset =
+      rawSeries
+        .map((series) => datasetMap[series.datasetId])
+        .find((dataset): dataset is CsvData => Boolean(dataset))
+      ?? fallbackDataset
+
+    const fallbackXColumn = primaryDataset.headers[0] ?? ''
+    const xColumn = primaryDataset.headers.includes(card.xColumn) ? card.xColumn : fallbackXColumn
+    const validSeries = rawSeries
+      .map<ChartSeries | null>((series, seriesIndex) => {
+        const dataset = datasetMap[series.datasetId]
+
+        if (!dataset || !dataset.headers.includes(xColumn)) {
+          return null
+        }
+
+        const yColumn = series.yColumn && dataset.numericColumns.includes(series.yColumn)
+          ? series.yColumn
+          : getDefaultYColumn(dataset, xColumn)
+
+        if (yColumn === null) {
+          return null
+        }
+
+        return {
+          ...createCardSeries(dataset, xColumn, {
+            color: CARD_COLORS[seriesIndex % CARD_COLORS.length],
+          }),
+          ...series,
+          yColumn,
+          label: series.label || getSeriesLabel(dataset, `数据系列 ${seriesIndex + 1}`),
+          color: series.color || CARD_COLORS[seriesIndex % CARD_COLORS.length],
+        }
+      })
+      .filter((series): series is ChartSeries => series !== null)
 
     return {
-      ...fallback,
+      ...createCard(card.kind, fallbackDataset, {
+        layout: createPresetLayout(index, card.kind),
+      }),
       ...card,
       xColumn,
-      yColumn,
-      color: card.color || fallback.color,
+      series: validSeries.length > 0 ? validSeries : [createCardSeries(fallbackDataset, xColumn)],
+      layout: clampLayout(card.layout ?? createPresetLayout(index, card.kind)),
     }
-  })
+  }))
 }

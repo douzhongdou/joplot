@@ -1,15 +1,32 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { PointerEvent } from 'react'
+import {
+  Copy,
+  CopyCheck,
+  Download,
+  GripVertical,
+  MoveDiagonal2,
+  ScanSearch,
+} from 'lucide-react'
 import { PlotCanvas } from './PlotCanvas'
-import { sampleRows, summarizeNumericColumn } from '../lib/workbench'
+import { summarizeNumericColumn } from '../lib/workbench'
 import type { ChartCard as ChartCardConfig, CsvData, NormalizedRow } from '../types'
+import type { CopyImageResult } from './PlotCanvas'
 
 interface Props {
   card: ChartCardConfig
-  csv: CsvData
-  filteredRows: NormalizedRow[]
-  onChange: (patch: Partial<ChartCardConfig>) => void
-  onDuplicate: () => void
-  onRemove: () => void
+  datasetsById: Record<string, CsvData>
+  filteredRowsByDataset: Record<string, NormalizedRow[]>
+  selected: boolean
+  onSelect: () => void
+  onDragStart: (event: PointerEvent<HTMLElement>) => void
+  onResizeStart: (event: PointerEvent<HTMLButtonElement>) => void
+}
+
+interface PlotCanvasApi {
+  autorange: () => Promise<void>
+  copyImage: () => Promise<CopyImageResult | null>
+  downloadImage: () => Promise<void>
 }
 
 const KIND_LABELS: Record<ChartCardConfig['kind'], string> = {
@@ -23,153 +40,168 @@ function formatValue(value: number | null) {
   return value === null ? '—' : Number(value.toFixed(3)).toString()
 }
 
-export function ChartCard({ card, csv, filteredRows, onChange, onDuplicate, onRemove }: Props) {
-  const sampledRows = useMemo(() => sampleRows(filteredRows, 3000), [filteredRows])
-  const numericOptions = csv.numericColumns
-  const canPlot = card.yColumn !== null && numericOptions.includes(card.yColumn)
+function getCopyToastLabel(mode: CopyImageResult | null) {
+  switch (mode) {
+    case 'binary':
+    case 'html':
+    case 'text':
+      return '已复制'
+    case 'downloaded':
+      return '剪贴板不可用，已下载'
+    default:
+      return ''
+  }
+}
+
+export function ChartCard({
+  card,
+  datasetsById,
+  filteredRowsByDataset,
+  selected,
+  onSelect,
+  onDragStart,
+  onResizeStart,
+}: Props) {
+  const plotRef = useRef<PlotCanvasApi>(null)
+  const [copyToast, setCopyToast] = useState('')
+
+  useEffect(() => {
+    if (!copyToast) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => setCopyToast(''), 1600)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [copyToast])
+
+  const validSeries = useMemo(() => (
+    card.series
+      .map((series) => {
+        const dataset = datasetsById[series.datasetId]
+
+        if (!dataset || !dataset.headers.includes(card.xColumn) || !series.yColumn) {
+          return null
+        }
+
+        if (!dataset.numericColumns.includes(series.yColumn)) {
+          return null
+        }
+
+        return {
+          series,
+          dataset,
+          rows: filteredRowsByDataset[series.datasetId] ?? dataset.rows,
+        }
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+  ), [card.series, card.xColumn, datasetsById, filteredRowsByDataset])
 
   const plotData = useMemo(() => {
-    if (!canPlot || card.yColumn === null) {
+    if (card.kind === 'stats') {
       return []
     }
 
-    const x = sampledRows.map((row) => row.raw[card.xColumn] ?? '')
-    const y = sampledRows
-      .map((row) => row.numeric[card.yColumn!])
-      .map((value) => (value === null ? null : value))
+    return validSeries.map(({ series, rows }) => {
+      const x = rows.map((row) => row.raw[card.xColumn] ?? '')
+      const y = rows.map((row) => row.numeric[series.yColumn!])
 
-    if (card.kind === 'bar') {
-      return [{
-        type: 'bar' as const,
+      if (card.kind === 'bar') {
+        return {
+          type: 'bar' as const,
+          x,
+          y,
+          marker: { color: series.color },
+          name: series.label,
+        }
+      }
+
+      return {
+        type: 'scattergl' as const,
+        mode: card.kind === 'scatter' ? 'markers' : card.drawMode,
         x,
         y,
-        marker: { color: card.color },
-        name: card.title,
-      }]
-    }
+        marker: { color: series.color, size: 6 },
+        line: { color: series.color, width: card.lineWidth },
+        name: series.label,
+        connectgaps: false,
+      }
+    })
+  }, [card.drawMode, card.kind, card.lineWidth, card.xColumn, validSeries])
 
-    return [{
-      type: 'scatter' as const,
-      mode: card.kind === 'scatter' ? 'markers' : card.drawMode,
-      x,
-      y,
-      marker: { color: card.color, size: 7 },
-      line: { color: card.color, width: card.lineWidth },
-      name: card.title,
-    }]
-  }, [canPlot, card.color, card.drawMode, card.kind, card.lineWidth, card.title, card.xColumn, card.yColumn, sampledRows])
+  const plotLayout = useMemo(() => ({
+    xaxis: {
+      title: { text: card.showAxes ? card.xColumn : '' },
+      automargin: true,
+      showgrid: card.showGrid,
+      gridcolor: '#e9edf5',
+      visible: card.showAxes,
+    },
+    yaxis: {
+      title: { text: card.showAxes ? (validSeries[0]?.series.yColumn ?? '') : '' },
+      automargin: true,
+      showgrid: card.showGrid,
+      gridcolor: '#e9edf5',
+      visible: card.showAxes,
+      range:
+        card.yMin !== null && card.yMax !== null && card.yMin < card.yMax
+          ? [card.yMin, card.yMax]
+          : undefined,
+    },
+    showlegend: card.showLegend && validSeries.length > 1,
+    hovermode: 'x unified',
+  }), [card.showAxes, card.showGrid, card.showLegend, card.xColumn, card.yMax, card.yMin, validSeries])
 
+  const primarySeries = validSeries[0] ?? null
   const summary = useMemo(
-    () => (card.yColumn ? summarizeNumericColumn(filteredRows, card.yColumn) : null),
-    [card.yColumn, filteredRows],
+    () => (
+      primarySeries?.series.yColumn
+        ? summarizeNumericColumn(primarySeries.rows, primarySeries.series.yColumn)
+        : null
+    ),
+    [primarySeries],
   )
 
+  async function handleCopyImage() {
+    const mode = await plotRef.current?.copyImage()
+    const label = getCopyToastLabel(mode ?? null)
+
+    if (label) {
+      setCopyToast(label)
+    }
+  }
+
   return (
-    <article className="card">
-      <div className="card-header">
-        <div>
-          <h3 className="card-title">{card.title}</h3>
-          <div className="card-subtitle">
-            {KIND_LABELS[card.kind]} · 当前显示 {sampledRows.length.toLocaleString()} / {filteredRows.length.toLocaleString()} 条记录
+    <article className={`chart-card ${selected ? 'chart-card-selected' : ''}`} onMouseDown={onSelect}>
+      <div className="chart-card-head">
+        <button
+          type="button"
+          className="drag-handle"
+          onPointerDown={onDragStart}
+          aria-label="拖动画布卡片"
+          title="拖动画布卡片"
+        >
+          <GripVertical size={16} strokeWidth={2.2} />
+        </button>
+
+        <div className="chart-card-titleblock">
+          <h3>{card.title}</h3>
+          <div className="card-meta">
+            <span>{KIND_LABELS[card.kind]}</span>
+            <span>{validSeries.length} 个系列</span>
           </div>
-        </div>
-        <div className="card-actions">
-          <button type="button" className="secondary" onClick={onDuplicate}>复制</button>
-          <button type="button" className="secondary" onClick={onRemove}>删除</button>
         </div>
       </div>
 
-      <div className="card-body">
-        <div className={`card-form ${card.kind !== 'stats' ? 'card-form-advanced' : ''}`}>
-          <label className="field">
-            <span className="field-label">标题</span>
-            <input
-              type="text"
-              value={card.title}
-              onChange={(event) => onChange({ title: event.target.value })}
-            />
-          </label>
-
-          <label className="field">
-            <span className="field-label">图卡类型</span>
-            <select
-              value={card.kind}
-              onChange={(event) => onChange({ kind: event.target.value as ChartCardConfig['kind'] })}
-            >
-              {Object.entries(KIND_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="field">
-            <span className="field-label">X 轴</span>
-            <select
-              value={card.xColumn}
-              onChange={(event) => onChange({ xColumn: event.target.value })}
-            >
-              {csv.headers.map((header) => (
-                <option key={header} value={header}>{header}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="field">
-            <span className="field-label">Y 轴</span>
-            <select
-              value={card.yColumn ?? ''}
-              onChange={(event) => onChange({ yColumn: event.target.value || null })}
-            >
-              <option value="">请选择数值列</option>
-              {numericOptions.map((header) => (
-                <option key={header} value={header}>{header}</option>
-              ))}
-            </select>
-          </label>
-
-          {card.kind !== 'stats' && (
-            <>
-              <label className="field">
-                <span className="field-label">颜色</span>
-                <input
-                  type="color"
-                  value={card.color}
-                  onChange={(event) => onChange({ color: event.target.value })}
-                />
-              </label>
-
-              <label className="field">
-                <span className="field-label">线宽</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="6"
-                  value={card.lineWidth}
-                  onChange={(event) => onChange({ lineWidth: Number(event.target.value) || 1 })}
-                />
-              </label>
-
-              {card.kind === 'line' && (
-                <label className="field">
-                  <span className="field-label">折线模式</span>
-                  <select
-                    value={card.drawMode}
-                    onChange={(event) => onChange({ drawMode: event.target.value as ChartCardConfig['drawMode'] })}
-                  >
-                    <option value="lines">折线</option>
-                    <option value="lines+markers">折线+点</option>
-                    <option value="markers">仅点</option>
-                  </select>
-                </label>
-              )}
-            </>
-          )}
-        </div>
-
-        {card.kind === 'stats' && summary && (
+      <div className="card-visual-area">
+        {card.kind === 'stats' && summary && primarySeries && (
           <div className="stats-grid">
             <div className="stat-tile">
-              <div className="stat-label">非空值</div>
+              <div className="stat-label">数据集</div>
+              <div className="stat-value">{primarySeries.dataset.fileName}</div>
+            </div>
+            <div className="stat-tile">
+              <div className="stat-label">有效值</div>
               <div className="stat-value">{summary.count}</div>
             </div>
             <div className="stat-tile">
@@ -188,39 +220,74 @@ export function ChartCard({ card, csv, filteredRows, onChange, onDuplicate, onRe
               <div className="stat-label">均值</div>
               <div className="stat-value">{formatValue(summary.mean)}</div>
             </div>
-            <div className="stat-tile">
-              <div className="stat-label">中位数</div>
-              <div className="stat-value">{formatValue(summary.median)}</div>
-            </div>
           </div>
         )}
 
-        {card.kind !== 'stats' && canPlot && (
-          <PlotCanvas
-            data={plotData}
-            layout={{
-              xaxis: { title: { text: card.xColumn }, automargin: true },
-              yaxis: {
-                title: { text: card.yColumn ?? '' },
-                automargin: true,
-                range:
-                  card.yMin !== null && card.yMax !== null && card.yMin < card.yMax
-                    ? [card.yMin, card.yMax]
-                    : undefined,
-              },
-              showlegend: false,
-            }}
-          />
+        {card.kind !== 'stats' && validSeries.length > 0 && (
+          <div className="plot-panel">
+            <PlotCanvas
+              ref={plotRef}
+              data={plotData}
+              uirevision={`${card.id}:${card.xColumn}:${card.series.map((series) => series.id).join('|')}`}
+              layout={plotLayout}
+            />
+
+            <div className="plot-toolbar" aria-label="图表工具栏">
+              <button
+                type="button"
+                className="plot-tool-button"
+                onClick={() => void plotRef.current?.autorange()}
+                aria-label="自动缩放"
+                title="自动缩放"
+              >
+                <ScanSearch size={15} strokeWidth={2.1} />
+              </button>
+              <button
+                type="button"
+                className="plot-tool-button"
+                onClick={() => void handleCopyImage()}
+                aria-label="复制图像"
+                title="复制图像"
+              >
+                {copyToast ? <CopyCheck size={15} strokeWidth={2.1} /> : <Copy size={15} strokeWidth={2.1} />}
+              </button>
+              <button
+                type="button"
+                className="plot-tool-button"
+                onClick={() => void plotRef.current?.downloadImage()}
+                aria-label="下载图像"
+                title="下载图像"
+              >
+                <Download size={15} strokeWidth={2.1} />
+              </button>
+            </div>
+
+            {copyToast && (
+              <div className="plot-toolbar-feedback" role="status">
+                {copyToast}
+              </div>
+            )}
+          </div>
         )}
 
-        {card.kind !== 'stats' && !canPlot && (
+        {((card.kind === 'stats' && !summary) || (card.kind !== 'stats' && validSeries.length === 0)) && (
           <div className="placeholder">
-            当前图卡还没有可绘制的数值列。
+            当前图卡没有可绘制的有效数据系列。
             <br />
-            请先选择一个数值型 Y 轴字段。
+            请在右侧为它选择可用的数据集和字段。
           </div>
         )}
       </div>
+
+      <button
+        type="button"
+        className="resize-handle"
+        onPointerDown={onResizeStart}
+        aria-label="缩放图卡"
+        title="缩放图卡"
+      >
+        <MoveDiagonal2 size={15} strokeWidth={2.1} />
+      </button>
     </article>
   )
 }
