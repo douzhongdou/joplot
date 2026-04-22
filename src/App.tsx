@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import appIcon from './icon.svg'
 import { useCsvData } from './hooks/useCsvData'
 import { FileUploader } from './components/FileUploader'
 import { CardInspector } from './components/CardInspector'
@@ -501,9 +502,11 @@ export default function App() {
     <div className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark">PN</div>
+          <div className="brand-mark" aria-hidden="true">
+            <img src={appIcon} alt="" className="brand-mark-image" />
+          </div>
           <div className="brand-copy">
-            <h1>CSV 分析工作台</h1>
+            <h1>joplot</h1>
             <p className="brand-file">
               {activeDataset ? `${activeDataset.fileName} · 已加载 ${datasets.length} 份 CSV` : '未加载数据集'}
             </p>
@@ -518,6 +521,7 @@ export default function App() {
             <WorkbenchHeader
               datasets={datasets}
               activeDatasetId={activeDataset.id}
+              datasetGroupCount={recentDatasetIds.length || datasets.length}
               filteredCount={(filteredRowsByDataset[activeDataset.id] ?? activeDataset.rows).length}
               filters={activeFilters}
               onSelectDataset={setActiveDatasetId}

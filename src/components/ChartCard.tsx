@@ -1,8 +1,17 @@
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
+import {
+  Copy,
+  CopyCheck,
+  Download,
+  GripVertical,
+  MoveDiagonal2,
+  ScanSearch,
+} from 'lucide-react'
 import { PlotCanvas } from './PlotCanvas'
 import { summarizeNumericColumn } from '../lib/workbench'
 import type { ChartCard as ChartCardConfig, CsvData, NormalizedRow } from '../types'
+import type { CopyImageResult } from './PlotCanvas'
 
 interface Props {
   card: ChartCardConfig
@@ -16,7 +25,7 @@ interface Props {
 
 interface PlotCanvasApi {
   autorange: () => Promise<void>
-  copyImage: () => Promise<void>
+  copyImage: () => Promise<CopyImageResult | null>
   downloadImage: () => Promise<void>
 }
 
@@ -31,6 +40,19 @@ function formatValue(value: number | null) {
   return value === null ? '—' : Number(value.toFixed(3)).toString()
 }
 
+function getCopyToastLabel(mode: CopyImageResult | null) {
+  switch (mode) {
+    case 'binary':
+    case 'html':
+    case 'text':
+      return '已复制'
+    case 'downloaded':
+      return '剪贴板不可用，已下载'
+    default:
+      return ''
+  }
+}
+
 export function ChartCard({
   card,
   datasetsById,
@@ -41,6 +63,17 @@ export function ChartCard({
   onResizeStart,
 }: Props) {
   const plotRef = useRef<PlotCanvasApi>(null)
+  const [copyToast, setCopyToast] = useState('')
+
+  useEffect(() => {
+    if (!copyToast) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => setCopyToast(''), 1600)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [copyToast])
 
   const validSeries = useMemo(() => (
     card.series
@@ -129,11 +162,26 @@ export function ChartCard({
     [primarySeries],
   )
 
+  async function handleCopyImage() {
+    const mode = await plotRef.current?.copyImage()
+    const label = getCopyToastLabel(mode ?? null)
+
+    if (label) {
+      setCopyToast(label)
+    }
+  }
+
   return (
     <article className={`chart-card ${selected ? 'chart-card-selected' : ''}`} onMouseDown={onSelect}>
       <div className="chart-card-head">
-        <button type="button" className="drag-handle" onPointerDown={onDragStart} aria-label="拖动画布卡片">
-          拖动
+        <button
+          type="button"
+          className="drag-handle"
+          onPointerDown={onDragStart}
+          aria-label="拖动画布卡片"
+          title="拖动画布卡片"
+        >
+          <GripVertical size={16} strokeWidth={2.2} />
         </button>
 
         <div className="chart-card-titleblock">
@@ -185,16 +233,40 @@ export function ChartCard({
             />
 
             <div className="plot-toolbar" aria-label="图表工具栏">
-              <button type="button" className="plot-tool-button" onClick={() => void plotRef.current?.autorange()}>
-                Auto Scale
+              <button
+                type="button"
+                className="plot-tool-button"
+                onClick={() => void plotRef.current?.autorange()}
+                aria-label="自动缩放"
+                title="自动缩放"
+              >
+                <ScanSearch size={15} strokeWidth={2.1} />
               </button>
-              <button type="button" className="plot-tool-button" onClick={() => void plotRef.current?.copyImage()}>
-                Copy
+              <button
+                type="button"
+                className="plot-tool-button"
+                onClick={() => void handleCopyImage()}
+                aria-label="复制图像"
+                title="复制图像"
+              >
+                {copyToast ? <CopyCheck size={15} strokeWidth={2.1} /> : <Copy size={15} strokeWidth={2.1} />}
               </button>
-              <button type="button" className="plot-tool-button" onClick={() => void plotRef.current?.downloadImage()}>
-                Save
+              <button
+                type="button"
+                className="plot-tool-button"
+                onClick={() => void plotRef.current?.downloadImage()}
+                aria-label="下载图像"
+                title="下载图像"
+              >
+                <Download size={15} strokeWidth={2.1} />
               </button>
             </div>
+
+            {copyToast && (
+              <div className="plot-toolbar-feedback" role="status">
+                {copyToast}
+              </div>
+            )}
           </div>
         )}
 
@@ -207,7 +279,15 @@ export function ChartCard({
         )}
       </div>
 
-      <button type="button" className="resize-handle" onPointerDown={onResizeStart} aria-label="缩放图卡" />
+      <button
+        type="button"
+        className="resize-handle"
+        onPointerDown={onResizeStart}
+        aria-label="缩放图卡"
+        title="缩放图卡"
+      >
+        <MoveDiagonal2 size={15} strokeWidth={2.1} />
+      </button>
     </article>
   )
 }

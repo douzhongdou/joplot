@@ -1,4 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import {
+  ChevronDown,
+  Copy,
+  MoreHorizontal,
+  Palette,
+  Plus,
+  Sparkles,
+  Trash2,
+} from 'lucide-react'
 import type { ChartCard, ChartSeries, CsvData } from '../types'
 
 interface Props {
@@ -28,60 +38,23 @@ const DRAW_MODE_OPTIONS: Array<{ value: NonNullable<ChartCard['drawMode']>; labe
   { value: 'markers', label: '仅点' },
 ]
 
-function CopyIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="inspector-icon">
-      <path d="M5 2.5a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 5 11.5h6A1.5 1.5 0 0 0 12.5 10V4A1.5 1.5 0 0 0 11 2.5H5Zm0 1h6a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-.5.5H5a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5Z" fill="currentColor" />
-      <path d="M2.5 6A1.5 1.5 0 0 1 4 4.5h.5v1H4a.5.5 0 0 0-.5.5v6A1.5 1.5 0 0 0 5 13.5h6a.5.5 0 0 0 .5-.5v-.5h1v.5A1.5 1.5 0 0 1 11 14.5H5A2.5 2.5 0 0 1 2.5 12V6Z" fill="currentColor" />
-    </svg>
-  )
-}
-
-function TrashIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="inspector-icon">
-      <path d="M6 2.5h4a1 1 0 0 1 1 1V4h2a.5.5 0 0 1 0 1h-.7l-.53 7.42A1.5 1.5 0 0 1 10.27 13.8H5.73a1.5 1.5 0 0 1-1.5-1.38L3.7 5H3a.5.5 0 0 1 0-1h2v-.5a1 1 0 0 1 1-1Zm1 1a.25.25 0 0 0-.25.25V4h2.5v-.25A.25.25 0 0 0 9 3.5H7Zm-1.77 8.85a.5.5 0 0 0 .5.45h4.54a.5.5 0 0 0 .5-.45L11.29 5H4.71l.52 7.35Z" fill="currentColor" />
-      <path d="M6.75 6.5a.5.5 0 0 1 .5.5v3.5a.5.5 0 0 1-1 0V7a.5.5 0 0 1 .5-.5Zm2.5 0a.5.5 0 0 1 .5.5v3.5a.5.5 0 0 1-1 0V7a.5.5 0 0 1 .5-.5Z" fill="currentColor" />
-    </svg>
-  )
-}
-
-function MoreIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="inspector-icon">
-      <circle cx="3.5" cy="8" r="1.25" fill="currentColor" />
-      <circle cx="8" cy="8" r="1.25" fill="currentColor" />
-      <circle cx="12.5" cy="8" r="1.25" fill="currentColor" />
-    </svg>
-  )
-}
-
-function PlusIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="inspector-icon">
-      <path d="M8 3a.5.5 0 0 1 .5.5v4h4a.5.5 0 0 1 0 1h-4v4a.5.5 0 0 1-1 0v-4h-4a.5.5 0 0 1 0-1h4v-4A.5.5 0 0 1 8 3Z" fill="currentColor" />
-    </svg>
-  )
-}
-
-function PaletteIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="inspector-icon">
-      <path d="M8 1.5A6.5 6.5 0 0 0 1.5 8 6.5 6.5 0 0 0 8 14.5h1.52a1.98 1.98 0 0 0 0-3.96H8.85a.85.85 0 0 1-.85-.85c0-.24.1-.47.26-.63l3.67-3.68A2.15 2.15 0 0 0 8 1.5Zm-3.1 5.2a.95.95 0 1 1 0-1.9.95.95 0 0 1 0 1.9Zm2.05-2.25a.95.95 0 1 1 0-1.9.95.95 0 0 1 0 1.9Zm2.6.3a.95.95 0 1 1 0-1.9.95.95 0 0 1 0 1.9Zm2.05 2.25a.95.95 0 1 1 0-1.9.95.95 0 0 1 0 1.9Z" fill="currentColor" />
-    </svg>
-  )
-}
-
-function SparkIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="inspector-icon">
-      <path d="M8 1.5a.5.5 0 0 1 .47.32l1.03 2.75 2.75 1.03a.5.5 0 0 1 0 .94L9.5 7.57 8.47 10.32a.5.5 0 0 1-.94 0L6.5 7.57 3.75 6.54a.5.5 0 0 1 0-.94L6.5 4.57l1.03-2.75A.5.5 0 0 1 8 1.5Z" fill="currentColor" />
-    </svg>
-  )
-}
-
 function getKindLabel(kind: ChartCard['kind']) {
   return KIND_OPTIONS.find((option) => option.value === kind)?.label ?? '图卡'
+}
+
+function SelectShell({
+  children,
+  className = '',
+}: {
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div className={`inspector-control-shell ${className}`.trim()}>
+      {children}
+      <ChevronDown size={15} strokeWidth={2.1} className="inspector-control-icon" aria-hidden="true" />
+    </div>
+  )
 }
 
 export function CardInspector({
@@ -95,6 +68,7 @@ export function CardInspector({
   onDuplicate,
   onRemove,
 }: Props) {
+  const shellRef = useRef<HTMLElement>(null)
   const [activeTab, setActiveTab] = useState<InspectorTab>('base')
   const [openMenuSeriesId, setOpenMenuSeriesId] = useState<string | null>(null)
 
@@ -107,11 +81,46 @@ export function CardInspector({
     [datasets],
   )
 
+  useEffect(() => {
+    if (!openMenuSeriesId) {
+      return
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as HTMLElement | null
+      if (!target) {
+        return
+      }
+
+      if (target.closest('.inspector-series-actions')) {
+        return
+      }
+
+      if (shellRef.current?.contains(target)) {
+        setOpenMenuSeriesId(null)
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setOpenMenuSeriesId(null)
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [openMenuSeriesId])
+
   if (!card) {
     return (
       <section className="inspector-shell inspector-shell-empty">
         <div className="inspector-empty-icon">
-          <SparkIcon />
+          <Sparkles size={18} strokeWidth={2.2} />
         </div>
         <strong>先选中一张图卡</strong>
         <p>右侧会显示基础配置和显示设置。</p>
@@ -122,21 +131,19 @@ export function CardInspector({
   const activeDataset = activeDatasetId ? datasetsById[activeDatasetId] : null
 
   return (
-    <section className="inspector-shell">
+    <section ref={shellRef} className="inspector-shell">
       <div className="inspector-header">
         <div className="inspector-header-main">
           <h2>{getKindLabel(card.kind)}</h2>
-          {activeDataset && (
-            <p>{activeDataset.fileName}</p>
-          )}
+          {activeDataset && <p>{activeDataset.fileName}</p>}
         </div>
 
         <div className="inspector-header-actions">
-          <button type="button" className="inspector-icon-button" onClick={onDuplicate} aria-label="复制图卡">
-            <CopyIcon />
+          <button type="button" className="inspector-icon-button" onClick={onDuplicate} aria-label="复制图卡" title="复制图卡">
+            <Copy size={16} strokeWidth={2.1} />
           </button>
-          <button type="button" className="inspector-icon-button" onClick={onRemove} aria-label="删除图卡">
-            <TrashIcon />
+          <button type="button" className="inspector-icon-button" onClick={onRemove} aria-label="删除图卡" title="删除图卡">
+            <Trash2 size={16} strokeWidth={2.1} />
           </button>
         </div>
       </div>
@@ -175,40 +182,46 @@ export function CardInspector({
 
                 <label className="inspector-field">
                   <span>图表类型</span>
-                  <select
-                    value={card.kind}
-                    onChange={(event) => onChangeCard({ kind: event.target.value as ChartCard['kind'] })}
-                  >
-                    {KIND_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
+                  <SelectShell>
+                    <select
+                      value={card.kind}
+                      onChange={(event) => onChangeCard({ kind: event.target.value as ChartCard['kind'] })}
+                    >
+                      {KIND_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </SelectShell>
                 </label>
 
                 <label className="inspector-field">
                   <span>公共 X 轴</span>
-                  <select
-                    value={card.xColumn}
-                    onChange={(event) => onChangeCard({ xColumn: event.target.value })}
-                  >
-                    {allHeaders.map((header) => (
-                      <option key={header} value={header}>{header}</option>
-                    ))}
-                  </select>
+                  <SelectShell>
+                    <select
+                      value={card.xColumn}
+                      onChange={(event) => onChangeCard({ xColumn: event.target.value })}
+                    >
+                      {allHeaders.map((header) => (
+                        <option key={header} value={header}>{header}</option>
+                      ))}
+                    </select>
+                  </SelectShell>
                 </label>
 
                 {card.kind !== 'stats' && (
                   <>
                     <label className="inspector-field">
                       <span>绘制方式</span>
-                      <select
-                        value={card.drawMode}
-                        onChange={(event) => onChangeCard({ drawMode: event.target.value as ChartCard['drawMode'] })}
-                      >
-                        {DRAW_MODE_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
+                      <SelectShell>
+                        <select
+                          value={card.drawMode}
+                          onChange={(event) => onChangeCard({ drawMode: event.target.value as ChartCard['drawMode'] })}
+                        >
+                          {DRAW_MODE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </SelectShell>
                     </label>
 
                     <label className="inspector-field">
@@ -230,8 +243,14 @@ export function CardInspector({
               <div className="inspector-section-header">
                 <div className="inspector-section-title">数据系列</div>
                 {card.kind !== 'stats' && (
-                  <button type="button" className="inspector-add-button" onClick={() => onAddSeries(activeDatasetId ?? undefined)}>
-                    <PlusIcon />
+                  <button
+                    type="button"
+                    className="inspector-add-button"
+                    onClick={() => onAddSeries(activeDatasetId ?? undefined)}
+                    aria-label="新增系列"
+                    title="新增系列"
+                  >
+                    <Plus size={16} strokeWidth={2.2} />
                   </button>
                 )}
               </div>
@@ -252,8 +271,9 @@ export function CardInspector({
                             className="inspector-icon-button"
                             onClick={() => setOpenMenuSeriesId((value) => value === series.id ? null : series.id)}
                             aria-label="系列菜单"
+                            title="系列菜单"
                           >
-                            <MoreIcon />
+                            <MoreHorizontal size={16} strokeWidth={2.1} />
                           </button>
 
                           {openMenuSeriesId === series.id && (
@@ -272,24 +292,28 @@ export function CardInspector({
                       </div>
 
                       <div className="inspector-series-body">
-                        <select
-                          value={series.datasetId}
-                          onChange={(event) => onChangeSeries(series.id, { datasetId: event.target.value })}
-                        >
-                          {datasets.map((option) => (
-                            <option key={option.id} value={option.id}>{option.fileName}</option>
-                          ))}
-                        </select>
+                        <SelectShell className="inspector-series-select">
+                          <select
+                            value={series.datasetId}
+                            onChange={(event) => onChangeSeries(series.id, { datasetId: event.target.value })}
+                          >
+                            {datasets.map((option) => (
+                              <option key={option.id} value={option.id}>{option.fileName}</option>
+                            ))}
+                          </select>
+                        </SelectShell>
 
-                        <select
-                          value={series.yColumn ?? ''}
-                          onChange={(event) => onChangeSeries(series.id, { yColumn: event.target.value || null })}
-                        >
-                          <option value="">选择字段</option>
-                          {numericOptions.map((header) => (
-                            <option key={header} value={header}>{header}</option>
-                          ))}
-                        </select>
+                        <SelectShell className="inspector-series-select">
+                          <select
+                            value={series.yColumn ?? ''}
+                            onChange={(event) => onChangeSeries(series.id, { yColumn: event.target.value || null })}
+                          >
+                            <option value="">选择字段</option>
+                            {numericOptions.map((header) => (
+                              <option key={header} value={header}>{header}</option>
+                            ))}
+                          </select>
+                        </SelectShell>
                       </div>
 
                       {!supportsX && (
@@ -301,12 +325,6 @@ export function CardInspector({
                   )
                 })}
               </div>
-
-              {card.kind !== 'stats' && (
-                <div className="inspector-note">
-                  拖入多个 CSV 后，新建多系列图表会默认按导入顺序自动绑定这些数据集。
-                </div>
-              )}
             </section>
           </>
         )}
@@ -330,8 +348,8 @@ export function CardInspector({
                       <label className="inspector-color-trigger">
                         <span className="inspector-color-swatch" style={{ background: series.color }} />
                         <span>{series.color.toUpperCase()}</span>
-                        <span className="inspector-color-icon">
-                          <PaletteIcon />
+                        <span className="inspector-color-icon" aria-hidden="true">
+                          <Palette size={15} strokeWidth={2.1} />
                         </span>
                         <input
                           type="color"

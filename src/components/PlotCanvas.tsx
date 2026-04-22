@@ -4,9 +4,11 @@ import type { Config, Data, Layout } from 'plotly.js/dist/plotly.min.js'
 import { copyPngDataUrlToClipboard } from '../lib/clipboard'
 import { buildAutorangeUpdate, buildPlotLayout } from '../lib/plotViewport'
 
+export type CopyImageResult = import('../lib/clipboard').ClipboardCopyMode | 'downloaded'
+
 interface PlotCanvasApi {
   autorange: () => Promise<void>
-  copyImage: () => Promise<void>
+  copyImage: () => Promise<CopyImageResult | null>
   downloadImage: () => Promise<void>
 }
 
@@ -60,13 +62,13 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
     async copyImage() {
       const graphDiv = containerRef.current
       if (!graphDiv) {
-        return
+        return null
       }
 
       try {
         const { dataUrl, blob } = await createPlotImagePayload(graphDiv)
 
-        await copyPngDataUrlToClipboard({
+        return await copyPngDataUrlToClipboard({
           blob,
           dataUrl,
           clipboard: typeof navigator !== 'undefined'
@@ -81,6 +83,7 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
           filename: 'plotnow-chart',
           scale: 2,
         })
+        return 'downloaded'
       }
     },
     async downloadImage() {
