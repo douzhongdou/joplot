@@ -2,6 +2,21 @@ export type ChartKind = 'line' | 'scatter' | 'bar' | 'stats'
 export type FilterOperator = 'contains' | 'equals' | 'gt' | 'lt' | 'between'
 export type FilterJoinOperator = 'and' | 'or'
 export type DrawMode = 'lines' | 'lines+markers' | 'markers'
+export type ChartDataMode = 'raw' | 'aggregate'
+export type AxisValueKind = 'category' | 'number' | 'time'
+export type TimeBucket = 'day' | 'week' | 'month' | 'quarter' | 'year'
+export type AggregationKind =
+  | 'sum'
+  | 'mean'
+  | 'count'
+  | 'max'
+  | 'min'
+  | 'median'
+  | 'distinctCount'
+  | 'missingCount'
+  | 'stddev'
+  | 'variance'
+export type AggregationGroupMode = 'file' | 'field'
 
 export type RawCsvRow = Record<string, string>
 export type NumericRow = Record<string, number | null>
@@ -11,6 +26,11 @@ export interface DashboardLayout {
   y: number
   w: number
   h: number
+}
+
+export interface AxisRange {
+  min: string
+  max: string
 }
 
 export interface NormalizedRow {
@@ -43,10 +63,26 @@ export interface ChartSeries {
   color: string
 }
 
+export interface AggregationConfig {
+  datasetIds: string[]
+  xColumn: string
+  xKind: AxisValueKind
+  timeBucket: TimeBucket
+  groupMode: AggregationGroupMode
+  groupColumn: string | null
+  metricColumn: string
+  aggregation: AggregationKind
+}
+
+export type ChartDataConfig =
+  | { mode: 'raw' }
+  | { mode: 'aggregate'; aggregation: AggregationConfig }
+
 export interface ChartCard {
   id: string
   kind: ChartKind
   title: string
+  dataConfig: ChartDataConfig
   xColumn: string
   series: ChartSeries[]
   drawMode: DrawMode
@@ -54,6 +90,8 @@ export interface ChartCard {
   showLegend: boolean
   showGrid: boolean
   showAxes: boolean
+  xRange: AxisRange
+  yRange: AxisRange
   yMin: number | null
   yMax: number | null
   layout: DashboardLayout

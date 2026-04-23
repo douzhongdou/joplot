@@ -77,6 +77,12 @@ export function resolveInitialLanguage(
   storedLanguage?: string | null,
   browserLanguage?: string | null,
 ): SupportedLanguage {
+  if (browserLanguage === undefined && !pathname?.trim().startsWith('/')) {
+    return normalizeLanguage(pathname)
+      ?? normalizeLanguage(storedLanguage)
+      ?? 'en'
+  }
+
   return resolveLanguageFromPath(pathname)
     ?? normalizeLanguage(storedLanguage)
     ?? normalizeLanguage(browserLanguage)

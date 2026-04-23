@@ -11,6 +11,7 @@ import {
   listAvailableSeriesYColumns,
   moveCardToLayout,
   sampleRows,
+  sanitizeCardsForDatasets,
   summarizeNumericColumn,
 } from '../src/lib/workbench.ts'
 import {
@@ -83,6 +84,23 @@ test('createDefaultCard uses first column as x and creates a default series from
   assert.equal(defaultCard.series[0].datasetId, fallbackDataset.id)
   assert.equal(defaultCard.series[0].yColumn, 'amount')
   assert.deepEqual(defaultCard.layout, { x: 0, y: 0, w: 12, h: 8 })
+})
+
+test('sanitizeCardsForDatasets keeps legacy cards in raw mode and adds empty axis ranges', () => {
+  const dataset = createDataset()
+  const legacyCard = createDefaultCard(dataset)
+  const legacyWithoutNewFields = {
+    ...legacyCard,
+    dataConfig: undefined,
+    xRange: undefined,
+    yRange: undefined,
+  } as unknown as ChartCard
+
+  const [sanitized] = sanitizeCardsForDatasets([legacyWithoutNewFields], [dataset], dataset.id)
+
+  assert.deepEqual(sanitized.dataConfig, { mode: 'raw' })
+  assert.deepEqual(sanitized.xRange, { min: '', max: '' })
+  assert.deepEqual(sanitized.yRange, { min: '', max: '' })
 })
 
 test('appendCardSeries adds a compatible dataset as a new series on the same chart', () => {
