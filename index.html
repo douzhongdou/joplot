@@ -12,11 +12,17 @@
     <meta name="theme-color" content="#155eef" />
     <meta name="application-name" content="joplot" />
     <meta name="apple-mobile-web-app-title" content="joplot" />
-    <link rel="icon" type="image/svg+xml" href="/src/icon.svg" />
-    <link rel="apple-touch-icon" href="/src/icon.svg" />
+    <link rel="icon" type="image/webp" href="/icon.webp" />
+    <link rel="apple-touch-icon" href="/icon.webp" />
     <title>joplot | Redirecting to your language</title>
     <script>
       (function redirectToLanguage() {
+        const pathname = window.location.pathname.replace(/\/+$/, '') || '/'
+
+        if (pathname !== '/' && pathname !== '/index.html') {
+          return
+        }
+
         const language = (navigator.language || '').toLowerCase()
         const target = language.startsWith('zh')
           ? '/zh'
@@ -29,13 +35,17 @@
     </script>
   </head>
   <body>
-    <main>
-      <p>Redirecting to the best language version for your browser.</p>
-      <ul>
-        <li><a href="/zh">中文</a></li>
-        <li><a href="/en">English</a></li>
-        <li><a href="/ja">日本語</a></li>
-      </ul>
-    </main>
+    <noscript>
+      <main>
+        <p>Choose your preferred language version:</p>
+        <ul>
+          <li><a href="/zh">中文</a></li>
+          <li><a href="/en">English</a></li>
+          <li><a href="/ja">日本語</a></li>
+        </ul>
+      </main>
+    </noscript>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
