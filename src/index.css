@@ -144,3 +144,8 @@
   width: 100%;
   height: 100%;
 }
+
+/* Hover tooltip rounded corners */
+.js-plotly-plot .hoverlayer .hovertext rect {
+  clip-path: inset(0 round 8px) !important;
+}

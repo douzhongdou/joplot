@@ -218,6 +218,12 @@ export function ChartCard({
     },
     showlegend: card.showLegend && renderedSeriesCount > 1,
     hovermode: 'x unified',
+    hoverlabel: {
+      bgcolor: '#ffffff',
+      bordercolor: '#e5e7eb',
+      font: { color: '#111827' },
+      pad: { t: 6, b: 6, l: 10, r: 10 },
+    },
   }), [
     card.dataConfig,
     card.showAxes,

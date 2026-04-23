@@ -112,12 +112,12 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
       graphDiv,
       data,
       buildPlotLayout({
-        margin: { l: 52, r: 18, t: 18, b: 44 },
+        margin: { l: 78, r: 18, t: 24, b: 88 },
         paper_bgcolor: 'transparent',
         plot_bgcolor: resolveThemeColor('--color-base-100', '#ffffff'),
         font: {
           family: 'Segoe UI, PingFang SC, Microsoft YaHei, sans-serif',
-          size: 12,
+          size: 14,
           color: resolveThemeColor('--color-base-content', '#111827'),
         },
         ...layout,
@@ -142,6 +142,29 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
     }
   }, [])
 
+  // Round hover tooltip corners (Plotly doesn't support this natively)
+  useEffect(() => {
+    const graphDiv = containerRef.current
+    if (!graphDiv) return
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function handleHover() {
+      if (!graphDiv) return
+      const rect = graphDiv.querySelector<SVGRectElement>('.hoverlayer .hovertext rect')
+      if (rect) {
+        rect.setAttribute('rx', '8')
+        rect.setAttribute('ry', '8')
+      }
+    }
+
+    graphDiv.addEventListener('plotly_hover', handleHover)
+    graphDiv.addEventListener('plotly_unhover', handleHover)
+    return () => {
+      graphDiv.removeEventListener('plotly_hover', handleHover)
+      graphDiv.removeEventListener('plotly_unhover', handleHover)
+    }
+  }, [])
+
   useEffect(() => {
     if (!containerRef.current) {
       return
@@ -160,5 +183,5 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
     }
   }, [])
 
-  return <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden rounded-[var(--radius-box)] border border-base-300 bg-base-100" />
+  return <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden rounded-[var(--radius-box)] border border-base-300 bg-white" />
 })

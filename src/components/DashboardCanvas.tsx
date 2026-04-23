@@ -126,11 +126,6 @@ export function DashboardCanvas({
         style={{
           gridTemplateColumns: `repeat(${GRID_COLUMNS}, minmax(0, 1fr))`,
           gridTemplateRows: `repeat(${totalRows}, minmax(${GRID_ROW_HEIGHT}px, ${GRID_ROW_HEIGHT}px))`,
-          backgroundImage: `
-            linear-gradient(color-mix(in oklab, var(--color-base-content) 6%, transparent) 1px, transparent 1px),
-            linear-gradient(90deg, color-mix(in oklab, var(--color-base-content) 6%, transparent) 1px, transparent 1px)
-          `,
-          backgroundSize: `100% ${GRID_ROW_HEIGHT}px, calc(100% / ${GRID_COLUMNS}) 100%`,
         }}
       >
         {cards.map((card) => (
