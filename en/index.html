@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="joplot is a CSV charting and data analysis workspace for importing multiple CSV files, building charts quickly, and comparing datasets in one canvas."
+    />
+    <meta name="author" content="joplot" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="theme-color" content="#155eef" />
+    <meta name="application-name" content="joplot" />
+    <meta name="apple-mobile-web-app-title" content="joplot" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:site_name" content="joplot" />
+    <meta property="og:title" content="joplot | CSV charting and data analysis workspace" />
+    <meta
+      property="og:description"
+      content="Import multiple CSV files, build charts quickly, filter data, and compare datasets in one workspace."
+    />
+    <meta property="og:image" content="/icon.webp" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="joplot | CSV charting and data analysis workspace" />
+    <meta
+      name="twitter:description"
+      content="A focused workspace for CSV charting, filtering, comparison, and export."
+    />
+    <meta name="twitter:image" content="/icon.webp" />
+    <link rel="icon" type="image/webp" href="/icon.webp" />
+    <link rel="apple-touch-icon" href="/icon.webp" />
+    <title>joplot | CSV charting and data analysis workspace</title>
+    <script>
+      (function applySeoLinks() {
+        const origin = window.location.origin
+        const links = [
+          { rel: 'canonical', href: origin + '/en' },
+          { rel: 'alternate', hreflang: 'en', href: origin + '/en' },
+          { rel: 'alternate', hreflang: 'zh', href: origin + '/zh' },
+          { rel: 'alternate', hreflang: 'ja', href: origin + '/ja' },
+          { rel: 'alternate', hreflang: 'x-default', href: origin + '/' },
+        ]
+
+        for (const definition of links) {
+          const link = document.createElement('link')
+          link.rel = definition.rel
+          link.href = definition.href
+
+          if ('hreflang' in definition) {
+            link.hreflang = definition.hreflang
+          }
+
+          document.head.appendChild(link)
+        }
+      })()
+    </script>
+    <script
+      defer
+      src="https://analytics.hardgit.com/script.js"
+      data-website-id="ae3a3e3e-896b-4a99-bb52-66dc81e59839"
+    ></script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "joplot",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web",
+        "inLanguage": "en",
+        "description": "joplot is a CSV charting and data analysis workspace for importing multiple CSV files, building charts quickly, filtering data, and exporting results."
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

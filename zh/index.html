@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="joplot 是一个面向 CSV 数据探索的图表工作台，支持拖拽上传多个 CSV、快速生成图表、筛选数据并在同一画布中比较多份数据集。"
+    />
+    <meta name="author" content="joplot" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="theme-color" content="#155eef" />
+    <meta name="application-name" content="joplot" />
+    <meta name="apple-mobile-web-app-title" content="joplot" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="joplot" />
+    <meta property="og:title" content="joplot | CSV 图表与数据分析工作台" />
+    <meta
+      property="og:description"
+      content="拖拽上传多个 CSV，快速生成图表、筛选数据并在同一画布中比较多份数据集。"
+    />
+    <meta property="og:image" content="/icon.webp" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="joplot | CSV 图表与数据分析工作台" />
+    <meta
+      name="twitter:description"
+      content="一个专注 CSV 数据探索的图表工作台，支持多文件导入、筛选、对比与导出。"
+    />
+    <meta name="twitter:image" content="/icon.webp" />
+    <link rel="icon" type="image/webp" href="/icon.webp" />
+    <link rel="apple-touch-icon" href="/icon.webp" />
+    <title>joplot | CSV 图表与数据分析工作台</title>
+    <script>
+      (function applySeoLinks() {
+        const origin = window.location.origin
+        const links = [
+          { rel: 'canonical', href: origin + '/zh' },
+          { rel: 'alternate', hreflang: 'en', href: origin + '/en' },
+          { rel: 'alternate', hreflang: 'zh', href: origin + '/zh' },
+          { rel: 'alternate', hreflang: 'ja', href: origin + '/ja' },
+          { rel: 'alternate', hreflang: 'x-default', href: origin + '/' },
+        ]
+
+        for (const definition of links) {
+          const link = document.createElement('link')
+          link.rel = definition.rel
+          link.href = definition.href
+
+          if ('hreflang' in definition) {
+            link.hreflang = definition.hreflang
+          }
+
+          document.head.appendChild(link)
+        }
+      })()
+    </script>
+    <script
+      defer
+      src="https://analytics.hardgit.com/script.js"
+      data-website-id="ae3a3e3e-896b-4a99-bb52-66dc81e59839"
+    ></script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "joplot",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web",
+        "inLanguage": "zh-CN",
+        "description": "joplot 是一个面向 CSV 数据探索的图表工作台，支持拖拽上传多个 CSV、快速生成图表、筛选数据并导出结果。"
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
