@@ -1,10 +1,10 @@
 export type ChartKind = 'line' | 'scatter' | 'bar' | 'stats'
 export type FilterOperator = 'contains' | 'equals' | 'gt' | 'lt' | 'between'
+export type FilterJoinOperator = 'and' | 'or'
 export type DrawMode = 'lines' | 'lines+markers' | 'markers'
 
 export type RawCsvRow = Record<string, string>
 export type NumericRow = Record<string, number | null>
-export type FiltersByDataset = Record<string, FilterRule[]>
 
 export interface DashboardLayout {
   x: number

@@ -52,7 +52,7 @@ test('pickFirstCsvFile returns null when the list has no csv file', () => {
   )
 })
 
-test('buildUploadHint describes page-wide multi-file drag upload before a dataset is loaded', () => {
+test('buildUploadHint describes page-wide multi-file drag upload in Chinese by default', () => {
   assert.equal(
     buildUploadHint(false),
     '拖拽一个或多个 CSV 到页面任意位置，或点击上传',
@@ -63,5 +63,16 @@ test('buildUploadHint switches to add-more wording after datasets are loaded', (
   assert.equal(
     buildUploadHint(true),
     '拖拽一个或多个 CSV 到页面任意位置，或点击添加',
+  )
+})
+
+test('buildUploadHint supports english and japanese dictionaries', () => {
+  assert.equal(
+    buildUploadHint(false, 'en'),
+    'Drag one or more CSV files anywhere on the page, or click Upload',
+  )
+  assert.equal(
+    buildUploadHint(true, 'ja-JP'),
+    '1 件以上の CSV をページ上の任意の場所にドロップするか、追加をクリックしてください',
   )
 })

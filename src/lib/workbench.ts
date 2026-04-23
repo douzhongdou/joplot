@@ -5,13 +5,13 @@ import type {
   ColumnSummary,
   CsvData,
   DashboardLayout,
+  FilterJoinOperator,
   FilterRule,
-  FiltersByDataset,
   NormalizedRow,
   RawCsvRow,
 } from '../types'
+import { getChartColor, isHexChartColor } from './theme.ts'
 
-const CARD_COLORS = ['#155eef', '#dd6b20', '#0f766e', '#b93815', '#3b3f98', '#7a3e9d']
 export const DASHBOARD_COLUMNS = 12
 export const DASHBOARD_MIN_WIDTH = 3
 export const DASHBOARD_MIN_HEIGHT = 4
@@ -87,6 +87,35 @@ function getDefaultYColumn(dataset: CsvData, xColumn: string) {
   return dataset.numericColumns.find((column) => column !== xColumn)
     ?? dataset.numericColumns[0]
     ?? null
+}
+
+function buildSeriesBindingKey(datasetId: string, yColumn: string | null) {
+  return yColumn ? `${datasetId}:${yColumn}` : null
+}
+
+function listPreferredYColumns(dataset: CsvData, xColumn: string) {
+  const nonXColumns = dataset.numericColumns.filter((column) => column !== xColumn)
+  const xColumnFallback = dataset.numericColumns.includes(xColumn) ? [xColumn] : []
+
+  return [...nonXColumns, ...xColumnFallback]
+}
+
+export function listAvailableSeriesYColumns(
+  card: Pick<ChartCard, 'xColumn' | 'series'>,
+  dataset: CsvData,
+  options: {
+    excludeSeriesId?: string | null
+  } = {},
+) {
+  const usedBindings = new Set(
+    card.series
+      .filter((series) => series.id !== options.excludeSeriesId)
+      .map((series) => buildSeriesBindingKey(series.datasetId, series.yColumn))
+      .filter((binding): binding is string => binding !== null),
+  )
+
+  return listPreferredYColumns(dataset, card.xColumn)
+    .filter((column) => !usedBindings.has(buildSeriesBindingKey(dataset.id, column)!))
 }
 
 function getSeriesLabel(dataset: CsvData, fallback: string) {
@@ -201,9 +230,43 @@ export function createCardSeries(
     datasetId: dataset.id,
     label: getSeriesLabel(dataset, '数据系列'),
     yColumn: getDefaultYColumn(dataset, xColumn),
-    color: CARD_COLORS[0],
+    color: getChartColor(0),
     ...overrides,
   }
+}
+
+export function findAvailableSeriesYColumn(
+  card: Pick<ChartCard, 'xColumn' | 'series'>,
+  dataset: CsvData,
+  options: {
+    preferredYColumn?: string | null
+    excludeSeriesId?: string | null
+  } = {},
+) {
+  if (!dataset.headers.includes(card.xColumn)) {
+    return null
+  }
+
+  const usedBindings = new Set(
+    card.series
+      .filter((series) => series.id !== options.excludeSeriesId)
+      .map((series) => buildSeriesBindingKey(series.datasetId, series.yColumn))
+      .filter((binding): binding is string => binding !== null),
+  )
+  const candidateColumns = listAvailableSeriesYColumns(card, dataset, {
+    excludeSeriesId: options.excludeSeriesId,
+  })
+
+  if (
+    options.preferredYColumn
+    && listPreferredYColumns(dataset, card.xColumn).includes(options.preferredYColumn)
+    && !usedBindings.has(buildSeriesBindingKey(dataset.id, options.preferredYColumn)!)
+  ) {
+    return options.preferredYColumn
+  }
+
+  return candidateColumns.find((column) => !usedBindings.has(buildSeriesBindingKey(dataset.id, column)!))
+    ?? null
 }
 
 export function createCard(
@@ -261,8 +324,17 @@ export function appendCardSeries(
     return card
   }
 
+  const nextYColumn = findAvailableSeriesYColumn(card, dataset, {
+    preferredYColumn: overrides.yColumn,
+  })
+
+  if (nextYColumn === null) {
+    return card
+  }
+
   const nextSeries = createCardSeries(dataset, card.xColumn, {
-    color: CARD_COLORS[card.series.length % CARD_COLORS.length],
+    color: getChartColor(card.series.length),
+    yColumn: nextYColumn,
     ...overrides,
   })
 
@@ -281,13 +353,33 @@ export function createAutoSeriesForDatasets(
   xColumn: string,
   limit?: number,
 ): ChartSeries[] {
-  return datasets
-    .filter((dataset) => dataset.headers.includes(xColumn))
-    .map((dataset, index) => createCardSeries(dataset, xColumn, {
-      color: CARD_COLORS[index % CARD_COLORS.length],
+  const series: ChartSeries[] = []
+
+  for (const dataset of datasets) {
+    if (!dataset.headers.includes(xColumn)) {
+      continue
+    }
+
+    const nextYColumn = findAvailableSeriesYColumn(
+      { xColumn, series },
+      dataset,
+    )
+
+    if (nextYColumn === null) {
+      continue
+    }
+
+    series.push(createCardSeries(dataset, xColumn, {
+      color: getChartColor(series.length),
+      yColumn: nextYColumn,
     }))
-    .filter((series) => series.yColumn !== null)
-    .slice(0, limit ?? datasets.length)
+
+    if (series.length >= (limit ?? datasets.length)) {
+      break
+    }
+  }
+
+  return series
 }
 
 export function appendCardWithLayout(cards: ChartCard[], card: ChartCard): ChartCard[] {
@@ -314,41 +406,50 @@ export function moveCardToLayout(cards: ChartCard[], cardId: string, layout: Das
   )
 }
 
-export function applyFilters(rows: NormalizedRow[], filters: FilterRule[]): NormalizedRow[] {
-  return rows.filter((row) =>
-    filters.every((filter) => {
-      const rawValue = row.raw[filter.column] ?? ''
-      const numericValue = row.numeric[filter.column]
+function evaluateFilter(row: NormalizedRow, filter: FilterRule): boolean {
+  const rawValue = row.raw[filter.column] ?? ''
+  const numericValue = row.numeric[filter.column]
 
-      switch (filter.operator) {
-        case 'contains':
-          return rawValue.toLowerCase().includes(filter.value.toLowerCase())
-        case 'equals':
-          return rawValue === filter.value
-        case 'gt':
-          return numericValue !== null && numericValue > Number(filter.value)
-        case 'lt':
-          return numericValue !== null && numericValue < Number(filter.value)
-        case 'between': {
-          const lower = Number(filter.value)
-          const upper = Number(filter.valueTo ?? filter.value)
-          return numericValue !== null && numericValue >= lower && numericValue <= upper
-        }
-        default:
-          return true
-      }
-    }),
-  )
+  switch (filter.operator) {
+    case 'contains':
+      return rawValue.toLowerCase().includes(filter.value.toLowerCase())
+    case 'equals':
+      return rawValue === filter.value
+    case 'gt':
+      return numericValue !== null && numericValue > Number(filter.value)
+    case 'lt':
+      return numericValue !== null && numericValue < Number(filter.value)
+    case 'between': {
+      const lower = Number(filter.value)
+      const upper = Number(filter.valueTo ?? filter.value)
+      return numericValue !== null && numericValue >= lower && numericValue <= upper
+    }
+    default:
+      return true
+  }
 }
 
 export function buildFilteredRowsByDataset(
   datasets: CsvData[],
-  filtersByDataset: FiltersByDataset,
+  filters: FilterRule[],
+  joinOperator: FilterJoinOperator,
 ): Record<string, NormalizedRow[]> {
   return Object.fromEntries(
     datasets.map((dataset) => [
       dataset.id,
-      applyFilters(dataset.rows, filtersByDataset[dataset.id] ?? []),
+      dataset.rows.filter((row) => {
+        const applicableFilters = filters.filter((filter) => dataset.headers.includes(filter.column))
+
+        if (applicableFilters.length === 0) {
+          return true
+        }
+
+        if (joinOperator === 'or') {
+          return applicableFilters.some((filter) => evaluateFilter(row, filter))
+        }
+
+        return applicableFilters.every((filter) => evaluateFilter(row, filter))
+      }),
     ]),
   )
 }
@@ -422,7 +523,7 @@ export function sanitizeCardsForDatasets(
       ? legacyCard.series
       : [createCardSeries(fallbackDataset, legacyCard.xColumn ?? fallbackDataset.headers[0] ?? '', {
           yColumn: legacyCard.yColumn ?? getDefaultYColumn(fallbackDataset, legacyCard.xColumn ?? fallbackDataset.headers[0] ?? ''),
-          color: legacyCard.color ?? CARD_COLORS[0],
+          color: legacyCard.color ?? getChartColor(0),
         })]
     const primaryDataset =
       rawSeries
@@ -432,6 +533,7 @@ export function sanitizeCardsForDatasets(
 
     const fallbackXColumn = primaryDataset.headers[0] ?? ''
     const xColumn = primaryDataset.headers.includes(card.xColumn) ? card.xColumn : fallbackXColumn
+    const seenBindings = new Set<string>()
     const validSeries = rawSeries
       .map<ChartSeries | null>((series, seriesIndex) => {
         const dataset = datasetMap[series.datasetId]
@@ -448,14 +550,22 @@ export function sanitizeCardsForDatasets(
           return null
         }
 
+        const bindingKey = buildSeriesBindingKey(dataset.id, yColumn)
+
+        if (!bindingKey || seenBindings.has(bindingKey)) {
+          return null
+        }
+
+        seenBindings.add(bindingKey)
+
         return {
           ...createCardSeries(dataset, xColumn, {
-            color: CARD_COLORS[seriesIndex % CARD_COLORS.length],
+            color: getChartColor(seriesIndex),
           }),
           ...series,
           yColumn,
           label: series.label || getSeriesLabel(dataset, `数据系列 ${seriesIndex + 1}`),
-          color: series.color || CARD_COLORS[seriesIndex % CARD_COLORS.length],
+          color: isHexChartColor(series.color) ? series.color : getChartColor(seriesIndex),
         }
       })
       .filter((series): series is ChartSeries => series !== null)

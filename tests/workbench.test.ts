@@ -4,10 +4,11 @@ import assert from 'node:assert/strict'
 import {
   appendCardSeries,
   appendCardWithLayout,
-  applyFilters,
   buildDataset,
   buildFilteredRowsByDataset,
+  createAutoSeriesForDatasets,
   createDefaultCard,
+  listAvailableSeriesYColumns,
   moveCardToLayout,
   sampleRows,
   summarizeNumericColumn,
@@ -96,6 +97,27 @@ test('appendCardSeries adds a compatible dataset as a new series on the same cha
   assert.equal(nextCard.series[1].yColumn, 'temperature')
 })
 
+test('appendCardSeries uses the next available numeric column instead of duplicating the same dataset field', () => {
+  const primary = createDataset()
+  const defaultCard = createDefaultCard(primary)
+
+  const nextCard = appendCardSeries(defaultCard, primary)
+
+  assert.equal(nextCard.series.length, 2)
+  assert.equal(nextCard.series[1].datasetId, primary.id)
+  assert.equal(nextCard.series[1].yColumn, 'score')
+})
+
+test('appendCardSeries refuses to add a duplicate dataset field when no unique numeric column remains', () => {
+  const secondary = createSecondaryDataset()
+  const defaultCard = createDefaultCard(secondary)
+
+  const nextCard = appendCardSeries(defaultCard, secondary)
+
+  assert.equal(nextCard.series.length, 1)
+  assert.deepEqual(nextCard, defaultCard)
+})
+
 test('appendCardSeries ignores datasets that do not have the current x column', () => {
   const primary = createDataset()
   const incompatible = createIncompatibleDataset()
@@ -107,30 +129,70 @@ test('appendCardSeries ignores datasets that do not have the current x column', 
   assert.deepEqual(nextCard, defaultCard)
 })
 
-test('buildFilteredRowsByDataset applies each dataset filter set independently', () => {
+test('createAutoSeriesForDatasets skips duplicate dataset-field bindings', () => {
+  const primary = createDataset()
+
+  const series = createAutoSeriesForDatasets([primary, primary, primary], 'time')
+
+  assert.equal(series.length, 2)
+  assert.deepEqual(
+    series.map((item) => item.yColumn),
+    ['value', 'score'],
+  )
+})
+
+test('listAvailableSeriesYColumns hides duplicate dataset-field choices from other series', () => {
+  const primary = createDataset()
+  const card = appendCardSeries(createDefaultCard(primary), primary)
+
+  const availableColumns = listAvailableSeriesYColumns(card, primary)
+
+  assert.deepEqual(availableColumns, [])
+})
+
+test('listAvailableSeriesYColumns keeps the current series field visible while hiding other duplicates', () => {
+  const primary = createDataset()
+  const card = appendCardSeries(createDefaultCard(primary), primary)
+
+  const availableColumns = listAvailableSeriesYColumns(card, primary, {
+    excludeSeriesId: card.series[1].id,
+  })
+
+  assert.deepEqual(availableColumns, ['score'])
+})
+
+test('buildFilteredRowsByDataset applies workspace filters only to datasets that contain those columns', () => {
   const primary = createDataset()
   const secondary = createSecondaryDataset()
 
-  const filtered = buildFilteredRowsByDataset([primary, secondary], {
-    [primary.id]: [{ id: '1', column: 'status', operator: 'contains', value: 'ok' }],
-    [secondary.id]: [{ id: '2', column: 'temperature', operator: 'gt', value: '21' }],
-  })
+  const filtered = buildFilteredRowsByDataset(
+    [primary, secondary],
+    [
+      { id: '1', column: 'status', operator: 'contains', value: 'ok' },
+      { id: '2', column: 'temperature', operator: 'gt', value: '21' },
+    ],
+    'and',
+  )
 
   assert.equal(filtered[primary.id].length, 2)
   assert.equal(filtered[secondary.id].length, 1)
   assert.equal(filtered[secondary.id][0].raw.time, '2026-01-02')
 })
 
-test('applyFilters supports text contains and numeric greater-than together', () => {
+test('buildFilteredRowsByDataset supports text contains and numeric greater-than together', () => {
   const dataset = createDataset()
 
-  const filtered = applyFilters(dataset.rows, [
-    { id: '1', column: 'status', operator: 'contains', value: 'ok' },
-    { id: '2', column: 'score', operator: 'gt', value: '0' },
-  ])
+  const filtered = buildFilteredRowsByDataset(
+    [dataset],
+    [
+      { id: '1', column: 'status', operator: 'contains', value: 'ok' },
+      { id: '2', column: 'score', operator: 'gt', value: '0' },
+    ],
+    'and',
+  )
 
-  assert.equal(filtered.length, 1)
-  assert.equal(filtered[0].raw.time, '2026-01-01')
+  assert.equal(filtered[dataset.id].length, 1)
+  assert.equal(filtered[dataset.id][0].raw.time, '2026-01-01')
 })
 
 test('summarizeNumericColumn ignores null values', () => {

@@ -3,6 +3,7 @@ import Plotly from 'plotly.js/dist/plotly.min.js'
 import type { Config, Data, Layout } from 'plotly.js/dist/plotly.min.js'
 import { copyPngDataUrlToClipboard } from '../lib/clipboard'
 import { buildAutorangeUpdate, buildPlotLayout } from '../lib/plotViewport'
+import { resolveThemeColor } from '../lib/theme'
 
 export type CopyImageResult = import('../lib/clipboard').ClipboardCopyMode | 'downloaded'
 
@@ -113,8 +114,12 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
       buildPlotLayout({
         margin: { l: 52, r: 18, t: 18, b: 44 },
         paper_bgcolor: 'transparent',
-        plot_bgcolor: '#ffffff',
-        font: { family: 'Segoe UI, PingFang SC, Microsoft YaHei, sans-serif', size: 12, color: '#172b4d' },
+        plot_bgcolor: resolveThemeColor('--color-base-100', '#ffffff'),
+        font: {
+          family: 'Segoe UI, PingFang SC, Microsoft YaHei, sans-serif',
+          size: 12,
+          color: resolveThemeColor('--color-base-content', '#111827'),
+        },
         ...layout,
       }, uirevision),
       {
@@ -155,5 +160,5 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
     }
   }, [])
 
-  return <div ref={containerRef} className="plot-shell" />
+  return <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden rounded-[var(--radius-box)] border border-base-300 bg-base-100" />
 })
