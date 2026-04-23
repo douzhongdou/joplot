@@ -166,8 +166,8 @@ export const en = {
     copySuccess: 'Copied',
     copyDownloadedFallback: 'Clipboard unavailable, downloaded instead',
     noValidSeries: 'This chart card does not have any valid series to render. Choose a usable dataset and field in the inspector.',
-    aggregateSkipped: ({ datasets, rows }: { datasets: string | number; rows: string | number }) =>
-      `Skipped ${datasets} data sources and ${rows} rows while aggregating.`,
+    aggregateSkipped: ({ datasets, rows, series }: { datasets: string | number; rows: string | number; series?: string | number }) =>
+      `Skipped ${datasets} data sources, ${rows} rows, and ${series ?? 0} groups while aggregating.`,
     resizeCard: 'Resize chart card',
   },
 } satisfies TranslationDictionary

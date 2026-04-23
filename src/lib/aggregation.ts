@@ -28,6 +28,7 @@ export interface AggregationResult {
   series: AggregatedSeries[]
   skippedDatasets: SkippedDataset[]
   skippedRows: number
+  omittedSeriesCount: number
 }
 
 interface BucketAccumulator {
@@ -45,6 +46,8 @@ interface SeriesAccumulator {
   sourceDatasetIds: Set<string>
   buckets: Map<string, BucketAccumulator>
 }
+
+export const DEFAULT_AGGREGATED_SERIES_LIMIT = 50
 
 function pad2(value: number) {
   return String(value).padStart(2, '0')
@@ -330,9 +333,10 @@ export function buildAggregatedSeries(
           y: aggregateValues(bucket, config.aggregation),
         }))
         .sort(comparePoints),
-    })),
+    })).slice(0, DEFAULT_AGGREGATED_SERIES_LIMIT),
     skippedDatasets,
     skippedRows,
+    omittedSeriesCount: Math.max(0, seriesMap.size - DEFAULT_AGGREGATED_SERIES_LIMIT),
   }
 }
 

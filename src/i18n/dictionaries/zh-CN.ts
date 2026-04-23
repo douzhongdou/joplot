@@ -166,8 +166,8 @@ export const zhCN = {
     copySuccess: '已复制',
     copyDownloadedFallback: '剪贴板不可用，已改为下载',
     noValidSeries: '当前图卡没有可绘制的有效数据系列。请在右侧为它选择可用的数据集和字段。',
-    aggregateSkipped: ({ datasets, rows }: { datasets: string | number; rows: string | number }) =>
-      `聚合时跳过了 ${datasets} 个数据源、${rows} 行数据。`,
+    aggregateSkipped: ({ datasets, rows, series }: { datasets: string | number; rows: string | number; series?: string | number }) =>
+      `聚合时跳过了 ${datasets} 个数据源、${rows} 行数据，并省略了 ${series ?? 0} 个分组。`,
     resizeCard: '缩放图卡',
   },
 } satisfies TranslationDictionary

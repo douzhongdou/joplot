@@ -412,11 +412,16 @@ export function ChartCard({
           </div>
         )}
 
-        {aggregateResult && (aggregateResult.skippedDatasets.length > 0 || aggregateResult.skippedRows > 0) && (
+        {aggregateResult && (
+          aggregateResult.skippedDatasets.length > 0
+          || aggregateResult.skippedRows > 0
+          || aggregateResult.omittedSeriesCount > 0
+        ) && (
           <div className="mt-3 rounded-[var(--radius-box)] bg-warning/10 px-3 py-2 text-xs leading-5 text-warning">
             {t('chartCard.aggregateSkipped', {
               datasets: aggregateResult.skippedDatasets.length,
               rows: aggregateResult.skippedRows,
+              series: aggregateResult.omittedSeriesCount,
             })}
           </div>
         )}

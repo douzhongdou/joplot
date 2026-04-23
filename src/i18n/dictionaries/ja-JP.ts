@@ -166,8 +166,8 @@ export const jaJP = {
     copySuccess: 'コピーしました',
     copyDownloadedFallback: 'クリップボードが使えないためダウンロードしました',
     noValidSeries: 'このチャートカードには描画できる有効なデータ系列がありません。右側で利用可能なデータセットとフィールドを選択してください。',
-    aggregateSkipped: ({ datasets, rows }: { datasets: string | number; rows: string | number }) =>
-      `集計時に ${datasets} 件のデータソースと ${rows} 行をスキップしました。`,
+    aggregateSkipped: ({ datasets, rows, series }: { datasets: string | number; rows: string | number; series?: string | number }) =>
+      `集計時に ${datasets} 件のデータソース、${rows} 行、${series ?? 0} 件のグループをスキップしました。`,
     resizeCard: 'カードをリサイズ',
   },
 } satisfies TranslationDictionary

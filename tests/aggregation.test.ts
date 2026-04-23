@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { buildAggregatedSeries, toPlotSeries } from '../src/lib/aggregation.ts'
+import { DEFAULT_AGGREGATED_SERIES_LIMIT, buildAggregatedSeries, toPlotSeries } from '../src/lib/aggregation.ts'
 import { buildDataset } from '../src/lib/workbench.ts'
 import type { CsvData, NormalizedRow } from '../src/types.ts'
 
@@ -235,4 +235,33 @@ test('converts aggregated results into plot-ready series', () => {
       y: [30, 30, 40],
     },
   ])
+})
+
+test('limits field-grouped output to avoid rendering too many chart series', () => {
+  const rows = Array.from({ length: DEFAULT_AGGREGATED_SERIES_LIMIT + 5 }, (_, index) => ({
+    bucket: 'A',
+    group: `group-${String(index).padStart(2, '0')}`,
+    value: String(index + 1),
+  }))
+  const dataset = buildDataset(['bucket', 'group', 'value'], rows, 'wide.csv', 'wide')
+
+  const result = buildAggregatedSeries(
+    [dataset],
+    {
+      datasetIds: [dataset.id],
+      xColumn: 'bucket',
+      xKind: 'category',
+      timeBucket: 'month',
+      groupMode: 'field',
+      groupColumn: 'group',
+      metricColumn: 'value',
+      aggregation: 'sum',
+    },
+    rowsByDataset([dataset]),
+  )
+
+  assert.equal(result.series.length, DEFAULT_AGGREGATED_SERIES_LIMIT)
+  assert.equal(result.omittedSeriesCount, 5)
+  assert.equal(result.series[0].name, 'group-00')
+  assert.equal(result.series.at(-1)?.name, `group-${DEFAULT_AGGREGATED_SERIES_LIMIT - 1}`)
 })
