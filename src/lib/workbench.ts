@@ -1,4 +1,5 @@
 import type {
+  AggregationConfig,
   AxisRange,
   ChartCard,
   ChartKind,
@@ -484,6 +485,53 @@ export function buildFilteredRowsByDataset(
       }),
     ]),
   )
+}
+
+export function buildFilterRevision(filters: FilterRule[], joinOperator: FilterJoinOperator): string {
+  return JSON.stringify({
+    joinOperator,
+    filters: filters.map((filter) => [
+      filter.id,
+      filter.column,
+      filter.operator,
+      filter.value,
+      filter.valueTo ?? '',
+    ]),
+  })
+}
+
+export function updateAggregationConfig(
+  current: AggregationConfig,
+  patch: Partial<AggregationConfig>,
+): AggregationConfig {
+  const next: AggregationConfig = {
+    ...current,
+    ...patch,
+  }
+
+  if (patch.groupMode === 'file') {
+    next.groupColumn = null
+  }
+
+  if (patch.groupMode === 'field' && patch.groupColumn === undefined) {
+    next.groupColumn = current.groupMode === 'field' ? current.groupColumn : null
+  }
+
+  if (patch.datasetIds && patch.datasetIds.length === 0) {
+    next.datasetIds = current.datasetIds
+  }
+
+  return next
+}
+
+export function buildChartDataRevision(card: ChartCard, filterRevision = ''): string {
+  return JSON.stringify({
+    cardId: card.id,
+    xColumn: card.xColumn,
+    series: card.series.map((series) => [series.id, series.datasetId, series.yColumn]),
+    dataConfig: card.dataConfig,
+    filterRevision,
+  })
 }
 
 export function summarizeNumericColumn(rows: NormalizedRow[], column: string): ColumnSummary {

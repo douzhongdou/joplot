@@ -8,7 +8,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import type { ChartCard, ChartSeries, CsvData } from '../types'
-import { listAvailableSeriesYColumns } from '../lib/workbench'
+import { listAvailableSeriesYColumns, updateAggregationConfig } from '../lib/workbench'
 import { SelectMenu } from './SelectMenu'
 import { Switch } from './Switch'
 import { useI18n } from '../i18n'
@@ -154,18 +154,7 @@ export function CardInspector({
     const current = card?.dataConfig.mode === 'aggregate'
       ? card.dataConfig.aggregation
       : createDefaultAggregationConfig()
-    const next: AggregationConfig = {
-      ...current,
-      ...patch,
-    }
-
-    if (patch.groupMode === 'file') {
-      next.groupColumn = null
-    }
-
-    if (patch.datasetIds && patch.datasetIds.length === 0) {
-      next.datasetIds = current.datasetIds
-    }
+    const next = updateAggregationConfig(current, patch)
 
     onChangeCard({
       dataConfig: {
@@ -463,11 +452,6 @@ export function CardInspector({
                           }))}
                           onChange={(value) => changeAggregation({
                             groupMode: value,
-                            groupColumn: value === 'field'
-                              ? card.dataConfig.mode === 'aggregate'
-                                ? card.dataConfig.aggregation.groupColumn ?? selectedHeaders[0] ?? allHeaders[0] ?? null
-                                : selectedHeaders[0] ?? allHeaders[0] ?? null
-                              : null,
                           })}
                           buttonClassName="shadow-none"
                         />

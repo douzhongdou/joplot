@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { PlotCanvas } from './PlotCanvas'
 import { buildAggregatedSeries, toPlotSeries } from '../lib/aggregation'
-import { summarizeNumericColumn } from '../lib/workbench'
+import { buildChartDataRevision, summarizeNumericColumn } from '../lib/workbench'
 import { getChartColor, resolveThemeColor } from '../lib/theme'
 import type { ChartCard as ChartCardConfig, CsvData, NormalizedRow } from '../types'
 import type { CopyImageResult } from './PlotCanvas'
@@ -20,6 +20,7 @@ interface Props {
   card: ChartCardConfig
   datasetsById: Record<string, CsvData>
   filteredRowsByDataset: Record<string, NormalizedRow[]>
+  filterRevision: string
   selected: boolean
   onSelect: () => void
   onDragStart: (event: PointerEvent<HTMLElement>) => void
@@ -57,6 +58,7 @@ export function ChartCard({
   card,
   datasetsById,
   filteredRowsByDataset,
+  filterRevision,
   selected,
   onSelect,
   onDragStart,
@@ -368,7 +370,7 @@ export function ChartCard({
             <PlotCanvas
               ref={plotRef}
               data={plotData}
-              uirevision={`${card.id}:${card.xColumn}:${card.series.map((series) => series.id).join('|')}`}
+              uirevision={buildChartDataRevision(card, filterRevision)}
               layout={plotLayout}
             />
 

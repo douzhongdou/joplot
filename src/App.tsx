@@ -11,6 +11,7 @@ import {
   appendCardSeries,
   appendCardWithLayout,
   buildFilteredRowsByDataset,
+  buildFilterRevision,
   createCard,
   createCardSeries,
   createAutoSeriesForDatasets,
@@ -185,6 +186,10 @@ export default function App() {
   const filteredRowsByDataset = useMemo(
     () => buildFilteredRowsByDataset(datasets, workspaceFilters, filterJoinOperator),
     [datasets, filterJoinOperator, workspaceFilters],
+  )
+  const filterRevision = useMemo(
+    () => buildFilterRevision(workspaceFilters, filterJoinOperator),
+    [filterJoinOperator, workspaceFilters],
   )
   const hasDatasets = datasets.length > 0
 
@@ -594,6 +599,7 @@ export default function App() {
                   card={card}
                   datasetsById={datasetsById}
                   filteredRowsByDataset={filteredRowsByDataset}
+                  filterRevision={filterRevision}
                   selected={controls.selected}
                   onSelect={controls.onSelect}
                   onDragStart={controls.onDragStart}
