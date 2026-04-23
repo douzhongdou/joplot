@@ -188,7 +188,7 @@ export function ChartCard({
       <div className="grid grid-cols-[36px_minmax(0,1fr)] items-start gap-3 pb-3">
         <button
           type="button"
-          className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border border-base-300 bg-base-200 text-base-content/60 transition hover:border-primary/25 hover:bg-primary/10 hover:text-primary active:cursor-grabbing"
+          className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary active:cursor-grabbing"
           onPointerDown={onDragStart}
           aria-label={t('chartCard.dragCard')}
           title={t('chartCard.dragCard')}
@@ -240,7 +240,7 @@ export function ChartCard({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border border-base-300 bg-base-100 text-base-content/65 transition hover:border-primary/25 hover:bg-primary/10 hover:text-primary"
+                className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/65 transition hover:bg-transparent hover:text-primary"
                 onClick={() => void plotRef.current?.autorange()}
                 aria-label={t('chartCard.autorange')}
                 title={t('chartCard.autorange')}
@@ -249,7 +249,7 @@ export function ChartCard({
               </button>
               <button
                 type="button"
-                className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border border-base-300 bg-base-100 text-base-content/65 transition hover:border-primary/25 hover:bg-primary/10 hover:text-primary"
+                className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/65 transition hover:bg-transparent hover:text-primary"
                 onClick={() => void handleCopyImage()}
                 aria-label={t('chartCard.copyImage')}
                 title={t('chartCard.copyImage')}
@@ -258,7 +258,7 @@ export function ChartCard({
               </button>
               <button
                 type="button"
-                className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border border-base-300 bg-base-100 text-base-content/65 transition hover:border-primary/25 hover:bg-primary/10 hover:text-primary"
+                className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/65 transition hover:bg-transparent hover:text-primary"
                 onClick={() => void plotRef.current?.downloadImage()}
                 aria-label={t('chartCard.downloadImage')}
                 title={t('chartCard.downloadImage')}
@@ -284,7 +284,7 @@ export function ChartCard({
 
       <button
         type="button"
-        className="absolute bottom-3 right-3 inline-grid size-9 place-items-center rounded-[var(--radius-box)] border border-base-300 bg-base-100 text-base-content/60 transition hover:border-primary/25 hover:bg-primary/10 hover:text-primary"
+        className="absolute bottom-3 right-3 inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary"
         onPointerDown={onResizeStart}
         aria-label={t('chartCard.resizeCard')}
         title={t('chartCard.resizeCard')}

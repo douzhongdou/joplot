@@ -49,6 +49,7 @@ export const zhCN = {
     joinAnd: '全部满足',
     joinOr: '满足任一',
     addCondition: '新增条件',
+    resetData: '重置数据',
     noFilters: '当前没有筛选条件。',
     valuePlaceholder: '筛选值',
     startValuePlaceholder: '起始值',

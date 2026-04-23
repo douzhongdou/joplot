@@ -73,6 +73,6 @@ test('buildUploadHint supports english and japanese dictionaries', () => {
   )
   assert.equal(
     buildUploadHint(true, 'ja-JP'),
-    '1 件以上の CSV をページ上の任意の場所にドラッグするか、追加をクリックしてください',
+    '1 件以上の CSV をページ上の任意の場所にドロップするか、追加をクリックしてください',
   )
 })

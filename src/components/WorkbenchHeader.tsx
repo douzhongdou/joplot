@@ -7,8 +7,10 @@ import {
   Filter,
   Palette,
   Plus,
+  RotateCcw,
 } from 'lucide-react'
 import type { ChartKind, CsvData, FilterJoinOperator, FilterOperator, FilterRule } from '../types'
+import { FileUploader } from './FileUploader'
 import { SelectMenu } from './SelectMenu'
 import { useI18n } from '../i18n'
 
@@ -18,14 +20,16 @@ interface Props {
   filters: FilterRule[]
   filterJoinOperator: FilterJoinOperator
   onAddComponent: (kind: ChartKind) => void
+  onUploadFiles: (files: File[]) => void | Promise<void>
+  onResetDatasets: () => void
   onAddFilter: () => void
   onChangeFilterJoinOperator: (operator: FilterJoinOperator) => void
   onChangeFilter: (filterId: string, patch: Partial<FilterRule>) => void
   onRemoveFilter: (filterId: string) => void
 }
 
-const actionButtonClass = 'inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius-box)] border border-base-300 bg-base-100 px-4 text-sm font-semibold text-base-content transition hover:border-primary/30 hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 disabled:pointer-events-none disabled:border-base-300 disabled:bg-base-200 disabled:text-base-content/40'
-const primaryActionButtonClass = 'inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius-box)] border border-primary/15 bg-primary/10 px-4 text-sm font-semibold text-primary transition hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25'
+const actionButtonClass = 'inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius-box)] border-0 bg-transparent px-4 text-sm font-semibold text-base-content transition hover:bg-primary/8 hover:text-primary focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:text-base-content/40'
+const primaryActionButtonClass = 'inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius-box)] border-0 bg-transparent px-4 text-sm font-semibold text-primary transition hover:bg-primary/8 focus-visible:outline-none focus-visible:ring-0'
 const shellClass = 'flex h-12 min-w-0 items-center rounded-[var(--radius-box)] border border-base-300 bg-base-100 px-4 text-sm text-base-content'
 const inputClass = 'h-12 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-4 text-sm text-base-content outline-none transition placeholder:text-base-content/40 focus:border-primary/35 focus:ring-2 focus:ring-primary/20'
 const ghostSelectTriggerClass = 'h-auto border-0 bg-transparent px-0 py-0 shadow-none hover:bg-transparent focus-visible:ring-0'
@@ -36,6 +40,8 @@ export function WorkbenchHeader({
   filters,
   filterJoinOperator,
   onAddComponent,
+  onUploadFiles,
+  onResetDatasets,
   onAddFilter,
   onChangeFilterJoinOperator,
   onChangeFilter,
@@ -69,6 +75,12 @@ export function WorkbenchHeader({
     <section className="sticky top-0 z-10 grid gap-5 border-b border-base-300 bg-base-100/95 px-5 py-4 backdrop-blur-xl">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
+          <FileUploader
+            hasDatasets
+            onFiles={onUploadFiles}
+            buttonClassName={actionButtonClass}
+          />
+
           <div className="relative">
             <button
               type="button"
@@ -117,6 +129,11 @@ export function WorkbenchHeader({
           <button type="button" className={actionButtonClass} disabled>
             <Palette size={16} strokeWidth={2.1} />
             {t('workbench.theme')}
+          </button>
+
+          <button type="button" className={actionButtonClass} onClick={onResetDatasets}>
+            <RotateCcw size={16} strokeWidth={2.1} />
+            {t('workbench.resetData')}
           </button>
         </div>
       </div>

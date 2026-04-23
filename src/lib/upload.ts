@@ -15,8 +15,8 @@ const uploadHints: Record<SupportedLanguage, { upload: string; add: string }> = 
     add: 'Drag one or more CSV files anywhere on the page, or click Add',
   },
   'ja-JP': {
-    upload: '1 件以上の CSV をページ上の任意の場所にドラッグするか、アップロードをクリックしてください',
-    add: '1 件以上の CSV をページ上の任意の場所にドラッグするか、追加をクリックしてください',
+    upload: '1 件以上の CSV をページ上の任意の場所にドロップするか、アップロードをクリックしてください',
+    add: '1 件以上の CSV をページ上の任意の場所にドロップするか、追加をクリックしてください',
   },
 }
 

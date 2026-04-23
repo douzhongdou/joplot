@@ -49,6 +49,7 @@ export const en = {
     joinAnd: 'All must match',
     joinOr: 'Any can match',
     addCondition: 'Add condition',
+    resetData: 'Reset data',
     noFilters: 'No filters yet.',
     valuePlaceholder: 'Filter value',
     startValuePlaceholder: 'Start value',

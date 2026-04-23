@@ -1,7 +1,10 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Papa from 'papaparse'
 import type { CsvData } from '../types'
 import { buildDataset } from '../lib/workbench'
+import { deserializeDatasets, serializeDatasets } from '../lib/datasetPersistence.ts'
+
+export const DATASET_STORAGE_KEY = 'csv-workbench-datasets'
 
 function toDatasetId(fileName: string, taken: Set<string>) {
   const base = fileName
@@ -47,7 +50,13 @@ function parseCsvFile(file: File, datasetId: string): Promise<CsvData> {
 }
 
 export function useCsvData() {
-  const [datasets, setDatasets] = useState<CsvData[]>([])
+  const [datasets, setDatasets] = useState<CsvData[]>(() => {
+    if (typeof window === 'undefined') {
+      return []
+    }
+
+    return deserializeDatasets(window.localStorage.getItem(DATASET_STORAGE_KEY))
+  })
 
   const parseFiles = useCallback(async (files: File[]) => {
     const takenIds = new Set(datasets.map((dataset) => dataset.id))
@@ -59,5 +68,25 @@ export function useCsvData() {
     return parsed
   }, [datasets])
 
-  return { datasets, parseFiles }
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    try {
+      if (datasets.length === 0) {
+        window.localStorage.removeItem(DATASET_STORAGE_KEY)
+      } else {
+        window.localStorage.setItem(DATASET_STORAGE_KEY, serializeDatasets(datasets))
+      }
+    } catch {
+      // Keep the session usable even if the browser rejects storage writes.
+    }
+  }, [datasets])
+
+  const resetDatasets = useCallback(() => {
+    setDatasets([])
+  }, [])
+
+  return { datasets, parseFiles, resetDatasets }
 }

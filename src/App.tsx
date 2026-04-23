@@ -161,7 +161,7 @@ function normalizeWorkspaceFilters(persisted: PersistedState, datasets: CsvData[
 
 export default function App() {
   const { t } = useI18n()
-  const { datasets, parseFiles } = useCsvData()
+  const { datasets, parseFiles, resetDatasets } = useCsvData()
   const [cards, setCards] = useState<ChartCardConfig[]>([])
   const [workspaceFilters, setWorkspaceFilters] = useState<FilterRule[]>([])
   const [filterJoinOperator, setFilterJoinOperator] = useState<FilterJoinOperator>('and')
@@ -210,6 +210,7 @@ export default function App() {
 
   useEffect(() => {
     if (datasets.length === 0) {
+      window.localStorage.removeItem(STORAGE_KEY)
       previousDatasetCountRef.current = 0
       setCards([])
       setWorkspaceFilters([])
@@ -556,6 +557,8 @@ export default function App() {
               filters={workspaceFilters}
               filterJoinOperator={filterJoinOperator}
               onAddComponent={addCard}
+              onUploadFiles={handleIncomingFiles}
+              onResetDatasets={resetDatasets}
               onAddFilter={addFilter}
               onChangeFilterJoinOperator={setFilterJoinOperator}
               onChangeFilter={updateFilter}
