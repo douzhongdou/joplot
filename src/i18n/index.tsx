@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
+  getLanguagePath,
+  LANGUAGE_HTML_LANG,
   LANGUAGE_STORAGE_KEY,
   resolveInitialLanguage,
   type SupportedLanguage,
@@ -44,7 +46,8 @@ function getTranslationValue(dictionary: TranslationDictionary, key: string): Tr
 }
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [language, setLanguage] = useState<SupportedLanguage>(() => resolveInitialLanguage(
+  const [language, setLanguageState] = useState<SupportedLanguage>(() => resolveInitialLanguage(
+    typeof window !== 'undefined' ? window.location.pathname : null,
     typeof window !== 'undefined'
       ? window.localStorage.getItem(LANGUAGE_STORAGE_KEY)
       : null,
@@ -53,6 +56,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language)
+    document.documentElement.lang = LANGUAGE_HTML_LANG[language]
   }, [language])
 
   const numberFormatter = useMemo(
@@ -65,7 +69,21 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
 
     return {
       language,
-      setLanguage,
+      setLanguage: (nextLanguage) => {
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage)
+
+          const targetPath = getLanguagePath(nextLanguage)
+          const currentPath = window.location.pathname.replace(/\/+$/, '') || '/'
+
+          if (currentPath !== targetPath) {
+            window.location.assign(targetPath)
+            return
+          }
+        }
+
+        setLanguageState(nextLanguage)
+      },
       t: (key, params = {}) => {
         const translated = getTranslationValue(dictionary, key)
 
@@ -97,8 +115,11 @@ export function useI18n() {
 }
 
 export {
+  getLanguagePath,
   LANGUAGE_STORAGE_KEY,
+  LANGUAGE_PATHS,
   SUPPORTED_LANGUAGES,
+  resolveLanguageFromPath,
   resolveInitialLanguage,
   normalizeLanguage,
 } from './config'

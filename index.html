@@ -1,59 +1,41 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="joplot 是一个面向 CSV 数据探索的图表工作台，支持拖拽上传多个 CSV、快速生成折线图、散点图、柱状图和统计卡，并在同一画布中完成筛选、对比与导出。"
-    />
-    <meta
-      name="keywords"
-      content="joplot, CSV 图表, CSV 可视化, 数据分析, 折线图, 散点图, 柱状图, 数据仪表盘"
+      content="joplot is redirecting you to the right language version of the CSV charting workspace."
     />
     <meta name="author" content="joplot" />
-    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="robots" content="noindex, follow" />
     <meta name="theme-color" content="#155eef" />
     <meta name="application-name" content="joplot" />
     <meta name="apple-mobile-web-app-title" content="joplot" />
-    <meta property="og:type" content="website" />
-    <meta property="og:locale" content="zh_CN" />
-    <meta property="og:site_name" content="joplot" />
-    <meta property="og:title" content="joplot | CSV 图表与数据分析工作台" />
-    <meta
-      property="og:description"
-      content="拖拽上传多个 CSV，快速生成图表、筛选数据并在同一画布中比较多份数据集。"
-    />
-    <meta property="og:image" content="/src/icon.svg" />
-    <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="joplot | CSV 图表与数据分析工作台" />
-    <meta
-      name="twitter:description"
-      content="一个专注 CSV 数据探索的图表工作台，支持多文件导入、筛选、对比与导出。"
-    />
-    <meta name="twitter:image" content="/src/icon.svg" />
     <link rel="icon" type="image/svg+xml" href="/src/icon.svg" />
     <link rel="apple-touch-icon" href="/src/icon.svg" />
-    <title>joplot | CSV 图表与数据分析工作台</title>
-    <script
-      defer
-      src="https://analytics.hardgit.com/script.js"
-      data-website-id="ae3a3e3e-896b-4a99-bb52-66dc81e59839"
-    ></script>
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "WebApplication",
-        "name": "joplot",
-        "applicationCategory": "BusinessApplication",
-        "operatingSystem": "Web",
-        "inLanguage": "zh-CN",
-        "description": "joplot 是一个面向 CSV 数据探索的图表工作台，支持拖拽上传多个 CSV、快速生成图表、筛选数据并导出结果。"
-      }
+    <title>joplot | Redirecting to your language</title>
+    <script>
+      (function redirectToLanguage() {
+        const language = (navigator.language || '').toLowerCase()
+        const target = language.startsWith('zh')
+          ? '/zh'
+          : language.startsWith('ja')
+            ? '/ja'
+            : '/en'
+
+        window.location.replace(target + window.location.search + window.location.hash)
+      })()
     </script>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <main>
+      <p>Redirecting to the best language version for your browser.</p>
+      <ul>
+        <li><a href="/zh">中文</a></li>
+        <li><a href="/en">English</a></li>
+        <li><a href="/ja">日本語</a></li>
+      </ul>
+    </main>
   </body>
 </html>
