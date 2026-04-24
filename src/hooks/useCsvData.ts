@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import Papa from 'papaparse'
 import type { CsvData } from '../types'
-import { buildDataset } from '../lib/workbench'
 import { deserializeDatasets, serializeDatasets } from '../lib/datasetPersistence.ts'
+import { readSpreadsheetFile } from '../lib/spreadsheetImport.ts'
 
 export const DATASET_STORAGE_KEY = 'csv-workbench-datasets'
 
@@ -26,29 +25,6 @@ function toDatasetId(fileName: string, taken: Set<string>) {
   return nextId
 }
 
-function parseCsvFile(file: File, datasetId: string): Promise<CsvData> {
-  return new Promise((resolve, reject) => {
-    Papa.parse<Record<string, string>>(file, {
-      header: true,
-      skipEmptyLines: true,
-      dynamicTyping: false,
-      complete: (result) => {
-        const headers = result.meta.fields ?? []
-        const rows = (result.data as Record<string, string | undefined>[])
-          .map((row) =>
-            headers.reduce<Record<string, string>>((accumulator, header) => {
-              accumulator[header] = row[header] ?? ''
-              return accumulator
-            }, {}),
-          )
-
-        resolve(buildDataset(headers, rows, file.name, datasetId))
-      },
-      error: (error) => reject(error),
-    })
-  })
-}
-
 export function useCsvData() {
   const [datasets, setDatasets] = useState<CsvData[]>(() => {
     if (typeof window === 'undefined') {
@@ -61,7 +37,7 @@ export function useCsvData() {
   const parseFiles = useCallback(async (files: File[]) => {
     const takenIds = new Set(datasets.map((dataset) => dataset.id))
     const parsed = await Promise.all(
-      files.map((file) => parseCsvFile(file, toDatasetId(file.name, takenIds))),
+      files.map((file) => readSpreadsheetFile(file, toDatasetId(file.name, takenIds))),
     )
 
     setDatasets((prev) => [...prev, ...parsed])

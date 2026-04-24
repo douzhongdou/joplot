@@ -3,7 +3,7 @@ import type { TranslationDictionary } from '../types'
 export const en = {
   common: {
     selectPlaceholder: 'Select',
-    csvCount: ({ count }: { count: string | number }) => `${count} CSV`,
+    csvCount: ({ count }: { count: string | number }) => `${count} datasets`,
     rowCount: ({ count }: { count: string | number }) => `${count} rows`,
     on: 'On',
     off: 'Off',
@@ -31,12 +31,12 @@ export const en = {
     unnamedSeries: 'New Series',
   },
   uploader: {
-    importTitle: 'Import CSV',
-    importDescription: 'Import one or more files to start.',
-    uploadCsv: 'Upload CSV',
-    addCsv: 'Add CSV',
-    overlayBadge: 'CSV Upload',
-    overlayTitle: 'Drop to upload one or more CSV files',
+    importTitle: 'Import Data',
+    importDescription: 'Import one or more CSV or Excel files to start.',
+    uploadCsv: 'Upload Data',
+    addCsv: 'Add Data',
+    overlayBadge: 'Data Upload',
+    overlayTitle: 'Drop to upload one or more CSV or Excel files',
   },
   workbench: {
     addComponent: 'Add component',
@@ -45,7 +45,7 @@ export const en = {
     currentGroup: 'Current group',
     range: 'Range',
     filtersTitle: 'Filter rules',
-    filtersDescription: 'All CSV files in the current workbench share the same filter logic.',
+    filtersDescription: 'All imported datasets in the current workbench share the same filter logic.',
     joinAnd: 'All must match',
     joinOr: 'Any can match',
     addCondition: 'Add condition',
