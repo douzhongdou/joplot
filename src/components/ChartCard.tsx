@@ -9,8 +9,9 @@ import {
   ScanSearch,
 } from 'lucide-react'
 import { PlotCanvas } from './PlotCanvas'
-import { summarizeNumericColumn } from '../lib/workbench'
-import { resolveThemeColor } from '../lib/theme'
+import { buildAggregatedSeries, toPlotSeries } from '../lib/aggregation'
+import { buildChartDataRevision, summarizeNumericColumn } from '../lib/workbench'
+import { getChartColor, resolveThemeColor } from '../lib/theme'
 import type { ChartCard as ChartCardConfig, CsvData, NormalizedRow } from '../types'
 import type { CopyImageResult } from './PlotCanvas'
 import { useI18n } from '../i18n'
@@ -19,6 +20,7 @@ interface Props {
   card: ChartCardConfig
   datasetsById: Record<string, CsvData>
   filteredRowsByDataset: Record<string, NormalizedRow[]>
+  filterRevision: string
   selected: boolean
   onSelect: () => void
   onDragStart: (event: PointerEvent<HTMLElement>) => void
@@ -35,10 +37,28 @@ function formatValue(value: number | null) {
   return value === null ? '-' : Number(value.toFixed(3)).toString()
 }
 
+function parseNumberRange(min: string, max: string) {
+  const minValue = Number(min)
+  const maxValue = Number(max)
+
+  return min.trim() !== ''
+    && max.trim() !== ''
+    && Number.isFinite(minValue)
+    && Number.isFinite(maxValue)
+    && minValue < maxValue
+    ? [minValue, maxValue]
+    : undefined
+}
+
+function parseTextRange(min: string, max: string) {
+  return min.trim() !== '' && max.trim() !== '' ? [min, max] : undefined
+}
+
 export function ChartCard({
   card,
   datasetsById,
   filteredRowsByDataset,
+  filterRevision,
   selected,
   onSelect,
   onDragStart,
@@ -66,7 +86,8 @@ export function ChartCard({
   }, [copyToast])
 
   const validSeries = useMemo(() => (
-    card.series
+    card.dataConfig.mode === 'raw'
+      ? card.series
       .map((series) => {
         const dataset = datasetsById[series.datasetId]
 
@@ -85,11 +106,51 @@ export function ChartCard({
         }
       })
       .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-  ), [card.series, card.xColumn, datasetsById, filteredRowsByDataset])
+      : []
+  ), [card.dataConfig.mode, card.series, card.xColumn, datasetsById, filteredRowsByDataset])
+
+  const aggregateResult = useMemo(() => {
+    if (card.dataConfig.mode !== 'aggregate') {
+      return null
+    }
+
+    return buildAggregatedSeries(
+      Object.values(datasetsById),
+      card.dataConfig.aggregation,
+      filteredRowsByDataset,
+    )
+  }, [card.dataConfig, datasetsById, filteredRowsByDataset])
 
   const plotData = useMemo(() => {
     if (card.kind === 'stats') {
       return []
+    }
+
+    if (aggregateResult) {
+      return toPlotSeries(aggregateResult).map((series, index) => {
+        const color = getChartColor(index)
+
+        if (card.kind === 'bar') {
+          return {
+            type: 'bar' as const,
+            x: series.x,
+            y: series.y,
+            marker: { color },
+            name: series.name,
+          }
+        }
+
+        return {
+          type: 'scattergl' as const,
+          mode: card.kind === 'scatter' ? 'markers' : card.drawMode,
+          x: series.x,
+          y: series.y,
+          marker: { color, size: 6 },
+          line: { color, width: card.lineWidth },
+          name: series.name,
+          connectgaps: false,
+        }
+      })
     }
 
     return validSeries.map(({ series, rows }) => {
@@ -117,7 +178,10 @@ export function ChartCard({
         connectgaps: false,
       }
     })
-  }, [card.drawMode, card.kind, card.lineWidth, card.xColumn, validSeries])
+  }, [aggregateResult, card.drawMode, card.kind, card.lineWidth, validSeries])
+
+  const hasAggregateSeries = (aggregateResult?.series.length ?? 0) > 0
+  const renderedSeriesCount = aggregateResult ? aggregateResult.series.length : validSeries.length
 
   const plotLayout = useMemo(() => ({
     xaxis: {
@@ -127,22 +191,54 @@ export function ChartCard({
       gridcolor: resolveThemeColor('--chart-grid', 'rgba(15, 23, 42, 0.08)'),
       color: resolveThemeColor('--chart-axis', 'rgba(15, 23, 42, 0.72)'),
       visible: card.showAxes,
+      range: parseTextRange(card.xRange.min, card.xRange.max),
     },
     yaxis: {
-      title: { text: card.showAxes ? (validSeries[0]?.series.yColumn ?? '') : '' },
+      title: {
+        text: card.showAxes
+          ? (
+              card.dataConfig.mode === 'aggregate'
+                ? card.dataConfig.aggregation.metricColumn
+                : (validSeries[0]?.series.yColumn ?? '')
+            )
+          : '',
+      },
       automargin: true,
       showgrid: card.showGrid,
       gridcolor: resolveThemeColor('--chart-grid', 'rgba(15, 23, 42, 0.08)'),
       color: resolveThemeColor('--chart-axis', 'rgba(15, 23, 42, 0.72)'),
       visible: card.showAxes,
       range:
-        card.yMin !== null && card.yMax !== null && card.yMin < card.yMax
-          ? [card.yMin, card.yMax]
-          : undefined,
+        parseNumberRange(card.yRange.min, card.yRange.max)
+        ?? (
+          card.yMin !== null && card.yMax !== null && card.yMin < card.yMax
+            ? [card.yMin, card.yMax]
+            : undefined
+        ),
     },
-    showlegend: card.showLegend && validSeries.length > 1,
+    showlegend: card.showLegend && renderedSeriesCount > 1,
     hovermode: 'x unified',
-  }), [card.showAxes, card.showGrid, card.showLegend, card.xColumn, card.yMax, card.yMin, validSeries])
+    hoverlabel: {
+      bgcolor: '#ffffff',
+      bordercolor: '#e5e7eb',
+      font: { color: '#111827' },
+      pad: { t: 6, b: 6, l: 10, r: 10 },
+    },
+  }), [
+    card.dataConfig,
+    card.showAxes,
+    card.showGrid,
+    card.showLegend,
+    card.xColumn,
+    card.xRange.max,
+    card.xRange.min,
+    card.yMax,
+    card.yMin,
+    card.yRange.max,
+    card.yRange.min,
+    renderedSeriesCount,
+    validSeries,
+  ])
 
   const primarySeries = validSeries[0] ?? null
   const summary = useMemo(
@@ -153,6 +249,35 @@ export function ChartCard({
     ),
     [primarySeries],
   )
+  const aggregateSummary = useMemo(() => {
+    const firstSeries = aggregateResult?.series[0]
+
+    if (!firstSeries) {
+      return null
+    }
+
+    const values = firstSeries.points
+      .map((point) => point.y)
+      .filter((value): value is number => value !== null)
+
+    if (values.length === 0) {
+      return {
+        seriesName: firstSeries.name,
+        count: 0,
+        min: null,
+        max: null,
+        mean: null,
+      }
+    }
+
+    return {
+      seriesName: firstSeries.name,
+      count: values.length,
+      min: Math.min(...values),
+      max: Math.max(...values),
+      mean: values.reduce((sum, value) => sum + value, 0) / values.length,
+    }
+  }, [aggregateResult])
 
   async function handleCopyImage() {
     const mode = await plotRef.current?.copyImage()
@@ -203,14 +328,32 @@ export function ChartCard({
               {kindLabels[card.kind]}
             </span>
             <span className="inline-flex h-7 items-center rounded-full border border-base-300 bg-base-200 px-3 text-xs font-medium text-base-content/70">
-              {t('chartCard.seriesCount', { count: formatNumber(validSeries.length) })}
+              {t('chartCard.seriesCount', { count: formatNumber(renderedSeriesCount) })}
             </span>
           </div>
         </div>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        {card.kind === 'stats' && summary && primarySeries && (
+        {card.kind === 'stats' && aggregateSummary && (
+          <div className="grid flex-1 grid-cols-3 gap-3 max-md:grid-cols-1">
+            {[
+              [t('chartCard.stats.dataset'), aggregateSummary.seriesName],
+              [t('chartCard.stats.validValues'), String(aggregateSummary.count)],
+              [t('chartCard.stats.missingValues'), String(aggregateResult?.skippedRows ?? 0)],
+              [t('chartCard.stats.min'), formatValue(aggregateSummary.min)],
+              [t('chartCard.stats.max'), formatValue(aggregateSummary.max)],
+              [t('chartCard.stats.mean'), formatValue(aggregateSummary.mean)],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-[var(--radius-box)] border border-base-300 bg-base-200/50 p-4">
+                <div className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{label}</div>
+                <div className="mt-2 break-words text-2xl font-semibold text-base-content">{value}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {card.kind === 'stats' && !aggregateSummary && summary && primarySeries && (
           <div className="grid flex-1 grid-cols-3 gap-3 max-md:grid-cols-1">
             {[
               [t('chartCard.stats.dataset'), primarySeries.dataset.fileName],
@@ -228,12 +371,12 @@ export function ChartCard({
           </div>
         )}
 
-        {card.kind !== 'stats' && validSeries.length > 0 && (
+        {card.kind !== 'stats' && (validSeries.length > 0 || hasAggregateSeries) && (
           <div className="flex min-h-0 flex-1 flex-col gap-3">
             <PlotCanvas
               ref={plotRef}
               data={plotData}
-              uirevision={`${card.id}:${card.xColumn}:${card.series.map((series) => series.id).join('|')}`}
+              uirevision={buildChartDataRevision(card, filterRevision)}
               layout={plotLayout}
             />
 
@@ -275,7 +418,21 @@ export function ChartCard({
           </div>
         )}
 
-        {((card.kind === 'stats' && !summary) || (card.kind !== 'stats' && validSeries.length === 0)) && (
+        {aggregateResult && (
+          aggregateResult.skippedDatasets.length > 0
+          || aggregateResult.skippedRows > 0
+          || aggregateResult.omittedSeriesCount > 0
+        ) && (
+          <div className="mt-3 rounded-[var(--radius-box)] bg-warning/10 px-3 py-2 text-xs leading-5 text-warning">
+            {t('chartCard.aggregateSkipped', {
+              datasets: aggregateResult.skippedDatasets.length,
+              rows: aggregateResult.skippedRows,
+              series: aggregateResult.omittedSeriesCount,
+            })}
+          </div>
+        )}
+
+        {((card.kind === 'stats' && !summary && !aggregateSummary) || (card.kind !== 'stats' && validSeries.length === 0 && !hasAggregateSeries)) && (
           <div className="flex flex-1 items-center justify-center rounded-[var(--radius-box)] border border-dashed border-base-300 bg-base-200/50 p-6 text-center text-sm leading-6 text-base-content/55">
             <div>{t('chartCard.noValidSeries')}</div>
           </div>

@@ -1,4 +1,6 @@
 import type {
+  AggregationConfig,
+  AxisRange,
   ChartCard,
   ChartKind,
   ChartSeries,
@@ -124,6 +126,34 @@ function getSeriesLabel(dataset: CsvData, fallback: string) {
 
 function buildDatasetMap(datasets: CsvData[]) {
   return Object.fromEntries(datasets.map((dataset) => [dataset.id, dataset]))
+}
+
+function createEmptyAxisRange(): AxisRange {
+  return { min: '', max: '' }
+}
+
+function normalizeAxisRange(value: unknown, fallback: AxisRange = createEmptyAxisRange()): AxisRange {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return fallback
+  }
+
+  const candidate = value as Partial<AxisRange>
+
+  return {
+    min: typeof candidate.min === 'string' ? candidate.min : fallback.min,
+    max: typeof candidate.max === 'string' ? candidate.max : fallback.max,
+  }
+}
+
+function axisRangeFromLegacyYBounds(card: ChartCard): AxisRange {
+  if (card.yMin !== null && card.yMax !== null && card.yMin < card.yMax) {
+    return {
+      min: String(card.yMin),
+      max: String(card.yMax),
+    }
+  }
+
+  return createEmptyAxisRange()
 }
 
 export function clampLayout(layout: DashboardLayout): DashboardLayout {
@@ -281,6 +311,7 @@ export function createCard(
     id: makeCardId(kind),
     kind,
     title: createCardTitle(kind),
+    dataConfig: { mode: 'raw' },
     xColumn,
     series: [initialSeries],
     drawMode: kind === 'scatter' ? 'markers' : 'lines',
@@ -288,6 +319,8 @@ export function createCard(
     showLegend: true,
     showGrid: true,
     showAxes: true,
+    xRange: createEmptyAxisRange(),
+    yRange: createEmptyAxisRange(),
     yMin: null,
     yMax: null,
     layout: createPresetLayout(0, kind),
@@ -454,6 +487,53 @@ export function buildFilteredRowsByDataset(
   )
 }
 
+export function buildFilterRevision(filters: FilterRule[], joinOperator: FilterJoinOperator): string {
+  return JSON.stringify({
+    joinOperator,
+    filters: filters.map((filter) => [
+      filter.id,
+      filter.column,
+      filter.operator,
+      filter.value,
+      filter.valueTo ?? '',
+    ]),
+  })
+}
+
+export function updateAggregationConfig(
+  current: AggregationConfig,
+  patch: Partial<AggregationConfig>,
+): AggregationConfig {
+  const next: AggregationConfig = {
+    ...current,
+    ...patch,
+  }
+
+  if (patch.groupMode === 'file') {
+    next.groupColumn = null
+  }
+
+  if (patch.groupMode === 'field' && patch.groupColumn === undefined) {
+    next.groupColumn = current.groupMode === 'field' ? current.groupColumn : null
+  }
+
+  if (patch.datasetIds && patch.datasetIds.length === 0) {
+    next.datasetIds = current.datasetIds
+  }
+
+  return next
+}
+
+export function buildChartDataRevision(card: ChartCard, filterRevision = ''): string {
+  return JSON.stringify({
+    cardId: card.id,
+    xColumn: card.xColumn,
+    series: card.series.map((series) => [series.id, series.datasetId, series.yColumn]),
+    dataConfig: card.dataConfig,
+    filterRevision,
+  })
+}
+
 export function summarizeNumericColumn(rows: NormalizedRow[], column: string): ColumnSummary {
   const values = rows
     .map((row) => row.numeric[column])
@@ -570,13 +650,22 @@ export function sanitizeCardsForDatasets(
       })
       .filter((series): series is ChartSeries => series !== null)
 
+    const cardWithLegacyFields = card as ChartCard & {
+      dataConfig?: ChartCard['dataConfig']
+      xRange?: AxisRange
+      yRange?: AxisRange
+    }
+
     return {
       ...createCard(card.kind, fallbackDataset, {
         layout: createPresetLayout(index, card.kind),
       }),
       ...card,
+      dataConfig: cardWithLegacyFields.dataConfig ?? { mode: 'raw' },
       xColumn,
       series: validSeries.length > 0 ? validSeries : [createCardSeries(fallbackDataset, xColumn)],
+      xRange: normalizeAxisRange(cardWithLegacyFields.xRange),
+      yRange: normalizeAxisRange(cardWithLegacyFields.yRange, axisRangeFromLegacyYBounds(card)),
       layout: clampLayout(card.layout ?? createPresetLayout(index, card.kind)),
     }
   }))

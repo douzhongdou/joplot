@@ -8,9 +8,18 @@ import {
   Trash2,
 } from 'lucide-react'
 import type { ChartCard, ChartSeries, CsvData } from '../types'
-import { listAvailableSeriesYColumns } from '../lib/workbench'
+import { listAvailableSeriesYColumns, updateAggregationConfig } from '../lib/workbench'
 import { SelectMenu } from './SelectMenu'
+import { Switch } from './Switch'
 import { useI18n } from '../i18n'
+import type {
+  AggregationConfig,
+  AggregationGroupMode,
+  AggregationKind,
+  AxisValueKind,
+  ChartDataMode,
+  TimeBucket,
+} from '../types'
 
 interface Props {
   card: ChartCard | null
@@ -29,6 +38,22 @@ type InspectorTab = 'base' | 'display'
 const fieldLabelClass = 'text-xs font-medium uppercase tracking-[0.12em] text-base-content/55'
 const inputClass = 'h-12 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-4 text-sm text-base-content outline-none transition placeholder:text-base-content/40 focus:border-primary/35 focus:ring-2 focus:ring-primary/20'
 const iconButtonClass = 'inline-grid size-10 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary focus-visible:outline-none focus-visible:ring-0'
+
+const aggregationOptions: AggregationKind[] = [
+  'sum',
+  'mean',
+  'count',
+  'max',
+  'min',
+  'median',
+  'distinctCount',
+  'missingCount',
+  'stddev',
+  'variance',
+]
+const timeBucketOptions: TimeBucket[] = ['day', 'week', 'month', 'quarter', 'year']
+const xKindOptions: AxisValueKind[] = ['category', 'number', 'time']
+const groupModeOptions: AggregationGroupMode[] = ['file', 'field']
 
 export function CardInspector({
   card,
@@ -58,6 +83,10 @@ export function CardInspector({
     { value: 'lines+markers', label: t('drawModes.lines+markers') },
     { value: 'markers', label: t('drawModes.markers') },
   ]
+  const dataModeOptions: Array<{ value: ChartDataMode; label: string }> = [
+    { value: 'raw', label: t('inspector.dataModes.raw') },
+    { value: 'aggregate', label: t('inspector.dataModes.aggregate') },
+  ]
 
   const allHeaders = useMemo(
     () => Array.from(new Set(datasets.flatMap((dataset) => dataset.headers))),
@@ -67,6 +96,85 @@ export function CardInspector({
     () => Object.fromEntries(datasets.map((dataset) => [dataset.id, dataset])),
     [datasets],
   )
+  const selectedDatasetIds = card?.dataConfig.mode === 'aggregate'
+    ? card.dataConfig.aggregation.datasetIds
+    : []
+  const selectedDatasets = useMemo(
+    () => selectedDatasetIds
+      .map((datasetId) => datasetsById[datasetId])
+      .filter((dataset): dataset is CsvData => Boolean(dataset)),
+    [datasetsById, selectedDatasetIds],
+  )
+  const selectedHeaders = useMemo(
+    () => Array.from(new Set(selectedDatasets.flatMap((dataset) => dataset.headers))),
+    [selectedDatasets],
+  )
+  const selectedNumericColumns = useMemo(
+    () => Array.from(new Set(selectedDatasets.flatMap((dataset) => dataset.numericColumns))),
+    [selectedDatasets],
+  )
+
+  function createDefaultAggregationConfig(): AggregationConfig {
+    const fallbackDataset = (activeDatasetId ? datasetsById[activeDatasetId] : undefined) ?? datasets[0]
+    const xColumn = card?.xColumn || fallbackDataset?.headers[0] || ''
+    const metricColumn =
+      fallbackDataset?.numericColumns.find((column) => column !== xColumn)
+      ?? fallbackDataset?.numericColumns[0]
+      ?? ''
+
+    return {
+      datasetIds: fallbackDataset ? [fallbackDataset.id] : [],
+      xColumn,
+      xKind: 'category',
+      timeBucket: 'month',
+      groupMode: 'file',
+      groupColumn: null,
+      metricColumn,
+      aggregation: 'sum',
+    }
+  }
+
+  function changeDataMode(mode: ChartDataMode) {
+    if (mode === 'raw') {
+      onChangeCard({ dataConfig: { mode: 'raw' } })
+      return
+    }
+
+    onChangeCard({
+      dataConfig: {
+        mode: 'aggregate',
+        aggregation: card?.dataConfig.mode === 'aggregate'
+          ? card.dataConfig.aggregation
+          : createDefaultAggregationConfig(),
+      },
+    })
+  }
+
+  function changeAggregation(patch: Partial<AggregationConfig>) {
+    const current = card?.dataConfig.mode === 'aggregate'
+      ? card.dataConfig.aggregation
+      : createDefaultAggregationConfig()
+    const next = updateAggregationConfig(current, patch)
+
+    onChangeCard({
+      dataConfig: {
+        mode: 'aggregate',
+        aggregation: next,
+      },
+      xColumn: next.xColumn,
+    })
+  }
+
+  function toggleAggregationDataset(datasetId: string) {
+    const current = card?.dataConfig.mode === 'aggregate'
+      ? card.dataConfig.aggregation
+      : createDefaultAggregationConfig()
+    const datasetIds = current.datasetIds.includes(datasetId)
+      ? current.datasetIds.filter((id) => id !== datasetId)
+      : [...current.datasetIds, datasetId]
+
+    changeAggregation({ datasetIds: datasetIds.length > 0 ? datasetIds : current.datasetIds })
+  }
 
   useEffect(() => {
     if (!openMenuSeriesId) {
@@ -188,6 +296,17 @@ export function CardInspector({
                 </label>
 
                 <label className="grid gap-2">
+                  <span className={fieldLabelClass}>{t('inspector.dataMode')}</span>
+                  <SelectMenu
+                    value={card.dataConfig.mode}
+                    options={dataModeOptions}
+                    onChange={changeDataMode}
+                    buttonClassName="shadow-none"
+                  />
+                </label>
+
+                {card.dataConfig.mode === 'raw' && (
+                <label className="grid gap-2">
                   <span className={fieldLabelClass}>{t('inspector.sharedXAxis')}</span>
                   <SelectMenu
                     value={card.xColumn}
@@ -199,8 +318,9 @@ export function CardInspector({
                     buttonClassName="shadow-none"
                   />
                 </label>
+                )}
 
-                {card.kind !== 'stats' && (
+                {card.dataConfig.mode === 'raw' && card.kind !== 'stats' && (
                   <>
                     <label className="grid gap-2">
                       <span className={fieldLabelClass}>{t('inspector.drawMode')}</span>
@@ -225,9 +345,140 @@ export function CardInspector({
                     </label>
                   </>
                 )}
+
+                {card.dataConfig.mode === 'aggregate' && (
+                  <div className="grid gap-4 md:col-span-2">
+                    <div className="grid gap-2">
+                      <span className={fieldLabelClass}>{t('inspector.aggregate.dataSources')}</span>
+                      <div className="grid gap-2">
+                        {datasets.map((dataset) => {
+                          const selected = card.dataConfig.mode === 'aggregate'
+                            && card.dataConfig.aggregation.datasetIds.includes(dataset.id)
+
+                          return (
+                            <button
+                              key={dataset.id}
+                              type="button"
+                              className={`flex min-h-12 items-center justify-between rounded-[var(--radius-field)] border px-4 text-left text-sm transition ${
+                                selected
+                                  ? 'border-primary/20 bg-primary/10 text-primary'
+                                  : 'border-base-300 bg-base-100 text-base-content/70 hover:border-primary/20 hover:text-base-content'
+                              }`}
+                              onClick={() => toggleAggregationDataset(dataset.id)}
+                            >
+                              <span className="min-w-0 flex-1 truncate font-medium">{dataset.fileName}</span>
+                              <span className="text-xs">{t('common.rowCount', { count: formatNumber(dataset.rowCount) })}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="grid gap-2">
+                        <span className={fieldLabelClass}>{t('inspector.aggregate.xColumn')}</span>
+                        <SelectMenu
+                          value={card.dataConfig.aggregation.xColumn}
+                          options={(selectedHeaders.length > 0 ? selectedHeaders : allHeaders).map((header) => ({
+                            value: header,
+                            label: header,
+                          }))}
+                          onChange={(value) => changeAggregation({ xColumn: value })}
+                          buttonClassName="shadow-none"
+                        />
+                      </label>
+
+                      <label className="grid gap-2">
+                        <span className={fieldLabelClass}>{t('inspector.aggregate.xKind')}</span>
+                        <SelectMenu
+                          value={card.dataConfig.aggregation.xKind}
+                          options={xKindOptions.map((option) => ({
+                            value: option,
+                            label: t(`inspector.xKinds.${option}`),
+                          }))}
+                          onChange={(value) => changeAggregation({ xKind: value })}
+                          buttonClassName="shadow-none"
+                        />
+                      </label>
+
+                      {card.dataConfig.aggregation.xKind === 'time' && (
+                        <label className="grid gap-2">
+                          <span className={fieldLabelClass}>{t('inspector.aggregate.timeBucket')}</span>
+                          <SelectMenu
+                            value={card.dataConfig.aggregation.timeBucket}
+                            options={timeBucketOptions.map((option) => ({
+                              value: option,
+                              label: t(`inspector.timeBuckets.${option}`),
+                            }))}
+                            onChange={(value) => changeAggregation({ timeBucket: value })}
+                            buttonClassName="shadow-none"
+                          />
+                        </label>
+                      )}
+
+                      <label className="grid gap-2">
+                        <span className={fieldLabelClass}>{t('inspector.aggregate.metricColumn')}</span>
+                        <SelectMenu
+                          value={card.dataConfig.aggregation.metricColumn}
+                          options={(selectedNumericColumns.length > 0 ? selectedNumericColumns : allHeaders).map((header) => ({
+                            value: header,
+                            label: header,
+                          }))}
+                          onChange={(value) => changeAggregation({ metricColumn: value })}
+                          buttonClassName="shadow-none"
+                        />
+                      </label>
+
+                      <label className="grid gap-2">
+                        <span className={fieldLabelClass}>{t('inspector.aggregate.aggregation')}</span>
+                        <SelectMenu
+                          value={card.dataConfig.aggregation.aggregation}
+                          options={aggregationOptions.map((option) => ({
+                            value: option,
+                            label: t(`inspector.aggregations.${option}`),
+                          }))}
+                          onChange={(value) => changeAggregation({ aggregation: value })}
+                          buttonClassName="shadow-none"
+                        />
+                      </label>
+
+                      <label className="grid gap-2">
+                        <span className={fieldLabelClass}>{t('inspector.aggregate.groupMode')}</span>
+                        <SelectMenu
+                          value={card.dataConfig.aggregation.groupMode}
+                          options={groupModeOptions.map((option) => ({
+                            value: option,
+                            label: t(`inspector.groupModes.${option}`),
+                          }))}
+                          onChange={(value) => changeAggregation({
+                            groupMode: value,
+                          })}
+                          buttonClassName="shadow-none"
+                        />
+                      </label>
+
+                      {card.dataConfig.aggregation.groupMode === 'field' && (
+                        <label className="grid gap-2">
+                          <span className={fieldLabelClass}>{t('inspector.aggregate.groupColumn')}</span>
+                          <SelectMenu
+                            value={card.dataConfig.aggregation.groupColumn}
+                            options={(selectedHeaders.length > 0 ? selectedHeaders : allHeaders).map((header) => ({
+                              value: header,
+                              label: header,
+                            }))}
+                            onChange={(value) => changeAggregation({ groupColumn: value })}
+                            placeholder={t('inspector.chooseField')}
+                            buttonClassName="shadow-none"
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
 
+            {card.dataConfig.mode === 'raw' && (
             <section className="py-6">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div className="text-lg font-semibold text-base-content">{t('inspector.seriesSectionTitle')}</div>
@@ -341,6 +592,7 @@ export function CardInspector({
                 })}
               </div>
             </section>
+            )}
           </>
         )}
 
@@ -395,46 +647,70 @@ export function CardInspector({
             <section className="py-6">
               <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.chartDisplaySectionTitle')}</div>
               <div className="grid gap-3 md:grid-cols-2">
-                {[
-                  {
-                    label: t('inspector.legend'),
-                    active: card.showLegend,
-                    onClick: () => onChangeCard({ showLegend: !card.showLegend }),
-                  },
-                  {
-                    label: t('inspector.gridLines'),
-                    active: card.showGrid,
-                    onClick: () => onChangeCard({ showGrid: !card.showGrid }),
-                  },
-                  {
-                    label: t('inspector.axes'),
-                    active: card.showAxes,
-                    onClick: () => onChangeCard({ showAxes: !card.showAxes }),
-                  },
-                ].map((item) => (
-                  <button
-                    key={item.label}
-                    type="button"
-                    className={`flex h-12 items-center justify-between rounded-[var(--radius-box)] border px-4 text-sm font-medium transition ${
-                      item.active
-                        ? 'border-primary/15 bg-primary/10 text-primary'
-                        : 'border-base-300 bg-base-100 text-base-content/70 hover:border-primary/20 hover:text-base-content'
-                    }`}
-                    onClick={item.onClick}
-                  >
-                    <span>{item.label}</span>
-                    <span>{item.active ? t('common.on') : t('common.off')}</span>
-                  </button>
-                ))}
+                <Switch
+                  checked={card.showLegend}
+                  label={t('inspector.legend')}
+                  onChange={(checked) => onChangeCard({ showLegend: checked })}
+                />
+                <Switch
+                  checked={card.showGrid}
+                  label={t('inspector.gridLines')}
+                  onChange={(checked) => onChangeCard({ showGrid: checked })}
+                />
+                <Switch
+                  checked={card.showAxes}
+                  label={t('inspector.axes')}
+                  onChange={(checked) => onChangeCard({ showAxes: checked })}
+                />
+              </div>
+            </section>
 
-                <button
-                  type="button"
-                  className="flex h-12 items-center justify-between rounded-[var(--radius-box)] border border-base-300 bg-base-200 text-sm font-medium text-base-content/40"
-                  disabled
-                >
-                  <span>{t('inspector.themeColor')}</span>
-                  <span>{t('common.notAvailableYet')}</span>
-                </button>
+            <section className="py-6">
+              <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.axisRangeSectionTitle')}</div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="grid gap-2">
+                  <span className={fieldLabelClass}>{t('inspector.xRangeMin')}</span>
+                  <input
+                    type="text"
+                    value={card.xRange.min}
+                    placeholder={t('inspector.autoRangePlaceholder')}
+                    onChange={(event) => onChangeCard({ xRange: { ...card.xRange, min: event.target.value } })}
+                    className={inputClass}
+                  />
+                </label>
+
+                <label className="grid gap-2">
+                  <span className={fieldLabelClass}>{t('inspector.xRangeMax')}</span>
+                  <input
+                    type="text"
+                    value={card.xRange.max}
+                    placeholder={t('inspector.autoRangePlaceholder')}
+                    onChange={(event) => onChangeCard({ xRange: { ...card.xRange, max: event.target.value } })}
+                    className={inputClass}
+                  />
+                </label>
+
+                <label className="grid gap-2">
+                  <span className={fieldLabelClass}>{t('inspector.yRangeMin')}</span>
+                  <input
+                    type="number"
+                    value={card.yRange.min}
+                    placeholder={t('inspector.autoRangePlaceholder')}
+                    onChange={(event) => onChangeCard({ yRange: { ...card.yRange, min: event.target.value } })}
+                    className={inputClass}
+                  />
+                </label>
+
+                <label className="grid gap-2">
+                  <span className={fieldLabelClass}>{t('inspector.yRangeMax')}</span>
+                  <input
+                    type="number"
+                    value={card.yRange.max}
+                    placeholder={t('inspector.autoRangePlaceholder')}
+                    onChange={(event) => onChangeCard({ yRange: { ...card.yRange, max: event.target.value } })}
+                    className={inputClass}
+                  />
+                </label>
               </div>
             </section>
           </>

@@ -5,14 +5,19 @@ import {
   appendCardSeries,
   appendCardWithLayout,
   buildDataset,
+  buildChartDataRevision,
+  buildFilterRevision,
   buildFilteredRowsByDataset,
   createAutoSeriesForDatasets,
   createDefaultCard,
   listAvailableSeriesYColumns,
   moveCardToLayout,
   sampleRows,
+  sanitizeCardsForDatasets,
   summarizeNumericColumn,
+  updateAggregationConfig,
 } from '../src/lib/workbench.ts'
+import type { AggregationConfig } from '../src/types.ts'
 import {
   buildAutorangeUpdate,
   buildPlotLayout,
@@ -83,6 +88,23 @@ test('createDefaultCard uses first column as x and creates a default series from
   assert.equal(defaultCard.series[0].datasetId, fallbackDataset.id)
   assert.equal(defaultCard.series[0].yColumn, 'amount')
   assert.deepEqual(defaultCard.layout, { x: 0, y: 0, w: 12, h: 8 })
+})
+
+test('sanitizeCardsForDatasets keeps legacy cards in raw mode and adds empty axis ranges', () => {
+  const dataset = createDataset()
+  const legacyCard = createDefaultCard(dataset)
+  const legacyWithoutNewFields = {
+    ...legacyCard,
+    dataConfig: undefined,
+    xRange: undefined,
+    yRange: undefined,
+  } as unknown as ChartCard
+
+  const [sanitized] = sanitizeCardsForDatasets([legacyWithoutNewFields], [dataset], dataset.id)
+
+  assert.deepEqual(sanitized.dataConfig, { mode: 'raw' })
+  assert.deepEqual(sanitized.xRange, { min: '', max: '' })
+  assert.deepEqual(sanitized.yRange, { min: '', max: '' })
 })
 
 test('appendCardSeries adds a compatible dataset as a new series on the same chart', () => {
@@ -193,6 +215,82 @@ test('buildFilteredRowsByDataset supports text contains and numeric greater-than
 
   assert.equal(filtered[dataset.id].length, 1)
   assert.equal(filtered[dataset.id][0].raw.time, '2026-01-01')
+})
+
+test('buildFilterRevision changes when filter values or join mode change', () => {
+  const filters = [
+    { id: '1', column: '时间(s)', operator: 'gt' as const, value: '5' },
+    { id: '2', column: '时间(s)', operator: 'lt' as const, value: '100' },
+  ]
+
+  const baseRevision = buildFilterRevision(filters, 'and')
+
+  assert.notEqual(
+    buildFilterRevision([
+      filters[0],
+      { ...filters[1], value: '80' },
+    ], 'and'),
+    baseRevision,
+  )
+  assert.notEqual(buildFilterRevision(filters, 'or'), baseRevision)
+})
+
+test('updateAggregationConfig does not auto-pick a group field when switching to field grouping', () => {
+  const current: AggregationConfig = {
+    datasetIds: ['a', 'b'],
+    xColumn: '时间(s)',
+    xKind: 'number',
+    timeBucket: 'month',
+    groupMode: 'file',
+    groupColumn: null,
+    metricColumn: 'ST_RESULT',
+    aggregation: 'max',
+  }
+
+  assert.deepEqual(
+    updateAggregationConfig(current, { groupMode: 'field' }),
+    {
+      ...current,
+      groupMode: 'field',
+      groupColumn: null,
+    },
+  )
+})
+
+test('buildChartDataRevision changes when aggregate calculation settings change', () => {
+  const dataset = createDataset()
+  const card = createDefaultCard(dataset)
+  const aggregateCard: ChartCard = {
+    ...card,
+    dataConfig: {
+      mode: 'aggregate',
+      aggregation: {
+        datasetIds: [dataset.id],
+        xColumn: 'time',
+        xKind: 'category',
+        timeBucket: 'month',
+        groupMode: 'file',
+        groupColumn: null,
+        metricColumn: 'value',
+        aggregation: 'max',
+      },
+    },
+  }
+
+  const baseRevision = buildChartDataRevision(aggregateCard, 'filters-a')
+  const changedAggregationRevision = buildChartDataRevision({
+    ...aggregateCard,
+    dataConfig: {
+      mode: 'aggregate',
+      aggregation: {
+        ...aggregateCard.dataConfig.aggregation,
+        aggregation: 'sum',
+      },
+    },
+  }, 'filters-a')
+
+  assert.notEqual(changedAggregationRevision, baseRevision)
+  assert.notEqual(buildChartDataRevision(aggregateCard, 'filters-b'), baseRevision)
 })
 
 test('summarizeNumericColumn ignores null values', () => {
