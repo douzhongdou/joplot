@@ -113,7 +113,19 @@ test('getUploadCopy exposes localized upload UI labels for supported formats', (
     addButton: '添加数据',
     importTitle: '导入数据',
     importDescription: '支持一次导入多个 CSV 或 Excel 文件。',
-    overlayBadge: '数据上传',
-    overlayTitle: '释放以上传一个或多个 CSV 或 Excel 文件',
+    overlayBadge: '拖拽上传',
+    overlayTitle: '把 CSV / Excel 拖到这里，松开后自动出图',
+    heroTitle: '把 CSV 拖进来，立刻出图',
+    heroSubtitle: '支持直接拖拽或点击上传。导入后自动生成图表，可以继续复制或下载。',
+    sampleButton: '查看示例数据',
+    sampleTitle: '示例数据',
+    sampleDescription: '内置一份 CSV 示例，可直接载入。',
+    proofPoints: ['支持 CSV / Excel', '本地处理', '一键复制图片', '无需注册'],
   })
+})
+
+test('getUploadCopy provides hero and sample copy for english growth homepage', () => {
+  assert.equal(getUploadCopy('en').heroTitle, 'Drop in a CSV and get a chart instantly')
+  assert.equal(getUploadCopy('en').sampleButton, 'Open sample data')
+  assert.equal(getUploadCopy('en').sampleTitle, 'Sample data')
 })

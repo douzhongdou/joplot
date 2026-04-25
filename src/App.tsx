@@ -5,10 +5,11 @@ import { CardInspector } from './components/CardInspector'
 import { ChartCard } from './components/ChartCard'
 import { DashboardCanvas } from './components/DashboardCanvas'
 import { DataView } from './components/DataView'
-import { FileUploader } from './components/FileUploader'
+import { HomeHero } from './components/HomeHero'
 import { WorkbenchHeader } from './components/WorkbenchHeader'
 import { useI18n } from './i18n'
 import { getUploadCopy, pickCsvFiles } from './lib/upload'
+import { loadSampleDatasetFile, type SampleDatasetId } from './lib/sampleData'
 import {
   appendCardSeries,
   appendCardWithLayout,
@@ -172,6 +173,7 @@ export default function App() {
   const [recentDatasetIds, setRecentDatasetIds] = useState<string[]>([])
   const [viewMode, setViewMode] = useState<'chart' | 'data'>('chart')
   const [dragActive, setDragActive] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
   const dragDepthRef = useRef(0)
   const previousDatasetCountRef = useRef(0)
   const uploadCopy = useMemo(() => getUploadCopy(language), [language])
@@ -306,11 +308,33 @@ export default function App() {
   }, [cards, selectedCardId])
 
   async function handleIncomingFiles(files: File[]) {
-    const parsed = await parseFiles(files)
+    if (files.length === 0) {
+      return
+    }
 
-    if (parsed.length > 0) {
-      setActiveDatasetId(parsed[0].id)
-      setRecentDatasetIds(parsed.map((dataset) => dataset.id))
+    setIsImporting(true)
+
+    try {
+      const parsed = await parseFiles(files)
+
+      if (parsed.length > 0) {
+        setViewMode('chart')
+        setActiveDatasetId(parsed[0].id)
+        setRecentDatasetIds(parsed.map((dataset) => dataset.id))
+      }
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
+  async function handleLoadSample(sampleId: SampleDatasetId) {
+    setIsImporting(true)
+
+    try {
+      const file = await loadSampleDatasetFile(sampleId)
+      await handleIncomingFiles([file])
+    } finally {
+      setIsImporting(false)
     }
   }
 
@@ -551,7 +575,7 @@ export default function App() {
 
   return (
     <div className="grid h-full grid-rows-[var(--navbar-height)_minmax(0,1fr)] bg-base-200 text-base-content">
-      <AppNavbar viewMode={viewMode} onChangeViewMode={setViewMode} />
+      <AppNavbar hasDatasets={hasDatasets} viewMode={viewMode} onChangeViewMode={setViewMode} />
 
       <main className={hasDatasets && viewMode === 'chart'
         ? 'grid min-h-0 grid-cols-[minmax(0,1fr)_var(--inspector-width)] max-[920px]:block'
@@ -583,19 +607,7 @@ export default function App() {
           )}
 
           {!hasDatasets && (
-            <div className="grid min-h-full place-items-center px-6 py-12">
-              <div className="grid w-full max-w-xl gap-6 text-center">
-                <h2 className="text-4xl font-semibold leading-tight tracking-tight text-base-content">
-                  {uploadCopy.importTitle}
-                </h2>
-                <p className="text-sm leading-6 text-base-content/60">
-                  {uploadCopy.importDescription}
-                </p>
-                <div className="mx-auto">
-                  <FileUploader hasDatasets={false} onFiles={handleIncomingFiles} />
-                </div>
-              </div>
-            </div>
+            <HomeHero busy={isImporting} onLoadSample={handleLoadSample} />
           )}
 
           {viewMode === 'chart' && hasDatasets && cards.length > 0 && (

@@ -4,11 +4,12 @@ import { SelectMenu } from './SelectMenu'
 import { SUPPORTED_LANGUAGES, useI18n, type SupportedLanguage } from '../i18n'
 
 interface Props {
+  hasDatasets: boolean
   viewMode: 'chart' | 'data'
   onChangeViewMode: (mode: 'chart' | 'data') => void
 }
 
-export function AppNavbar({ viewMode, onChangeViewMode }: Props) {
+export function AppNavbar({ hasDatasets, viewMode, onChangeViewMode }: Props) {
   const { language, setLanguage, t } = useI18n()
 
   const languageOptions = SUPPORTED_LANGUAGES.map((option) => ({
@@ -23,30 +24,32 @@ export function AppNavbar({ viewMode, onChangeViewMode }: Props) {
           <img src="/navbar-icon.webp" alt="" className="block size-full object-contain" />
         </div>
 
-        <div className="ml-4 flex items-center gap-1">
-          <button
-            type="button"
-            className={`inline-flex h-9 items-center rounded-lg px-4 text-sm font-semibold transition ${
-              viewMode === 'chart'
-                ? 'bg-primary text-primary-content'
-                : 'text-base-content/60 hover:text-base-content'
-            }`}
-            onClick={() => onChangeViewMode('chart')}
-          >
-            {t('dataView.chartLabel')}
-          </button>
-          <button
-            type="button"
-            className={`inline-flex h-9 items-center rounded-lg px-4 text-sm font-semibold transition ${
-              viewMode === 'data'
-                ? 'bg-primary text-primary-content'
-                : 'text-base-content/60 hover:text-base-content'
-            }`}
-            onClick={() => onChangeViewMode('data')}
-          >
-            {t('dataView.tabLabel')}
-          </button>
-        </div>
+        {hasDatasets ? (
+          <div className="ml-4 flex items-center gap-1">
+            <button
+              type="button"
+              className={`inline-flex h-9 items-center rounded-lg px-4 text-sm font-semibold transition ${
+                viewMode === 'chart'
+                  ? 'bg-primary text-primary-content'
+                  : 'text-base-content/60 hover:text-base-content'
+              }`}
+              onClick={() => onChangeViewMode('chart')}
+            >
+              {t('dataView.chartLabel')}
+            </button>
+            <button
+              type="button"
+              className={`inline-flex h-9 items-center rounded-lg px-4 text-sm font-semibold transition ${
+                viewMode === 'data'
+                  ? 'bg-primary text-primary-content'
+                  : 'text-base-content/60 hover:text-base-content'
+              }`}
+              onClick={() => onChangeViewMode('data')}
+            >
+              {t('dataView.tabLabel')}
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex items-center gap-1">
