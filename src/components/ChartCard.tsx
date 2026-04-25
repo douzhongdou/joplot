@@ -527,6 +527,8 @@ export function ChartCard({
               data={plotData}
               uirevision={buildChartDataRevision(card, filterRevision)}
               layout={plotLayout}
+              exportKind={card.kind}
+              exportTitle={card.title}
             />
 
             <div className="flex flex-wrap items-center gap-2">

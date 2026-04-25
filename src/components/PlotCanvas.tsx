@@ -2,8 +2,10 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import Plotly from 'plotly.js/dist/plotly.min.js'
 import type { Config, Data, Layout } from 'plotly.js/dist/plotly.min.js'
 import { copyPngDataUrlToClipboard } from '../lib/clipboard'
+import { buildChartExportOptions, CHART_EXPORT_BACKGROUND_COLOR } from '../lib/chartExport'
 import { buildAutorangeUpdate, buildPlotLayout } from '../lib/plotViewport'
 import { resolveThemeColor } from '../lib/theme'
+import type { ChartKind } from '../types'
 
 export type CopyImageResult = import('../lib/clipboard').ClipboardCopyMode | 'downloaded'
 
@@ -17,6 +19,8 @@ interface Props {
   data: Data[]
   layout: Partial<Layout>
   uirevision: string
+  exportKind: ChartKind
+  exportTitle: string
   config?: Partial<Config>
 }
 
@@ -31,13 +35,11 @@ type PlotlyRuntime = typeof Plotly & {
 
 const plotlyRuntime = Plotly as PlotlyRuntime
 
-async function createPlotImagePayload(graphDiv: HTMLDivElement) {
-  const dataUrl = await plotlyRuntime.toImage(graphDiv, {
-    format: 'png',
-    width: graphDiv.clientWidth || undefined,
-    height: graphDiv.clientHeight || undefined,
-    scale: 2,
-  })
+async function createPlotImagePayload(
+  graphDiv: HTMLDivElement,
+  exportOptions: ReturnType<typeof buildChartExportOptions>,
+) {
+  const dataUrl = await plotlyRuntime.toImage(graphDiv, exportOptions.image)
 
   const response = await fetch(dataUrl)
   const blob = await response.blob()
@@ -46,7 +48,7 @@ async function createPlotImagePayload(graphDiv: HTMLDivElement) {
 }
 
 export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
-  { data, layout, uirevision, config },
+  { data, layout, uirevision, exportKind, exportTitle, config },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -67,7 +69,13 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
       }
 
       try {
-        const { dataUrl, blob } = await createPlotImagePayload(graphDiv)
+        const exportOptions = buildChartExportOptions({
+          kind: exportKind,
+          title: exportTitle,
+          width: graphDiv.clientWidth || undefined,
+          height: graphDiv.clientHeight || undefined,
+        })
+        const { dataUrl, blob } = await createPlotImagePayload(graphDiv, exportOptions)
 
         return await copyPngDataUrlToClipboard({
           blob,
@@ -79,10 +87,12 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
         })
       } catch (error) {
         console.error('Copy chart failed, falling back to download.', error)
+        const exportOptions = buildChartExportOptions({
+          kind: exportKind,
+          title: exportTitle,
+        })
         await plotlyRuntime.downloadImage(graphDiv, {
-          format: 'png',
-          filename: 'plotnow-chart',
-          scale: 2,
+          ...exportOptions.download,
         })
         return 'downloaded'
       }
@@ -93,13 +103,15 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
         return
       }
 
+      const exportOptions = buildChartExportOptions({
+        kind: exportKind,
+        title: exportTitle,
+      })
       await plotlyRuntime.downloadImage(graphDiv, {
-        format: 'png',
-        filename: 'plotnow-chart',
-        scale: 2,
+        ...exportOptions.download,
       })
     },
-  }), [])
+  }), [exportKind, exportTitle])
 
   useEffect(() => {
     const graphDiv = containerRef.current
@@ -113,8 +125,8 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
       data,
       buildPlotLayout({
         margin: { l: 78, r: 18, t: 24, b: 88 },
-        paper_bgcolor: 'transparent',
-        plot_bgcolor: resolveThemeColor('--color-base-100', '#ffffff'),
+        paper_bgcolor: CHART_EXPORT_BACKGROUND_COLOR,
+        plot_bgcolor: CHART_EXPORT_BACKGROUND_COLOR,
         font: {
           family: 'Segoe UI, PingFang SC, Microsoft YaHei, sans-serif',
           size: 14,
