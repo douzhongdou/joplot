@@ -73,12 +73,16 @@ export function CardInspector({
 
   const kindOptions: Array<{ value: ChartCard['kind']; label: string }> = [
     { value: 'line', label: t('chartKinds.line') },
+    { value: 'area', label: t('chartKinds.area') },
     { value: 'scatter', label: t('chartKinds.scatter') },
     { value: 'bar', label: t('chartKinds.bar') },
+    { value: 'radar', label: t('chartKinds.radar') },
+    { value: 'heatmap', label: t('chartKinds.heatmap') },
     { value: 'stats', label: t('chartKinds.stats') },
   ]
 
   const drawModeOptions: Array<{ value: NonNullable<ChartCard['drawMode']>; label: string }> = [
+    { value: 'spline', label: t('drawModes.spline') },
     { value: 'lines', label: t('drawModes.lines') },
     { value: 'lines+markers', label: t('drawModes.lines+markers') },
     { value: 'markers', label: t('drawModes.markers') },
