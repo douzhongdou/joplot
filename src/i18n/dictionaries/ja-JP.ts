@@ -22,6 +22,9 @@ export const jaJP = {
     scatter: '散布図',
     bar: '棒グラフ',
     stats: '統計カード',
+    area: 'エリアチャート',
+    radar: 'レーダーチャート',
+    heatmap: 'ヒートマップ',
     fallback: 'カード',
   },
   cards: {
@@ -145,7 +148,8 @@ export const jaJP = {
     },
   },
   drawModes: {
-    lines: '線',
+    lines: '直線',
+    spline: 'スムーズカーブ',
     'lines+markers': '線 + 点',
     markers: '点のみ',
   },
@@ -169,5 +173,9 @@ export const jaJP = {
     aggregateSkipped: ({ datasets, rows, series }: { datasets: string | number; rows: string | number; series?: string | number }) =>
       `集計時に ${datasets} 件のデータソース、${rows} 行、${series ?? 0} 件のグループをスキップしました。`,
     resizeCard: 'カードをリサイズ',
+  },
+  dataView: {
+    tabLabel: 'データ',
+    emptyState: 'データファイルを先にアップロードしてください',
   },
 } satisfies TranslationDictionary

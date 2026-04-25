@@ -22,6 +22,9 @@ export const zhCN = {
     scatter: '散点图',
     bar: '柱状图',
     stats: '统计卡',
+    area: '面积图',
+    radar: '雷达图',
+    heatmap: '热力图',
     fallback: '图卡',
   },
   cards: {
@@ -146,6 +149,7 @@ export const zhCN = {
   },
   drawModes: {
     lines: '折线',
+    spline: '平滑曲线',
     'lines+markers': '线 + 点',
     markers: '仅点',
   },
@@ -169,5 +173,9 @@ export const zhCN = {
     aggregateSkipped: ({ datasets, rows, series }: { datasets: string | number; rows: string | number; series?: string | number }) =>
       `聚合时跳过了 ${datasets} 个数据源、${rows} 行数据，并省略了 ${series ?? 0} 个分组。`,
     resizeCard: '缩放图卡',
+  },
+  dataView: {
+    tabLabel: '数据',
+    emptyState: '请先上传数据文件',
   },
 } satisfies TranslationDictionary

@@ -22,6 +22,9 @@ export const en = {
     scatter: 'Scatter Plot',
     bar: 'Bar Chart',
     stats: 'Stats Card',
+    area: 'Area Chart',
+    radar: 'Radar Chart',
+    heatmap: 'Heatmap',
     fallback: 'Card',
   },
   cards: {
@@ -145,7 +148,8 @@ export const en = {
     },
   },
   drawModes: {
-    lines: 'Lines',
+    lines: 'Straight Lines',
+    spline: 'Smooth Curve',
     'lines+markers': 'Lines + markers',
     markers: 'Markers only',
   },
@@ -169,5 +173,9 @@ export const en = {
     aggregateSkipped: ({ datasets, rows, series }: { datasets: string | number; rows: string | number; series?: string | number }) =>
       `Skipped ${datasets} data sources, ${rows} rows, and ${series ?? 0} groups while aggregating.`,
     resizeCard: 'Resize chart card',
+  },
+  dataView: {
+    tabLabel: 'Data',
+    emptyState: 'Upload a data file first',
   },
 } satisfies TranslationDictionary
