@@ -142,6 +142,32 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
     }
   }, [])
 
+  // Middle mouse button to pan
+  useEffect(() => {
+    const graphDiv = containerRef.current
+    if (!graphDiv) return
+    const plotDiv = graphDiv
+
+    function handleMouseDown(event: MouseEvent) {
+      if (event.button !== 1) return
+      event.preventDefault()
+      plotlyRuntime.relayout(plotDiv, { dragmode: 'pan' })
+    }
+
+    function handleMouseUp(event: MouseEvent) {
+      if (event.button !== 1) return
+      plotlyRuntime.relayout(plotDiv, { dragmode: 'zoom' })
+    }
+
+    plotDiv.addEventListener('mousedown', handleMouseDown)
+    document.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      plotDiv.removeEventListener('mousedown', handleMouseDown)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [])
+
   // Round hover tooltip corners (Plotly doesn't support this natively)
   useEffect(() => {
     const graphDiv = containerRef.current
