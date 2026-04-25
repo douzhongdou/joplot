@@ -1,6 +1,6 @@
 import type { SupportedLanguage } from '../i18n/config'
 
-export type SampleDatasetId = 'sales' | 'stock' | 'traffic' | 'sensor'
+export type SampleDatasetId = 'demo'
 
 interface SampleDatasetDefinition {
   id: SampleDatasetId
@@ -27,63 +27,18 @@ type SampleFetch = (input: string) => Promise<SampleFetchResponse>
 
 export const SAMPLE_DATASETS: SampleDatasetDefinition[] = [
   {
-    id: 'sales',
-    fileName: 'sales.csv',
-    path: '/samples/sales.csv',
+    id: 'demo',
+    fileName: 'demo.csv',
+    path: '/samples/demo.csv',
     labels: {
-      'zh-CN': '销售',
-      en: 'Sales',
-      'ja-JP': '売上',
+      'zh-CN': '查看示例数据',
+      en: 'Open sample data',
+      'ja-JP': 'サンプルデータを見る',
     },
     descriptions: {
-      'zh-CN': '月度营收与订单趋势',
-      en: 'Monthly revenue and order trend',
-      'ja-JP': '月次売上と注文数の推移',
-    },
-  },
-  {
-    id: 'stock',
-    fileName: 'stock.csv',
-    path: '/samples/stock.csv',
-    labels: {
-      'zh-CN': '股票',
-      en: 'Stock',
-      'ja-JP': '株価',
-    },
-    descriptions: {
-      'zh-CN': '收盘价与成交量走势',
-      en: 'Closing price and volume trend',
-      'ja-JP': '終値と出来高の推移',
-    },
-  },
-  {
-    id: 'traffic',
-    fileName: 'traffic.csv',
-    path: '/samples/traffic.csv',
-    labels: {
-      'zh-CN': '流量',
-      en: 'Traffic',
-      'ja-JP': 'トラフィック',
-    },
-    descriptions: {
-      'zh-CN': '访问量与注册转化',
-      en: 'Visits and signup conversion',
-      'ja-JP': '訪問数と登録転換',
-    },
-  },
-  {
-    id: 'sensor',
-    fileName: 'sensor.csv',
-    path: '/samples/sensor.csv',
-    labels: {
-      'zh-CN': '传感器',
-      en: 'Sensor',
-      'ja-JP': 'センサー',
-    },
-    descriptions: {
-      'zh-CN': '温度与湿度监测',
-      en: 'Temperature and humidity monitoring',
-      'ja-JP': '温度と湿度のモニタリング',
+      'zh-CN': '加载一份内置 CSV 示例',
+      en: 'Load the built-in CSV example',
+      'ja-JP': '内蔵 CSV サンプルを読み込む',
     },
   },
 ]
