@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react'
 import {
   BadgeInfo,
+  ChartArea,
   ChartColumn,
   ChartLine,
   ChartScatter,
   Filter,
+  Grid3X3,
   Palette,
   Plus,
+  Radar,
   RotateCcw,
 } from 'lucide-react'
 import type { ChartKind, CsvData, FilterJoinOperator, FilterOperator, FilterRule } from '../types'
@@ -66,8 +69,11 @@ export function WorkbenchHeader({
 
   const componentOptions: Array<{ kind: ChartKind; label: string; icon: typeof ChartLine }> = [
     { kind: 'line', label: t('chartKinds.line'), icon: ChartLine },
+    { kind: 'area', label: t('chartKinds.area'), icon: ChartArea },
     { kind: 'scatter', label: t('chartKinds.scatter'), icon: ChartScatter },
     { kind: 'bar', label: t('chartKinds.bar'), icon: ChartColumn },
+    { kind: 'radar', label: t('chartKinds.radar'), icon: Radar },
+    { kind: 'heatmap', label: t('chartKinds.heatmap'), icon: Grid3X3 },
     { kind: 'stats', label: t('chartKinds.stats'), icon: BadgeInfo },
   ]
 

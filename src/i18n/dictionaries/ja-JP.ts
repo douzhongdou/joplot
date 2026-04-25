@@ -22,6 +22,9 @@ export const jaJP = {
     scatter: '散布図',
     bar: '棒グラフ',
     stats: '統計カード',
+    area: 'エリアチャート',
+    radar: 'レーダーチャート',
+    heatmap: 'ヒートマップ',
     fallback: 'カード',
   },
   cards: {
@@ -115,6 +118,13 @@ export const jaJP = {
       groupMode: 'グループ化',
       groupColumn: 'グループフィールド',
     },
+    heatmap: {
+      dataset: 'データセット',
+      xColumn: 'X 軸フィールド',
+      yColumn: 'Y 軸フィールド',
+      zColumn: '値フィールド',
+      zCount: 'カウント（自動）',
+    },
     xKinds: {
       category: 'テキスト / カテゴリ',
       number: '数値',
@@ -145,9 +155,10 @@ export const jaJP = {
     },
   },
   drawModes: {
-    lines: '線',
-    'lines+markers': '線 + 点',
-    markers: '点のみ',
+    lines: '直線',
+    spline: 'スムーズカーブ',
+    'lines+markers': '直線 + 点',
+    'spline+markers': 'スムーズカーブ + 点',
   },
   chartCard: {
     dragCard: 'カードをドラッグ',
@@ -169,5 +180,30 @@ export const jaJP = {
     aggregateSkipped: ({ datasets, rows, series }: { datasets: string | number; rows: string | number; series?: string | number }) =>
       `集計時に ${datasets} 件のデータソース、${rows} 行、${series ?? 0} 件のグループをスキップしました。`,
     resizeCard: 'カードをリサイズ',
+  },
+  dataView: {
+    chartLabel: 'チャート',
+    tabLabel: 'データ',
+    emptyState: 'データファイルを先にアップロードしてください',
+  },
+  help: {
+    label: 'ヘルプ',
+    title: '操作説明',
+    boxSelect: {
+      action: '範囲選択ズーム',
+      description: '左ボタンでドラッグして範囲選択ズーム',
+    },
+    scrollZoom: {
+      action: 'スクロールズーム',
+      description: 'マウスホイールでズームイン・アウト',
+    },
+    middlePan: {
+      action: '中ボタンドラッグ',
+      description: '中ボタンを押しながらドラッグで移動',
+    },
+    doubleClickReset: {
+      action: 'ダブルクリックリセット',
+      description: 'ダブルクリックで表示をリセット',
+    },
   },
 } satisfies TranslationDictionary

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://joplot.com/en</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://joplot.com/en" />
+    <xhtml:link rel="alternate" hreflang="zh" href="https://joplot.com/zh" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://joplot.com/ja" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://joplot.com/" />
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://joplot.com/zh</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://joplot.com/en" />
+    <xhtml:link rel="alternate" hreflang="zh" href="https://joplot.com/zh" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://joplot.com/ja" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://joplot.com/" />
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://joplot.com/ja</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://joplot.com/en" />
+    <xhtml:link rel="alternate" hreflang="zh" href="https://joplot.com/zh" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://joplot.com/ja" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://joplot.com/" />
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>

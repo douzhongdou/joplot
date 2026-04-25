@@ -3,7 +3,7 @@ import type { TranslationDictionary } from '../types'
 export const en = {
   common: {
     selectPlaceholder: 'Select',
-    csvCount: ({ count }: { count: string | number }) => `${count} CSV`,
+    csvCount: ({ count }: { count: string | number }) => `${count} datasets`,
     rowCount: ({ count }: { count: string | number }) => `${count} rows`,
     on: 'On',
     off: 'Off',
@@ -22,6 +22,9 @@ export const en = {
     scatter: 'Scatter Plot',
     bar: 'Bar Chart',
     stats: 'Stats Card',
+    area: 'Area Chart',
+    radar: 'Radar Chart',
+    heatmap: 'Heatmap',
     fallback: 'Card',
   },
   cards: {
@@ -31,12 +34,12 @@ export const en = {
     unnamedSeries: 'New Series',
   },
   uploader: {
-    importTitle: 'Import CSV',
-    importDescription: 'Import one or more files to start.',
-    uploadCsv: 'Upload CSV',
-    addCsv: 'Add CSV',
-    overlayBadge: 'CSV Upload',
-    overlayTitle: 'Drop to upload one or more CSV files',
+    importTitle: 'Import Data',
+    importDescription: 'Import one or more CSV or Excel files to start.',
+    uploadCsv: 'Upload Data',
+    addCsv: 'Add Data',
+    overlayBadge: 'Data Upload',
+    overlayTitle: 'Drop to upload one or more CSV or Excel files',
   },
   workbench: {
     addComponent: 'Add component',
@@ -45,7 +48,7 @@ export const en = {
     currentGroup: 'Current group',
     range: 'Range',
     filtersTitle: 'Filter rules',
-    filtersDescription: 'All CSV files in the current workbench share the same filter logic.',
+    filtersDescription: 'All imported datasets in the current workbench share the same filter logic.',
     joinAnd: 'All must match',
     joinOr: 'Any can match',
     addCondition: 'Add condition',
@@ -115,6 +118,13 @@ export const en = {
       groupMode: 'Grouping',
       groupColumn: 'Group field',
     },
+    heatmap: {
+      dataset: 'Dataset',
+      xColumn: 'X axis field',
+      yColumn: 'Y axis field',
+      zColumn: 'Value field',
+      zCount: 'Count (auto)',
+    },
     xKinds: {
       category: 'Text / category',
       number: 'Number',
@@ -145,9 +155,10 @@ export const en = {
     },
   },
   drawModes: {
-    lines: 'Lines',
+    lines: 'Straight Lines',
+    spline: 'Smooth Curve',
     'lines+markers': 'Lines + markers',
-    markers: 'Markers only',
+    'spline+markers': 'Smooth Curve + markers',
   },
   chartCard: {
     dragCard: 'Drag chart card',
@@ -169,5 +180,30 @@ export const en = {
     aggregateSkipped: ({ datasets, rows, series }: { datasets: string | number; rows: string | number; series?: string | number }) =>
       `Skipped ${datasets} data sources, ${rows} rows, and ${series ?? 0} groups while aggregating.`,
     resizeCard: 'Resize chart card',
+  },
+  dataView: {
+    chartLabel: 'Chart',
+    tabLabel: 'Data',
+    emptyState: 'Upload a data file first',
+  },
+  help: {
+    label: 'Help',
+    title: 'Shortcuts',
+    boxSelect: {
+      action: 'Drag to select',
+      description: 'Box select to zoom into a region',
+    },
+    scrollZoom: {
+      action: 'Scroll wheel',
+      description: 'Scroll to zoom in or out',
+    },
+    middlePan: {
+      action: 'Middle button drag',
+      description: 'Hold middle button and drag to pan',
+    },
+    doubleClickReset: {
+      action: 'Double-click',
+      description: 'Double-click to reset the view',
+    },
   },
 } satisfies TranslationDictionary

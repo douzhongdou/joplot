@@ -7,7 +7,7 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react'
-import type { ChartCard, ChartSeries, CsvData } from '../types'
+import type { ChartCard, ChartSeries, CsvData, HeatmapConfig } from '../types'
 import { listAvailableSeriesYColumns, updateAggregationConfig } from '../lib/workbench'
 import { SelectMenu } from './SelectMenu'
 import { Switch } from './Switch'
@@ -73,16 +73,25 @@ export function CardInspector({
 
   const kindOptions: Array<{ value: ChartCard['kind']; label: string }> = [
     { value: 'line', label: t('chartKinds.line') },
+    { value: 'area', label: t('chartKinds.area') },
     { value: 'scatter', label: t('chartKinds.scatter') },
     { value: 'bar', label: t('chartKinds.bar') },
+    { value: 'radar', label: t('chartKinds.radar') },
+    { value: 'heatmap', label: t('chartKinds.heatmap') },
     { value: 'stats', label: t('chartKinds.stats') },
   ]
 
-  const drawModeOptions: Array<{ value: NonNullable<ChartCard['drawMode']>; label: string }> = [
-    { value: 'lines', label: t('drawModes.lines') },
-    { value: 'lines+markers', label: t('drawModes.lines+markers') },
-    { value: 'markers', label: t('drawModes.markers') },
-  ]
+  const drawModeOptions: Array<{ value: NonNullable<ChartCard['drawMode']>; label: string }> = card?.kind === 'area'
+    ? [
+        { value: 'spline', label: t('drawModes.spline') },
+        { value: 'lines', label: t('drawModes.lines') },
+      ]
+    : [
+        { value: 'spline', label: t('drawModes.spline') },
+        { value: 'lines', label: t('drawModes.lines') },
+        { value: 'spline+markers', label: t('drawModes.spline+markers') },
+        { value: 'lines+markers', label: t('drawModes.lines+markers') },
+      ]
   const dataModeOptions: Array<{ value: ChartDataMode; label: string }> = [
     { value: 'raw', label: t('inspector.dataModes.raw') },
     { value: 'aggregate', label: t('inspector.dataModes.aggregate') },
@@ -295,6 +304,7 @@ export function CardInspector({
                   />
                 </label>
 
+                {card.kind !== 'heatmap' && (
                 <label className="grid gap-2">
                   <span className={fieldLabelClass}>{t('inspector.dataMode')}</span>
                   <SelectMenu
@@ -304,8 +314,18 @@ export function CardInspector({
                     buttonClassName="shadow-none"
                   />
                 </label>
+                )}
 
-                {card.dataConfig.mode === 'raw' && (
+                {card.kind === 'heatmap' && card.heatmapConfig && (
+                  <HeatmapFields
+                    config={card.heatmapConfig}
+                    datasets={datasets}
+                    onChange={(patch) => onChangeCard({ heatmapConfig: { ...card.heatmapConfig!, ...patch } })}
+                    fieldLabelClass={fieldLabelClass}
+                  />
+                )}
+
+                {card.dataConfig.mode === 'raw' && card.kind !== 'heatmap' && (
                 <label className="grid gap-2">
                   <span className={fieldLabelClass}>{t('inspector.sharedXAxis')}</span>
                   <SelectMenu
@@ -320,7 +340,7 @@ export function CardInspector({
                 </label>
                 )}
 
-                {card.dataConfig.mode === 'raw' && card.kind !== 'stats' && (
+                {card.dataConfig.mode === 'raw' && (card.kind === 'line' || card.kind === 'area') && (
                   <>
                     <label className="grid gap-2">
                       <span className={fieldLabelClass}>{t('inspector.drawMode')}</span>
@@ -478,7 +498,7 @@ export function CardInspector({
               </div>
             </section>
 
-            {card.dataConfig.mode === 'raw' && (
+            {card.dataConfig.mode === 'raw' && card.kind !== 'heatmap' && (
             <section className="py-6">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div className="text-lg font-semibold text-base-content">{t('inspector.seriesSectionTitle')}</div>
@@ -717,5 +737,81 @@ export function CardInspector({
         )}
       </div>
     </section>
+  )
+}
+
+interface HeatmapFieldsProps {
+  config: HeatmapConfig
+  datasets: CsvData[]
+  onChange: (patch: Partial<HeatmapConfig>) => void
+  fieldLabelClass: string
+}
+
+function HeatmapFields({ config, datasets, onChange, fieldLabelClass }: HeatmapFieldsProps) {
+  const { t } = useI18n()
+
+  const currentDataset = datasets.find((d) => d.id === config.datasetId) ?? datasets[0] ?? null
+  const headers = currentDataset?.headers ?? []
+
+  return (
+    <>
+      <label className="grid gap-2">
+        <span className={fieldLabelClass}>{t('inspector.heatmap.dataset')}</span>
+        <SelectMenu
+          value={config.datasetId}
+          options={datasets.map((d) => ({
+            value: d.id,
+            label: d.fileName,
+            description: t('common.rowCount', { count: d.rowCount }),
+          }))}
+          onChange={(value) => {
+            const ds = datasets.find((d) => d.id === value)
+            const dsHeaders = ds?.headers ?? []
+            onChange({
+              datasetId: value,
+              xColumn: dsHeaders[0] ?? '',
+              yColumn: dsHeaders[1] ?? dsHeaders[0] ?? '',
+              zColumn: null,
+            })
+          }}
+          buttonClassName="shadow-none"
+        />
+      </label>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="grid gap-2">
+          <span className={fieldLabelClass}>{t('inspector.heatmap.xColumn')}</span>
+          <SelectMenu
+            value={config.xColumn}
+            options={headers.map((h) => ({ value: h, label: h }))}
+            onChange={(value) => onChange({ xColumn: value })}
+            buttonClassName="shadow-none"
+          />
+        </label>
+
+        <label className="grid gap-2">
+          <span className={fieldLabelClass}>{t('inspector.heatmap.yColumn')}</span>
+          <SelectMenu
+            value={config.yColumn}
+            options={headers.map((h) => ({ value: h, label: h }))}
+            onChange={(value) => onChange({ yColumn: value })}
+            buttonClassName="shadow-none"
+          />
+        </label>
+      </div>
+
+      <label className="grid gap-2">
+        <span className={fieldLabelClass}>{t('inspector.heatmap.zColumn')}</span>
+        <SelectMenu
+          value={config.zColumn ?? ''}
+          options={[
+            { value: '', label: t('inspector.heatmap.zCount') },
+            ...headers.map((h) => ({ value: h, label: h })),
+          ]}
+          onChange={(value) => onChange({ zColumn: value || null })}
+          buttonClassName="shadow-none"
+        />
+      </label>
+    </>
   )
 }

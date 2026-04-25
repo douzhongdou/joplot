@@ -8,12 +8,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-virtual": "^3.13.24",
     "@types/papaparse": "^5.5.2",
     "lucide-react": "^1.8.0",
     "papaparse": "^5.5.3",
     "plotly.js": "^3.5.0",
     "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react-dom": "^19.2.5",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.4",

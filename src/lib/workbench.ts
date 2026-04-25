@@ -60,6 +60,12 @@ function createCardTitle(kind: ChartKind): string {
       return '柱状图'
     case 'stats':
       return '统计卡'
+    case 'area':
+      return '面积图'
+    case 'radar':
+      return '雷达图'
+    case 'heatmap':
+      return '热力图'
     default:
       return '图卡'
   }
@@ -314,7 +320,7 @@ export function createCard(
     dataConfig: { mode: 'raw' },
     xColumn,
     series: [initialSeries],
-    drawMode: kind === 'scatter' ? 'markers' : 'lines',
+    drawMode: 'lines',
     lineWidth: 2,
     showLegend: true,
     showGrid: true,
@@ -323,6 +329,12 @@ export function createCard(
     yRange: createEmptyAxisRange(),
     yMin: null,
     yMax: null,
+    heatmapConfig: kind === 'heatmap' ? {
+      datasetId: dataset.id,
+      xColumn,
+      yColumn: dataset.headers.find((h) => h !== xColumn) ?? xColumn,
+      zColumn: null,
+    } : undefined,
     layout: createPresetLayout(0, kind),
     ...overrides,
   }

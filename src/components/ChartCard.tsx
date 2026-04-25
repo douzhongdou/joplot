@@ -73,6 +73,9 @@ export function ChartCard({
     scatter: t('chartKinds.scatter'),
     bar: t('chartKinds.bar'),
     stats: t('chartKinds.stats'),
+    area: t('chartKinds.area'),
+    radar: t('chartKinds.radar'),
+    heatmap: t('chartKinds.heatmap'),
   }
 
   useEffect(() => {
@@ -126,6 +129,108 @@ export function ChartCard({
       return []
     }
 
+    const lineShape = card.drawMode === 'spline' || card.drawMode === 'spline+markers' ? 'spline' : 'linear'
+    const useScatter = card.drawMode === 'spline' || card.drawMode === 'spline+markers'
+
+    if (card.kind === 'heatmap') {
+      const hc = card.heatmapConfig
+      if (!hc) return []
+
+      const dataset = datasetsById[hc.datasetId]
+      if (!dataset) return []
+
+      const rows = filteredRowsByDataset[hc.datasetId] ?? dataset.rows
+      const { xColumn, yColumn, zColumn } = hc
+
+      const xSet = new Set<string>()
+      const ySet = new Set<string>()
+      const cellValues = new Map<string, number[]>()
+      const cellCounts = new Map<string, number>()
+
+      for (const row of rows) {
+        const xVal = row.raw[xColumn] ?? ''
+        const yVal = row.raw[yColumn] ?? ''
+        xSet.add(xVal)
+        ySet.add(yVal)
+        const key = `${xVal}\x00${yVal}`
+        cellCounts.set(key, (cellCounts.get(key) ?? 0) + 1)
+
+        if (zColumn) {
+          const zVal = row.numeric[zColumn]
+          if (zVal !== null) {
+            const arr = cellValues.get(key)
+            if (arr) arr.push(zVal)
+            else cellValues.set(key, [zVal])
+          }
+        }
+      }
+
+      const xValues = [...xSet]
+      const yValues = [...ySet]
+
+      const z: number[][] = yValues.map((yVal) =>
+        xValues.map((xVal) => {
+          const key = `${xVal}\x00${yVal}`
+          if (zColumn) {
+            const vals = cellValues.get(key)
+            if (!vals || vals.length === 0) return 0
+            return vals.reduce((sum, v) => sum + v, 0) / vals.length
+          }
+          return cellCounts.get(key) ?? 0
+        })
+      )
+
+      return [{
+        type: 'heatmap' as const,
+        x: xValues,
+        y: yValues,
+        z,
+        colorscale: 'Viridis',
+        showscale: true,
+      }]
+    }
+
+    if (card.kind === 'radar') {
+      if (aggregateResult) {
+        return toPlotSeries(aggregateResult).map((series, index) => {
+          const color = getChartColor(index)
+          const closedX = series.x.length > 0 ? [...series.x, series.x[0]] : series.x
+          const closedY = series.y.length > 0 ? [...series.y, series.y[0]] : series.y
+
+          return {
+            type: 'scatterpolar' as const,
+            mode: 'lines+markers' as const,
+            theta: closedX,
+            r: closedY,
+            fill: 'toself' as const,
+            fillcolor: `${color}22`,
+            marker: { color, size: 6 },
+            line: { color, width: card.lineWidth },
+            name: series.name,
+          }
+        })
+      }
+
+      return validSeries.map(({ series, rows }) => {
+        const theta = rows.map((row) => row.raw[card.xColumn] ?? '')
+        const r = rows.map((row) => row.numeric[series.yColumn!])
+        const closedTheta = theta.length > 0 ? [...theta, theta[0]] : theta
+        const closedR = r.length > 0 ? [...r, r[0]] : r
+
+        return {
+          type: 'scatterpolar' as const,
+          mode: 'lines+markers' as const,
+          theta: closedTheta,
+          r: closedR,
+          fill: 'toself' as const,
+          fillcolor: `${series.color}22`,
+          marker: { color: series.color, size: 6 },
+          line: { color: series.color, width: card.lineWidth },
+          name: series.label,
+        }
+      })
+    }
+
     if (aggregateResult) {
       return toPlotSeries(aggregateResult).map((series, index) => {
         const color = getChartColor(index)
@@ -140,15 +245,29 @@ export function ChartCard({
           }
         }
 
-        return {
-          type: 'scattergl' as const,
-          mode: card.kind === 'scatter' ? 'markers' : card.drawMode,
+        const traceBase = {
           x: series.x,
           y: series.y,
           marker: { color, size: 6 },
-          line: { color, width: card.lineWidth },
+          line: { color, width: card.lineWidth, shape: lineShape },
           name: series.name,
           connectgaps: false,
+        }
+
+        if (card.kind === 'area') {
+          return {
+            ...traceBase,
+            type: (useScatter ? 'scatter' : 'scattergl') as 'scatter' | 'scattergl',
+            mode: 'lines' as const,
+            fill: 'tozeroy' as const,
+            fillcolor: `${color}33`,
+          }
+        }
+
+        return {
+          ...traceBase,
+          type: (useScatter ? 'scatter' : 'scattergl') as 'scatter' | 'scattergl',
+          mode: card.kind === 'scatter' ? 'markers' as const : (card.drawMode === 'spline' || card.drawMode === 'lines' ? 'lines' as const : card.drawMode),
         }
       })
     }
@@ -167,65 +286,95 @@ export function ChartCard({
         }
       }
 
-      return {
-        type: 'scattergl' as const,
-        mode: card.kind === 'scatter' ? 'markers' : card.drawMode,
+      const traceBase = {
         x,
         y,
         marker: { color: series.color, size: 6 },
-        line: { color: series.color, width: card.lineWidth },
+        line: { color: series.color, width: card.lineWidth, shape: lineShape },
         name: series.label,
         connectgaps: false,
       }
+
+      if (card.kind === 'area') {
+        return {
+          ...traceBase,
+          type: (useScatter ? 'scatter' : 'scattergl') as 'scatter' | 'scattergl',
+          mode: 'lines' as const,
+          fill: 'tozeroy' as const,
+          fillcolor: `${series.color}33`,
+        }
+      }
+
+      return {
+        ...traceBase,
+        type: (useScatter ? 'scatter' : 'scattergl') as 'scatter' | 'scattergl',
+        mode: card.kind === 'scatter' ? 'markers' as const : (card.drawMode === 'spline' || card.drawMode === 'lines' ? 'lines' as const : card.drawMode),
+      }
     })
-  }, [aggregateResult, card.drawMode, card.kind, card.lineWidth, validSeries])
+  }, [aggregateResult, card.drawMode, card.kind, card.lineWidth, card.xColumn, validSeries])
 
   const hasAggregateSeries = (aggregateResult?.series.length ?? 0) > 0
   const renderedSeriesCount = aggregateResult ? aggregateResult.series.length : validSeries.length
 
-  const plotLayout = useMemo(() => ({
-    xaxis: {
-      title: { text: card.showAxes ? card.xColumn : '' },
-      automargin: true,
-      showgrid: card.showGrid,
-      gridcolor: resolveThemeColor('--chart-grid', 'rgba(15, 23, 42, 0.08)'),
-      color: resolveThemeColor('--chart-axis', 'rgba(15, 23, 42, 0.72)'),
-      visible: card.showAxes,
-      range: parseTextRange(card.xRange.min, card.xRange.max),
-    },
-    yaxis: {
-      title: {
-        text: card.showAxes
-          ? (
-              card.dataConfig.mode === 'aggregate'
-                ? card.dataConfig.aggregation.metricColumn
-                : (validSeries[0]?.series.yColumn ?? '')
-            )
-          : '',
+  const plotLayout = useMemo(() => {
+    const gridColor = resolveThemeColor('--chart-grid', 'rgba(15, 23, 42, 0.08)')
+    const axisColor = resolveThemeColor('--chart-axis', 'rgba(15, 23, 42, 0.72)')
+
+    const base: Record<string, unknown> = {
+      showlegend: card.showLegend && renderedSeriesCount > 1,
+      hoverlabel: {
+        bgcolor: '#ffffff',
+        bordercolor: '#e5e7eb',
+        font: { color: '#111827' },
+        pad: { t: 6, b: 6, l: 10, r: 10 },
       },
-      automargin: true,
-      showgrid: card.showGrid,
-      gridcolor: resolveThemeColor('--chart-grid', 'rgba(15, 23, 42, 0.08)'),
-      color: resolveThemeColor('--chart-axis', 'rgba(15, 23, 42, 0.72)'),
-      visible: card.showAxes,
-      range:
-        parseNumberRange(card.yRange.min, card.yRange.max)
-        ?? (
-          card.yMin !== null && card.yMax !== null && card.yMin < card.yMax
-            ? [card.yMin, card.yMax]
-            : undefined
-        ),
-    },
-    showlegend: card.showLegend && renderedSeriesCount > 1,
-    hovermode: 'x unified',
-    hoverlabel: {
-      bgcolor: '#ffffff',
-      bordercolor: '#e5e7eb',
-      font: { color: '#111827' },
-      pad: { t: 6, b: 6, l: 10, r: 10 },
-    },
-  }), [
+    }
+
+    if (card.kind === 'radar') {
+      base.polar = {
+        radialaxis: { visible: card.showAxes, gridcolor: gridColor, color: axisColor },
+        angularaxis: { gridcolor: gridColor, color: axisColor },
+      }
+    } else if (card.kind !== 'heatmap') {
+      base.xaxis = {
+        title: { text: card.showAxes ? card.xColumn : '' },
+        automargin: true,
+        showgrid: card.showGrid,
+        gridcolor: gridColor,
+        color: axisColor,
+        visible: card.showAxes,
+        range: parseTextRange(card.xRange.min, card.xRange.max),
+      }
+      base.yaxis = {
+        title: {
+          text: card.showAxes
+            ? (
+                card.dataConfig.mode === 'aggregate'
+                  ? card.dataConfig.aggregation.metricColumn
+                  : (validSeries[0]?.series.yColumn ?? '')
+              )
+            : '',
+        },
+        automargin: true,
+        showgrid: card.showGrid,
+        gridcolor: gridColor,
+        color: axisColor,
+        visible: card.showAxes,
+        range:
+          parseNumberRange(card.yRange.min, card.yRange.max)
+          ?? (
+            card.yMin !== null && card.yMax !== null && card.yMin < card.yMax
+              ? [card.yMin, card.yMax]
+              : undefined
+          ),
+      }
+      base.hovermode = 'x unified'
+    }
+
+    return base
+  }, [
     card.dataConfig,
+    card.kind,
     card.showAxes,
     card.showGrid,
     card.showLegend,
@@ -371,7 +520,7 @@ export function ChartCard({
           </div>
         )}
 
-        {card.kind !== 'stats' && (validSeries.length > 0 || hasAggregateSeries) && (
+        {card.kind !== 'stats' && (validSeries.length > 0 || hasAggregateSeries || (card.kind === 'heatmap' && !!card.heatmapConfig)) && (
           <div className="flex min-h-0 flex-1 flex-col gap-3">
             <PlotCanvas
               ref={plotRef}
@@ -432,7 +581,7 @@ export function ChartCard({
           </div>
         )}
 
-        {((card.kind === 'stats' && !summary && !aggregateSummary) || (card.kind !== 'stats' && validSeries.length === 0 && !hasAggregateSeries)) && (
+        {((card.kind === 'stats' && !summary && !aggregateSummary) || (card.kind !== 'stats' && validSeries.length === 0 && !hasAggregateSeries && !(card.kind === 'heatmap' && !!card.heatmapConfig))) && (
           <div className="flex flex-1 items-center justify-center rounded-[var(--radius-box)] border border-dashed border-base-300 bg-base-200/50 p-6 text-center text-sm leading-6 text-base-content/55">
             <div>{t('chartCard.noValidSeries')}</div>
           </div>

@@ -33,30 +33,11 @@
     <link rel="icon" type="image/webp" href="/icon.webp" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <title>joplot | CSV charting and data analysis workspace</title>
-    <script>
-      (function applySeoLinks() {
-        const origin = window.location.origin
-        const links = [
-          { rel: 'canonical', href: origin + '/en' },
-          { rel: 'alternate', hreflang: 'en', href: origin + '/en' },
-          { rel: 'alternate', hreflang: 'zh', href: origin + '/zh' },
-          { rel: 'alternate', hreflang: 'ja', href: origin + '/ja' },
-          { rel: 'alternate', hreflang: 'x-default', href: origin + '/' },
-        ]
-
-        for (const definition of links) {
-          const link = document.createElement('link')
-          link.rel = definition.rel
-          link.href = definition.href
-
-          if ('hreflang' in definition) {
-            link.hreflang = definition.hreflang
-          }
-
-          document.head.appendChild(link)
-        }
-      })()
-    </script>
+    <link rel="canonical" href="https://joplot.com/en" />
+    <link rel="alternate" hreflang="en" href="https://joplot.com/en" />
+    <link rel="alternate" hreflang="zh" href="https://joplot.com/zh" />
+    <link rel="alternate" hreflang="ja" href="https://joplot.com/ja" />
+    <link rel="alternate" hreflang="x-default" href="https://joplot.com/" />
     <script
       defer
       src="https://analytics.hardgit.com/script.js"

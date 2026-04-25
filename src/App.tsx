@@ -4,9 +4,11 @@ import { AppNavbar } from './components/AppNavbar'
 import { CardInspector } from './components/CardInspector'
 import { ChartCard } from './components/ChartCard'
 import { DashboardCanvas } from './components/DashboardCanvas'
+import { DataView } from './components/DataView'
 import { FileUploader } from './components/FileUploader'
 import { WorkbenchHeader } from './components/WorkbenchHeader'
 import { useI18n } from './i18n'
+import { getUploadCopy, pickCsvFiles } from './lib/upload'
 import {
   appendCardSeries,
   appendCardWithLayout,
@@ -20,7 +22,6 @@ import {
   sanitizeCardsForDatasets,
 } from './lib/workbench'
 import { getChartColor } from './lib/theme'
-import { pickCsvFiles } from './lib/upload'
 import type { ChartCard as ChartCardConfig, ChartSeries, CsvData, FilterJoinOperator, FilterRule } from './types'
 
 const STORAGE_KEY = 'csv-workbench-dashboard'
@@ -161,7 +162,7 @@ function normalizeWorkspaceFilters(persisted: PersistedState, datasets: CsvData[
 }
 
 export default function App() {
-  const { t } = useI18n()
+  const { t, language } = useI18n()
   const { datasets, parseFiles, resetDatasets } = useCsvData()
   const [cards, setCards] = useState<ChartCardConfig[]>([])
   const [workspaceFilters, setWorkspaceFilters] = useState<FilterRule[]>([])
@@ -169,9 +170,11 @@ export default function App() {
   const [activeDatasetId, setActiveDatasetId] = useState<string | null>(null)
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
   const [recentDatasetIds, setRecentDatasetIds] = useState<string[]>([])
+  const [viewMode, setViewMode] = useState<'chart' | 'data'>('chart')
   const [dragActive, setDragActive] = useState(false)
   const dragDepthRef = useRef(0)
   const previousDatasetCountRef = useRef(0)
+  const uploadCopy = useMemo(() => getUploadCopy(language), [language])
 
   const datasetsById = useMemo(
     () => Object.fromEntries(datasets.map((dataset) => [dataset.id, dataset])),
@@ -548,14 +551,22 @@ export default function App() {
 
   return (
     <div className="grid h-full grid-rows-[var(--navbar-height)_minmax(0,1fr)] bg-base-200 text-base-content">
-      <AppNavbar />
+      <AppNavbar viewMode={viewMode} onChangeViewMode={setViewMode} />
 
-      <main className={hasDatasets
+      <main className={hasDatasets && viewMode === 'chart'
         ? 'grid min-h-0 grid-cols-[minmax(0,1fr)_var(--inspector-width)] max-[920px]:block'
         : 'grid min-h-0 grid-cols-1'}
       >
         <section className="min-h-0 min-w-0 overflow-auto bg-base-100">
-          {hasDatasets && activeDataset && (
+          {viewMode === 'data' && hasDatasets && (
+            <DataView
+              datasets={datasets}
+              activeDatasetId={activeDatasetId}
+              onSelectDataset={setActiveDatasetId}
+            />
+          )}
+
+          {viewMode === 'chart' && hasDatasets && activeDataset && (
             <WorkbenchHeader
               datasets={datasets}
               activeDatasetId={activeDataset.id}
@@ -575,10 +586,10 @@ export default function App() {
             <div className="grid min-h-full place-items-center px-6 py-12">
               <div className="grid w-full max-w-xl gap-6 text-center">
                 <h2 className="text-4xl font-semibold leading-tight tracking-tight text-base-content">
-                  {t('uploader.importTitle')}
+                  {uploadCopy.importTitle}
                 </h2>
                 <p className="text-sm leading-6 text-base-content/60">
-                  {t('uploader.importDescription')}
+                  {uploadCopy.importDescription}
                 </p>
                 <div className="mx-auto">
                   <FileUploader hasDatasets={false} onFiles={handleIncomingFiles} />
@@ -587,7 +598,7 @@ export default function App() {
             </div>
           )}
 
-          {hasDatasets && cards.length > 0 && (
+          {viewMode === 'chart' && hasDatasets && cards.length > 0 && (
             <DashboardCanvas
               cards={cards}
               selectedCardId={selectedCardId}
@@ -609,7 +620,7 @@ export default function App() {
             />
           )}
         </section>
-        {hasDatasets && (
+        {hasDatasets && viewMode === 'chart' && (
           <aside className="min-h-0 overflow-auto border-l border-base-300 bg-base-100 max-[920px]:border-l-0 max-[920px]:border-t">
             {activeDataset && (
               <CardInspector
@@ -631,8 +642,8 @@ export default function App() {
       {dragActive && (
         <div className="pointer-events-none fixed inset-0 z-40 grid place-items-center bg-neutral/10">
           <div className="grid min-w-[min(420px,calc(100vw-32px))] gap-3 rounded-[calc(var(--radius-box)+0.25rem)] border border-primary/35 bg-base-100/95 px-6 py-6 text-center backdrop-blur-md">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{t('uploader.overlayBadge')}</p>
-            <strong className="text-lg font-semibold text-base-content">{t('uploader.overlayTitle')}</strong>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{uploadCopy.overlayBadge}</p>
+            <strong className="text-lg font-semibold text-base-content">{uploadCopy.overlayTitle}</strong>
           </div>
         </div>
       )}

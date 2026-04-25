@@ -1,7 +1,7 @@
-export type ChartKind = 'line' | 'scatter' | 'bar' | 'stats'
+export type ChartKind = 'line' | 'scatter' | 'bar' | 'stats' | 'area' | 'radar' | 'heatmap'
 export type FilterOperator = 'contains' | 'equals' | 'gt' | 'lt' | 'between'
 export type FilterJoinOperator = 'and' | 'or'
-export type DrawMode = 'lines' | 'lines+markers' | 'markers'
+export type DrawMode = 'lines' | 'spline' | 'lines+markers' | 'spline+markers'
 export type ChartDataMode = 'raw' | 'aggregate'
 export type AxisValueKind = 'category' | 'number' | 'time'
 export type TimeBucket = 'day' | 'week' | 'month' | 'quarter' | 'year'
@@ -78,6 +78,13 @@ export type ChartDataConfig =
   | { mode: 'raw' }
   | { mode: 'aggregate'; aggregation: AggregationConfig }
 
+export interface HeatmapConfig {
+  datasetId: string
+  xColumn: string
+  yColumn: string
+  zColumn: string | null
+}
+
 export interface ChartCard {
   id: string
   kind: ChartKind
@@ -94,6 +101,7 @@ export interface ChartCard {
   yRange: AxisRange
   yMin: number | null
   yMax: number | null
+  heatmapConfig?: HeatmapConfig
   layout: DashboardLayout
 }
 
