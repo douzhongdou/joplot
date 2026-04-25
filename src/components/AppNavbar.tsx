@@ -32,7 +32,7 @@ export function AppNavbar({ viewMode, onChangeViewMode }: Props) {
             }`}
             onClick={() => onChangeViewMode('chart')}
           >
-            Chart
+            {t('dataView.chartLabel')}
           </button>
           <button
             type="button"

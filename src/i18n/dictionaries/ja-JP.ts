@@ -175,6 +175,7 @@ export const jaJP = {
     resizeCard: 'カードをリサイズ',
   },
   dataView: {
+    chartLabel: 'チャート',
     tabLabel: 'データ',
     emptyState: 'データファイルを先にアップロードしてください',
   },

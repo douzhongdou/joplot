@@ -175,6 +175,7 @@ export const zhCN = {
     resizeCard: '缩放图卡',
   },
   dataView: {
+    chartLabel: '图表',
     tabLabel: '数据',
     emptyState: '请先上传数据文件',
   },

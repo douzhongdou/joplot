@@ -175,6 +175,7 @@ export const en = {
     resizeCard: 'Resize chart card',
   },
   dataView: {
+    chartLabel: 'Chart',
     tabLabel: 'Data',
     emptyState: 'Upload a data file first',
   },

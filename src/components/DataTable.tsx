@@ -15,6 +15,8 @@ interface Props {
   dataset: CsvData
 }
 
+const ROW_HEIGHT = 36
+
 export function DataTable({ dataset }: Props) {
   const { formatNumber } = useI18n()
   const [sorting, setSorting] = useState<SortingState>([])
@@ -51,9 +53,16 @@ export function DataTable({ dataset }: Props) {
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 36,
+    estimateSize: () => ROW_HEIGHT,
     overscan: 20,
   })
+
+  const virtualItems = rowVirtualizer.getVirtualItems()
+  const totalSize = rowVirtualizer.getTotalSize()
+  const paddingTop = virtualItems.length > 0 ? virtualItems[0].start : 0
+  const paddingBottom = virtualItems.length > 0
+    ? totalSize - virtualItems[virtualItems.length - 1].end
+    : 0
 
   return (
     <div ref={parentRef} className="h-full overflow-auto">
@@ -75,20 +84,21 @@ export function DataTable({ dataset }: Props) {
             </tr>
           ))}
         </thead>
-        <tbody
-          style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
-        >
-          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+        <tbody>
+          {paddingTop > 0 && (
+            <tr style={{ height: `${paddingTop}px` }}>
+              <td />
+            </tr>
+          )}
+          {virtualItems.map((virtualRow) => {
             const row = rows[virtualRow.index]
 
             return (
               <tr
                 key={row.id}
                 className="border-b border-base-300/50 hover:bg-base-200/50"
-                style={{
-                  height: `${virtualRow.size}px`,
-                  transform: `translateY(${virtualRow.start - (rowVirtualizer.getVirtualItems()[0]?.start ?? 0)}px)`,
-                }}
+                data-index={virtualRow.index}
+                ref={rowVirtualizer.measureElement}
               >
                 {row.getVisibleCells().map((cell) => (
                   <td
@@ -101,6 +111,11 @@ export function DataTable({ dataset }: Props) {
               </tr>
             )
           })}
+          {paddingBottom > 0 && (
+            <tr style={{ height: `${paddingBottom}px` }}>
+              <td />
+            </tr>
+          )}
         </tbody>
       </table>
       <div className="sticky bottom-0 border-t border-base-300 bg-base-100 px-4 py-2 text-xs text-base-content/55">
