@@ -2,7 +2,12 @@ import { Languages } from 'lucide-react'
 import { SelectMenu } from './SelectMenu'
 import { SUPPORTED_LANGUAGES, useI18n, type SupportedLanguage } from '../i18n'
 
-export function AppNavbar() {
+interface Props {
+  viewMode: 'chart' | 'data'
+  onChangeViewMode: (mode: 'chart' | 'data') => void
+}
+
+export function AppNavbar({ viewMode, onChangeViewMode }: Props) {
   const { language, setLanguage, t } = useI18n()
 
   const languageOptions = SUPPORTED_LANGUAGES.map((option) => ({
@@ -17,7 +22,30 @@ export function AppNavbar() {
           <img src="/navbar-icon.webp" alt="" className="block size-full object-contain" />
         </div>
 
-        
+        <div className="ml-4 flex items-center gap-1">
+          <button
+            type="button"
+            className={`inline-flex h-9 items-center rounded-lg px-4 text-sm font-semibold transition ${
+              viewMode === 'chart'
+                ? 'bg-primary text-primary-content'
+                : 'text-base-content/60 hover:text-base-content'
+            }`}
+            onClick={() => onChangeViewMode('chart')}
+          >
+            Chart
+          </button>
+          <button
+            type="button"
+            className={`inline-flex h-9 items-center rounded-lg px-4 text-sm font-semibold transition ${
+              viewMode === 'data'
+                ? 'bg-primary text-primary-content'
+                : 'text-base-content/60 hover:text-base-content'
+            }`}
+            onClick={() => onChangeViewMode('data')}
+          >
+            {t('dataView.tabLabel')}
+          </button>
+        </div>
       </div>
 
       <div className="min-w-0">

@@ -4,6 +4,7 @@ import { AppNavbar } from './components/AppNavbar'
 import { CardInspector } from './components/CardInspector'
 import { ChartCard } from './components/ChartCard'
 import { DashboardCanvas } from './components/DashboardCanvas'
+import { DataView } from './components/DataView'
 import { FileUploader } from './components/FileUploader'
 import { WorkbenchHeader } from './components/WorkbenchHeader'
 import { useI18n } from './i18n'
@@ -169,6 +170,7 @@ export default function App() {
   const [activeDatasetId, setActiveDatasetId] = useState<string | null>(null)
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
   const [recentDatasetIds, setRecentDatasetIds] = useState<string[]>([])
+  const [viewMode, setViewMode] = useState<'chart' | 'data'>('chart')
   const [dragActive, setDragActive] = useState(false)
   const dragDepthRef = useRef(0)
   const previousDatasetCountRef = useRef(0)
@@ -549,14 +551,22 @@ export default function App() {
 
   return (
     <div className="grid h-full grid-rows-[var(--navbar-height)_minmax(0,1fr)] bg-base-200 text-base-content">
-      <AppNavbar />
+      <AppNavbar viewMode={viewMode} onChangeViewMode={setViewMode} />
 
-      <main className={hasDatasets
+      <main className={hasDatasets && viewMode === 'chart'
         ? 'grid min-h-0 grid-cols-[minmax(0,1fr)_var(--inspector-width)] max-[920px]:block'
         : 'grid min-h-0 grid-cols-1'}
       >
         <section className="min-h-0 min-w-0 overflow-auto bg-base-100">
-          {hasDatasets && activeDataset && (
+          {viewMode === 'data' && hasDatasets && (
+            <DataView
+              datasets={datasets}
+              activeDatasetId={activeDatasetId}
+              onSelectDataset={setActiveDatasetId}
+            />
+          )}
+
+          {viewMode === 'chart' && hasDatasets && activeDataset && (
             <WorkbenchHeader
               datasets={datasets}
               activeDatasetId={activeDataset.id}
@@ -588,7 +598,7 @@ export default function App() {
             </div>
           )}
 
-          {hasDatasets && cards.length > 0 && (
+          {viewMode === 'chart' && hasDatasets && cards.length > 0 && (
             <DashboardCanvas
               cards={cards}
               selectedCardId={selectedCardId}
@@ -610,7 +620,7 @@ export default function App() {
             />
           )}
         </section>
-        {hasDatasets && (
+        {hasDatasets && viewMode === 'chart' && (
           <aside className="min-h-0 overflow-auto border-l border-base-300 bg-base-100 max-[920px]:border-l-0 max-[920px]:border-t">
             {activeDataset && (
               <CardInspector
