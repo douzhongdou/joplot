@@ -312,7 +312,7 @@ export function ChartCard({
         title: { text: card.showAxes ? card.xColumn : '' },
         automargin: true,
         showgrid: card.showGrid,
-        gridcolor,
+        gridcolor: gridColor,
         color: axisColor,
         visible: card.showAxes,
         range: parseTextRange(card.xRange.min, card.xRange.max),
@@ -329,7 +329,7 @@ export function ChartCard({
         },
         automargin: true,
         showgrid: card.showGrid,
-        gridcolor,
+        gridcolor: gridColor,
         color: axisColor,
         visible: card.showAxes,
         range:

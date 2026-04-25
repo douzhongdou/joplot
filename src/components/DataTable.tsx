@@ -87,7 +87,7 @@ export function DataTable({ dataset }: Props) {
                 className="border-b border-base-300/50 hover:bg-base-200/50"
                 style={{
                   height: `${virtualRow.size}px`,
-                  transform: `translateY(${virtualRow.start - rowVirtualizer.getVirtualItems()[0]?.start ?? 0}px)`,
+                  transform: `translateY(${virtualRow.start - (rowVirtualizer.getVirtualItems()[0]?.start ?? 0)}px)`,
                 }}
               >
                 {row.getVisibleCells().map((cell) => (
