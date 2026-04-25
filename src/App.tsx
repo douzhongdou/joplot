@@ -607,7 +607,7 @@ export default function App() {
           )}
 
           {!hasDatasets && (
-            <HomeHero busy={isImporting} onFiles={handleIncomingFiles} onLoadSample={handleLoadSample} />
+            <HomeHero busy={isImporting} onLoadSample={handleLoadSample} />
           )}
 
           {viewMode === 'chart' && hasDatasets && cards.length > 0 && (

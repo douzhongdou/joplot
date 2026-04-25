@@ -5,28 +5,13 @@ import { useI18n } from '../i18n'
 
 interface Props {
   busy?: boolean
-  onFiles: (files: File[]) => void | Promise<void>
   onLoadSample: (id: SampleDatasetId) => void | Promise<void>
 }
 
-export function HomeHero({ busy = false, onFiles, onLoadSample }: Props) {
+export function HomeHero({ busy = false, onLoadSample }: Props) {
   const { language } = useI18n()
   const copy = getUploadCopy(language)
   const sample = getSampleDatasetCopy(language)[0]
-  const previewCopy = {
-    'zh-CN': {
-      fileName: 'demo.csv',
-      footer: '拖进来就能自动出折线图',
-    },
-    en: {
-      fileName: 'demo.csv',
-      footer: 'Drop in a file and joplot auto-builds the line chart',
-    },
-    'ja-JP': {
-      fileName: 'demo.csv',
-      footer: 'ファイルをドラッグすると自動で折れ線グラフを作成',
-    },
-  }[language]
 
   return (
     <section className="mx-auto grid min-h-full w-full max-w-7xl gap-8 px-6 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)] lg:items-center lg:px-10 lg:py-12">
