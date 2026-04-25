@@ -66,7 +66,7 @@ export function DataTable({ dataset }: Props) {
 
   return (
     <div ref={parentRef} className="h-full overflow-auto">
-      <table className="w-full border-collapse text-sm">
+      <table className="border-collapse text-sm" style={{ minWidth: `${dataset.headers.length * 160}px` }}>
         <thead className="sticky top-0 z-10 bg-base-200">
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id}>
@@ -74,7 +74,7 @@ export function DataTable({ dataset }: Props) {
                 <th
                   key={header.id}
                   className="h-10 cursor-pointer select-none whitespace-nowrap border-b border-base-300 px-4 text-left font-semibold text-base-content/70 hover:text-base-content"
-                  style={{ width: header.getSize() }}
+                  style={{ width: `${header.getSize()}px`, minWidth: `${header.getSize()}px` }}
                   onClick={header.column.getToggleSortingHandler()}
                 >
                   {flexRender(header.column.columnDef.header, header.getContext())}
@@ -103,7 +103,7 @@ export function DataTable({ dataset }: Props) {
                 {row.getVisibleCells().map((cell) => (
                   <td
                     key={cell.id}
-                    className="max-w-[200px] truncate px-4 text-base-content/80"
+                    className="max-w-[320px] truncate px-4 text-base-content/80 whitespace-nowrap"
                   >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>
