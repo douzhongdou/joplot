@@ -118,6 +118,13 @@ export const en = {
       groupMode: 'Grouping',
       groupColumn: 'Group field',
     },
+    heatmap: {
+      dataset: 'Dataset',
+      xColumn: 'X axis field',
+      yColumn: 'Y axis field',
+      zColumn: 'Value field',
+      zCount: 'Count (auto)',
+    },
     xKinds: {
       category: 'Text / category',
       number: 'Number',
@@ -151,7 +158,7 @@ export const en = {
     lines: 'Straight Lines',
     spline: 'Smooth Curve',
     'lines+markers': 'Lines + markers',
-    markers: 'Markers only',
+    'spline+markers': 'Smooth Curve + markers',
   },
   chartCard: {
     dragCard: 'Drag chart card',
@@ -178,5 +185,25 @@ export const en = {
     chartLabel: 'Chart',
     tabLabel: 'Data',
     emptyState: 'Upload a data file first',
+  },
+  help: {
+    label: 'Help',
+    title: 'Shortcuts',
+    boxSelect: {
+      action: 'Drag to select',
+      description: 'Box select to zoom into a region',
+    },
+    scrollZoom: {
+      action: 'Scroll wheel',
+      description: 'Scroll to zoom in or out',
+    },
+    middlePan: {
+      action: 'Middle button drag',
+      description: 'Hold middle button and drag to pan',
+    },
+    doubleClickReset: {
+      action: 'Double-click',
+      description: 'Double-click to reset the view',
+    },
   },
 } satisfies TranslationDictionary

@@ -129,26 +129,54 @@ export function ChartCard({
       return []
     }
 
-    const lineShape = card.drawMode === 'spline' ? 'spline' : 'linear'
+    const lineShape = card.drawMode === 'spline' || card.drawMode === 'spline+markers' ? 'spline' : 'linear'
+    const useScatter = card.drawMode === 'spline' || card.drawMode === 'spline+markers'
 
     if (card.kind === 'heatmap') {
-      const entry = validSeries[0]
-      if (!entry) return []
+      const hc = card.heatmapConfig
+      if (!hc) return []
 
-      const xValues = [...new Set(entry.rows.map((row) => row.raw[card.xColumn] ?? ''))]
-      const yColumn = entry.series.yColumn
-      const yValues = yColumn
-        ? [...new Set(entry.rows.map((row) => row.raw[yColumn] ?? ''))]
-        : entry.rows.map((_, i) => String(i))
+      const dataset = datasetsById[hc.datasetId]
+      if (!dataset) return []
+
+      const rows = filteredRowsByDataset[hc.datasetId] ?? dataset.rows
+      const { xColumn, yColumn, zColumn } = hc
+
+      const xSet = new Set<string>()
+      const ySet = new Set<string>()
+      const cellValues = new Map<string, number[]>()
+      const cellCounts = new Map<string, number>()
+
+      for (const row of rows) {
+        const xVal = row.raw[xColumn] ?? ''
+        const yVal = row.raw[yColumn] ?? ''
+        xSet.add(xVal)
+        ySet.add(yVal)
+        const key = `${xVal}\x00${yVal}`
+        cellCounts.set(key, (cellCounts.get(key) ?? 0) + 1)
+
+        if (zColumn) {
+          const zVal = row.numeric[zColumn]
+          if (zVal !== null) {
+            const arr = cellValues.get(key)
+            if (arr) arr.push(zVal)
+            else cellValues.set(key, [zVal])
+          }
+        }
+      }
+
+      const xValues = [...xSet]
+      const yValues = [...ySet]
 
       const z: number[][] = yValues.map((yVal) =>
         xValues.map((xVal) => {
-          const matchingRows = entry.rows.filter((row) => {
-            const xMatch = (row.raw[card.xColumn] ?? '') === xVal
-            const yMatch = yColumn ? (row.raw[yColumn] ?? '') === yVal : true
-            return xMatch && yMatch
-          })
-          return matchingRows.length
+          const key = `${xVal}\x00${yVal}`
+          if (zColumn) {
+            const vals = cellValues.get(key)
+            if (!vals || vals.length === 0) return 0
+            return vals.reduce((sum, v) => sum + v, 0) / vals.length
+          }
+          return cellCounts.get(key) ?? 0
         })
       )
 
@@ -191,7 +219,7 @@ export function ChartCard({
 
         return {
           type: 'scatterpolar' as const,
-          mode: (card.drawMode === 'markers' ? 'markers' : 'lines+markers') as 'markers' | 'lines+markers',
+          mode: 'lines+markers' as const,
           theta: closedTheta,
           r: closedR,
           fill: 'toself' as const,
@@ -229,8 +257,8 @@ export function ChartCard({
         if (card.kind === 'area') {
           return {
             ...traceBase,
-            type: 'scattergl' as const,
-            mode: card.drawMode === 'markers' ? 'markers' : 'lines',
+            type: (useScatter ? 'scatter' : 'scattergl') as 'scatter' | 'scattergl',
+            mode: 'lines' as const,
             fill: 'tozeroy' as const,
             fillcolor: `${color}33`,
           }
@@ -238,8 +266,8 @@ export function ChartCard({
 
         return {
           ...traceBase,
-          type: 'scattergl' as const,
-          mode: card.kind === 'scatter' ? 'markers' : (card.drawMode === 'lines' || card.drawMode === 'spline' ? 'lines' : card.drawMode),
+          type: (useScatter ? 'scatter' : 'scattergl') as 'scatter' | 'scattergl',
+          mode: card.kind === 'scatter' ? 'markers' as const : (card.drawMode === 'spline' || card.drawMode === 'lines' ? 'lines' as const : card.drawMode),
         }
       })
     }
@@ -270,8 +298,8 @@ export function ChartCard({
       if (card.kind === 'area') {
         return {
           ...traceBase,
-          type: 'scattergl' as const,
-          mode: card.drawMode === 'markers' ? 'markers' : 'lines',
+          type: (useScatter ? 'scatter' : 'scattergl') as 'scatter' | 'scattergl',
+          mode: 'lines' as const,
           fill: 'tozeroy' as const,
           fillcolor: `${series.color}33`,
         }
@@ -279,8 +307,8 @@ export function ChartCard({
 
       return {
         ...traceBase,
-        type: 'scattergl' as const,
-        mode: card.kind === 'scatter' ? 'markers' : (card.drawMode === 'lines' || card.drawMode === 'spline' ? 'lines' : card.drawMode),
+        type: (useScatter ? 'scatter' : 'scattergl') as 'scatter' | 'scattergl',
+        mode: card.kind === 'scatter' ? 'markers' as const : (card.drawMode === 'spline' || card.drawMode === 'lines' ? 'lines' as const : card.drawMode),
       }
     })
   }, [aggregateResult, card.drawMode, card.kind, card.lineWidth, card.xColumn, validSeries])
@@ -492,7 +520,7 @@ export function ChartCard({
           </div>
         )}
 
-        {card.kind !== 'stats' && (validSeries.length > 0 || hasAggregateSeries) && (
+        {card.kind !== 'stats' && (validSeries.length > 0 || hasAggregateSeries || (card.kind === 'heatmap' && !!card.heatmapConfig)) && (
           <div className="flex min-h-0 flex-1 flex-col gap-3">
             <PlotCanvas
               ref={plotRef}
@@ -553,7 +581,7 @@ export function ChartCard({
           </div>
         )}
 
-        {((card.kind === 'stats' && !summary && !aggregateSummary) || (card.kind !== 'stats' && validSeries.length === 0 && !hasAggregateSeries)) && (
+        {((card.kind === 'stats' && !summary && !aggregateSummary) || (card.kind !== 'stats' && validSeries.length === 0 && !hasAggregateSeries && !(card.kind === 'heatmap' && !!card.heatmapConfig))) && (
           <div className="flex flex-1 items-center justify-center rounded-[var(--radius-box)] border border-dashed border-base-300 bg-base-200/50 p-6 text-center text-sm leading-6 text-base-content/55">
             <div>{t('chartCard.noValidSeries')}</div>
           </div>

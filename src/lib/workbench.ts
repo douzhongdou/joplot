@@ -320,7 +320,7 @@ export function createCard(
     dataConfig: { mode: 'raw' },
     xColumn,
     series: [initialSeries],
-    drawMode: kind === 'scatter' ? 'markers' : 'spline',
+    drawMode: 'lines',
     lineWidth: 2,
     showLegend: true,
     showGrid: true,
@@ -329,6 +329,12 @@ export function createCard(
     yRange: createEmptyAxisRange(),
     yMin: null,
     yMax: null,
+    heatmapConfig: kind === 'heatmap' ? {
+      datasetId: dataset.id,
+      xColumn,
+      yColumn: dataset.headers.find((h) => h !== xColumn) ?? xColumn,
+      zColumn: null,
+    } : undefined,
     layout: createPresetLayout(0, kind),
     ...overrides,
   }

@@ -118,6 +118,13 @@ export const zhCN = {
       groupMode: '分组方式',
       groupColumn: '分组字段',
     },
+    heatmap: {
+      dataset: '数据集',
+      xColumn: 'X 轴字段',
+      yColumn: 'Y 轴字段',
+      zColumn: '值字段',
+      zCount: '计数（自动）',
+    },
     xKinds: {
       category: '文本 / 分类',
       number: '数值',
@@ -150,8 +157,8 @@ export const zhCN = {
   drawModes: {
     lines: '折线',
     spline: '平滑曲线',
-    'lines+markers': '线 + 点',
-    markers: '仅点',
+    'lines+markers': '折线 + 点',
+    'spline+markers': '平滑曲线 + 点',
   },
   chartCard: {
     dragCard: '拖动图卡',
@@ -178,5 +185,25 @@ export const zhCN = {
     chartLabel: '图表',
     tabLabel: '数据',
     emptyState: '请先上传数据文件',
+  },
+  help: {
+    label: '帮助',
+    title: '操作说明',
+    boxSelect: {
+      action: '框选缩放',
+      description: '左键拖拽框选区域进行缩放',
+    },
+    scrollZoom: {
+      action: '滚轮缩放',
+      description: '滚动鼠标滚轮进行缩放',
+    },
+    middlePan: {
+      action: '中键拖拽',
+      description: '按住鼠标中键拖拽以平移视图',
+    },
+    doubleClickReset: {
+      action: '双击重置',
+      description: '双击图表区域重置视图',
+    },
   },
 } satisfies TranslationDictionary

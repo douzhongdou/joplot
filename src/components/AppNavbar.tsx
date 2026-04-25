@@ -1,4 +1,5 @@
 import { Languages } from 'lucide-react'
+import { HelpPopover } from './HelpPopover'
 import { SelectMenu } from './SelectMenu'
 import { SUPPORTED_LANGUAGES, useI18n, type SupportedLanguage } from '../i18n'
 
@@ -48,8 +49,9 @@ export function AppNavbar({ viewMode, onChangeViewMode }: Props) {
         </div>
       </div>
 
-      <div className="min-w-0">
-        <SelectMenu<SupportedLanguage>
+      <div className="flex items-center gap-1">
+        <div className="min-w-0">
+          <SelectMenu<SupportedLanguage>
           value={language}
           options={languageOptions}
           onChange={setLanguage}
@@ -67,6 +69,8 @@ export function AppNavbar({ viewMode, onChangeViewMode }: Props) {
             />
           )}
         />
+        </div>
+        <HelpPopover />
       </div>
     </header>
   )

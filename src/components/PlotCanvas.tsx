@@ -146,25 +146,75 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
   useEffect(() => {
     const graphDiv = containerRef.current
     if (!graphDiv) return
-    const plotDiv = graphDiv
 
-    function handleMouseDown(event: MouseEvent) {
+    let isPanning = false
+    let startX = 0
+    let startY = 0
+
+    function handleMiddleDown(event: MouseEvent) {
       if (event.button !== 1) return
       event.preventDefault()
-      plotlyRuntime.relayout(plotDiv, { dragmode: 'pan' })
+      event.stopImmediatePropagation()
+      isPanning = true
+      startX = event.clientX
+      startY = event.clientY
+      document.addEventListener('mousemove', handleMiddleMove)
+      document.addEventListener('mouseup', handleMiddleUp)
     }
 
-    function handleMouseUp(event: MouseEvent) {
+    function handleMiddleMove(event: MouseEvent) {
+      if (!isPanning || !graphDiv) return
+      const dx = event.clientX - startX
+      const dy = event.clientY - startY
+      startX = event.clientX
+      startY = event.clientY
+
+      const relayout: Record<string, unknown> = {}
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fullLayout = (graphDiv as any)._fullLayout
+      if (!fullLayout) return
+
+      if (fullLayout.xaxis && typeof fullLayout.xaxis.p2d === 'function') {
+        const xStart = fullLayout.xaxis.p2d(0)
+        const xEnd = fullLayout.xaxis.p2d(dx)
+        if (typeof xStart === 'number' && typeof xEnd === 'number') {
+          const xDelta = xStart - xEnd
+          const [xRange0, xRange1] = fullLayout.xaxis.range
+          relayout['xaxis.range[0]'] = xRange0 + xDelta
+          relayout['xaxis.range[1]'] = xRange1 + xDelta
+        }
+      }
+
+      if (fullLayout.yaxis && typeof fullLayout.yaxis.p2d === 'function') {
+        const yStart = fullLayout.yaxis.p2d(0)
+        const yEnd = fullLayout.yaxis.p2d(dy)
+        if (typeof yStart === 'number' && typeof yEnd === 'number') {
+          const yDelta = yStart - yEnd
+          const [yRange0, yRange1] = fullLayout.yaxis.range
+          relayout['yaxis.range[0]'] = yRange0 + yDelta
+          relayout['yaxis.range[1]'] = yRange1 + yDelta
+        }
+      }
+
+      if (Object.keys(relayout).length > 0) {
+        void plotlyRuntime.relayout(graphDiv, relayout)
+      }
+    }
+
+    function handleMiddleUp(event: MouseEvent) {
       if (event.button !== 1) return
-      plotlyRuntime.relayout(plotDiv, { dragmode: 'zoom' })
+      isPanning = false
+      document.removeEventListener('mousemove', handleMiddleMove)
+      document.removeEventListener('mouseup', handleMiddleUp)
     }
 
-    plotDiv.addEventListener('mousedown', handleMouseDown)
-    document.addEventListener('mouseup', handleMouseUp)
+    graphDiv.addEventListener('mousedown', handleMiddleDown, true)
 
     return () => {
-      plotDiv.removeEventListener('mousedown', handleMouseDown)
-      document.removeEventListener('mouseup', handleMouseUp)
+      graphDiv.removeEventListener('mousedown', handleMiddleDown, true)
+      document.removeEventListener('mousemove', handleMiddleMove)
+      document.removeEventListener('mouseup', handleMiddleUp)
     }
   }, [])
 
