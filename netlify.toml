@@ -1,0 +1,40 @@
+# Netlify build & headers configuration
+# Language-based root redirect rules live in `public/_redirects` so they get
+# emitted to the build output verbatim (Netlify reads `_redirects` first).
+
+[build]
+  publish = "dist"
+  command = "pnpm build"
+
+[[headers]]
+  for = "/sitemap.xml"
+  [headers.values]
+    Content-Type = "application/xml; charset=utf-8"
+    Cache-Control = "public, max-age=3600, must-revalidate"
+
+[[headers]]
+  for = "/robots.txt"
+  [headers.values]
+    Content-Type = "text/plain; charset=utf-8"
+    Cache-Control = "public, max-age=3600, must-revalidate"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json; charset=utf-8"
+    Cache-Control = "public, max-age=3600, must-revalidate"
+
+[[headers]]
+  for = "/en/*"
+  [headers.values]
+    Vary = "Accept-Language"
+
+[[headers]]
+  for = "/zh/*"
+  [headers.values]
+    Vary = "Accept-Language"
+
+[[headers]]
+  for = "/ja/*"
+  [headers.values]
+    Vary = "Accept-Language"
