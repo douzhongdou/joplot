@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 import {
   renderSeoShell,
@@ -23,6 +24,13 @@ test('renderSeoShell outputs crawlable hero, features, and faq content', () => {
   assert.match(html, /Can I compare multiple CSV files at once\?/)
 })
 
+test('renderSeoShell stays hidden for JavaScript clients until the app mounts', () => {
+  const html = renderSeoShell('en')
+
+  assert.match(html, /html\[data-js="true"\] #seo-shell/)
+  assert.match(html, /display:\s*none/)
+})
+
 test('renderSeoShell localizes HTML metadata content for chinese and japanese pages', () => {
   const zhHtml = renderSeoShell('zh-CN')
   const jaHtml = renderSeoShell('ja-JP')
@@ -31,4 +39,13 @@ test('renderSeoShell localizes HTML metadata content for chinese and japanese pa
   assert.match(zhHtml, /为什么团队会选择 joplot/)
   assert.match(jaHtml, /CSV をドロップすると、すぐにグラフ化/)
   assert.match(jaHtml, /joplot が選ばれる理由/)
+})
+
+test('localized html marks JavaScript clients before the seo shell is parsed', () => {
+  const html = readFileSync(new URL('../en/index.html', import.meta.url), 'utf8')
+
+  assert.match(
+    html,
+    /<script>\s*document\.documentElement\.dataset\.js = 'true'\s*<\/script>/,
+  )
 })
