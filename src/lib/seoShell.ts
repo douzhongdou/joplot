@@ -123,6 +123,10 @@ export function renderSeoShell(language: SupportedLanguage): string {
     .join('\n')
 
   return `<style id="seo-shell-styles">
+      html[data-js="true"] #seo-shell,
+      html[data-js="true"] #seo-shell-styles {
+        display: none !important;
+      }
       #seo-shell {
         margin: 0 auto;
         max-width: 1120px;
