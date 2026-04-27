@@ -1,4 +1,6 @@
 User-agent: *
 Allow: /
 
+Host: joplot.com
+
 Sitemap: https://joplot.com/sitemap.xml

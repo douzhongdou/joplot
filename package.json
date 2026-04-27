@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "seo:sync": "node --experimental-strip-types scripts/sync-seo-shell.mjs"
   },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",

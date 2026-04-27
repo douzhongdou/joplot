@@ -1,0 +1,6 @@
+# Netlify edge redirects: language negotiation on the root path.
+# Falls back to /en when Accept-Language matches none of the supported locales.
+
+/   /zh   302   Language=zh
+/   /ja   302   Language=ja
+/   /en   302
