@@ -7,3 +7,6 @@ dist
 out
 __pycache__
 .superpowers
+.env
+.env.local
+.env.*.local

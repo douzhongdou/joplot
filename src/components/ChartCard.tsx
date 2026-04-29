@@ -10,6 +10,12 @@ import {
 } from 'lucide-react'
 import { PlotCanvas } from './PlotCanvas'
 import { buildAggregatedSeries, toPlotSeries } from '../lib/aggregation'
+import {
+  buildChartTypePayload,
+  buildRenderChartPayload,
+  resolvePrimaryDataset,
+} from '../lib/analytics'
+import { track } from '../lib/track'
 import { buildChartDataRevision, summarizeNumericColumn } from '../lib/workbench'
 import { getChartColor, resolveThemeColor } from '../lib/theme'
 import type { ChartCard as ChartCardConfig, CsvData, NormalizedRow } from '../types'
@@ -66,6 +72,7 @@ export function ChartCard({
 }: Props) {
   const { t, formatNumber } = useI18n()
   const plotRef = useRef<PlotCanvasApi>(null)
+  const renderEventSignatureRef = useRef<string | null>(null)
   const [copyToast, setCopyToast] = useState('')
 
   const kindLabels: Record<ChartCardConfig['kind'], string> = {
@@ -428,6 +435,56 @@ export function ChartCard({
     }
   }, [aggregateResult])
 
+  const primaryAnalyticsDataset = useMemo(() => {
+    if (card.kind === 'heatmap' && card.heatmapConfig) {
+      return datasetsById[card.heatmapConfig.datasetId] ?? null
+    }
+
+    if (card.dataConfig.mode === 'aggregate') {
+      return resolvePrimaryDataset(
+        datasetsById,
+        card.dataConfig.aggregation.datasetIds,
+      )
+    }
+
+    return validSeries[0]?.dataset
+      ?? resolvePrimaryDataset(
+        datasetsById,
+        card.series.map((series) => series.datasetId),
+      )
+  }, [card.dataConfig, card.heatmapConfig, card.kind, card.series, datasetsById, validSeries])
+
+  const hasRenderableOutput = (
+    card.kind === 'stats'
+      ? Boolean(aggregateSummary || (summary && primarySeries))
+      : (validSeries.length > 0 || hasAggregateSeries || (card.kind === 'heatmap' && !!card.heatmapConfig))
+  )
+
+  const renderEventSignature = useMemo(() => {
+    if (!primaryAnalyticsDataset || !hasRenderableOutput) {
+      return null
+    }
+
+    return JSON.stringify({
+      revision: buildChartDataRevision(card, filterRevision),
+      kind: card.kind,
+      datasetId: primaryAnalyticsDataset.id,
+    })
+  }, [card, filterRevision, hasRenderableOutput, primaryAnalyticsDataset])
+
+  useEffect(() => {
+    if (!renderEventSignature || !primaryAnalyticsDataset) {
+      return
+    }
+
+    if (renderEventSignatureRef.current === renderEventSignature) {
+      return
+    }
+
+    track('render_chart', buildRenderChartPayload(card.kind, primaryAnalyticsDataset))
+    renderEventSignatureRef.current = renderEventSignature
+  }, [card.kind, primaryAnalyticsDataset, renderEventSignature])
+
   async function handleCopyImage() {
     const mode = await plotRef.current?.copyImage()
     let nextLabel = ''
@@ -437,6 +494,7 @@ export function ChartCard({
       case 'html':
       case 'text':
         nextLabel = t('chartCard.copySuccess')
+        track('copy_image', buildChartTypePayload(card.kind))
         break
       case 'downloaded':
         nextLabel = t('chartCard.copyDownloadedFallback')
@@ -448,6 +506,11 @@ export function ChartCard({
     if (nextLabel) {
       setCopyToast(nextLabel)
     }
+  }
+
+  async function handleDownloadImage() {
+    await plotRef.current?.downloadImage()
+    track('download_png', buildChartTypePayload(card.kind))
   }
 
   return (
@@ -553,7 +616,7 @@ export function ChartCard({
               <button
                 type="button"
                 className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/65 transition hover:bg-transparent hover:text-primary"
-                onClick={() => void plotRef.current?.downloadImage()}
+                onClick={() => void handleDownloadImage()}
                 aria-label={t('chartCard.downloadImage')}
                 title={t('chartCard.downloadImage')}
               >

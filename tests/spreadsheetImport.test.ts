@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as XLSX from 'xlsx'
 
-import { readSpreadsheetFile } from '../src/lib/spreadsheetImport.ts'
+import { ParseFailureError, readSpreadsheetFile } from '../src/lib/spreadsheetImport.ts'
 
 test('readSpreadsheetFile parses csv files into a dataset', async () => {
   const file = new File(
@@ -45,4 +45,20 @@ test('readSpreadsheetFile parses the first worksheet from xlsx files into a data
     { month: 'Jan', revenue: '12', note: '' },
     { month: 'Feb', revenue: '18', note: 'promo' },
   ])
+})
+
+test('readSpreadsheetFile rejects csv-like files that do not produce usable chart data', async () => {
+  const file = new File(
+    ['PK\u0003\u0004word/document.xml'],
+    'fake.csv',
+    { type: 'text/csv' },
+  )
+
+  await assert.rejects(
+    () => readSpreadsheetFile(file, 'fake'),
+    (error: unknown) => (
+      error instanceof ParseFailureError
+      && error.reason === 'invalid_format'
+    ),
+  )
 })

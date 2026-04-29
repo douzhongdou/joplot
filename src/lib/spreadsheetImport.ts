@@ -1,8 +1,19 @@
 import Papa from 'papaparse'
 import * as XLSX from 'xlsx'
 
+import type { ParseFailReason } from './analytics.ts'
 import type { RawCsvRow } from '../types'
 import { buildDataset } from './workbench.ts'
+
+export class ParseFailureError extends Error {
+  reason: ParseFailReason
+
+  constructor(reason: ParseFailReason, message?: string) {
+    super(message ?? reason)
+    this.name = 'ParseFailureError'
+    this.reason = reason
+  }
+}
 
 function isExcelFile(file: File) {
   const name = file.name.trim().toLowerCase()
@@ -27,6 +38,18 @@ function hasRowValue(row: RawCsvRow) {
   return Object.values(row).some((value) => value.trim() !== '')
 }
 
+function validateImportedDataset(dataset: ReturnType<typeof buildDataset>) {
+  if (dataset.headers.length === 0 && dataset.rowCount === 0) {
+    throw new ParseFailureError('empty_file', 'Imported file is empty.')
+  }
+
+  if (dataset.numericColumns.length === 0) {
+    throw new ParseFailureError('invalid_format', 'Imported file does not contain usable numeric columns.')
+  }
+
+  return dataset
+}
+
 async function parseCsvFile(file: File, datasetId: string) {
   const text = await file.text()
 
@@ -45,7 +68,7 @@ async function parseCsvFile(file: File, datasetId: string) {
             }, {}),
           )
 
-        resolve(buildDataset(headers, rows, file.name, datasetId))
+        resolve(validateImportedDataset(buildDataset(headers, rows, file.name, datasetId)))
       },
       error: (error: Error) => reject(error),
     })
@@ -58,7 +81,7 @@ async function parseExcelFile(file: File, datasetId: string) {
   const firstSheetName = workbook.SheetNames[0]
 
   if (!firstSheetName) {
-    return buildDataset([], [], file.name, datasetId)
+    return validateImportedDataset(buildDataset([], [], file.name, datasetId))
   }
 
   const worksheet = workbook.Sheets[firstSheetName]
@@ -75,7 +98,7 @@ async function parseExcelFile(file: File, datasetId: string) {
     .map((row) => normalizeRow(headers, row))
     .filter((row) => hasRowValue(row))
 
-  return buildDataset(headers, rows, file.name, datasetId)
+  return validateImportedDataset(buildDataset(headers, rows, file.name, datasetId))
 }
 
 export async function readSpreadsheetFile(file: File, datasetId: string) {
