@@ -439,6 +439,25 @@ test('copyPngDataUrlToClipboard falls back to text when ClipboardItem is unavail
   assert.equal(copiedText, 'data:image/png;base64,BBBB')
 })
 
+test('copyPngDataUrlToClipboard can reject text fallback for image-only copy flows', async () => {
+  const clipboard = {
+    async writeText() {
+      throw new Error('text fallback should not be used')
+    },
+  }
+
+  await assert.rejects(
+    () => copyPngDataUrlToClipboard({
+      blob: new Blob(['png-bytes'], { type: 'image/png' }),
+      dataUrl: 'data:image/png;base64,CCCC',
+      clipboard,
+      ClipboardItemCtor: null,
+      allowTextFallback: false,
+    }),
+    /Clipboard copy is not supported/,
+  )
+})
+
 function layoutsOverlap(left: ChartCard, right: ChartCard) {
   return (
     left.layout.x < right.layout.x + right.layout.w

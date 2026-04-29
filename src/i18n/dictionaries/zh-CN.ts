@@ -71,6 +71,9 @@ export const zhCN = {
     emptyDescription: '基础设置和显示设置会显示在这里。',
     duplicateCard: '复制图卡',
     deleteCard: '删除图卡',
+    mobileOpenButton: '编辑',
+    mobileDrawerEyebrow: '图卡编辑器',
+    closeDrawer: '关闭图卡编辑器',
     baseTab: '基础设置',
     displayTab: '显示设置',
     baseSectionTitle: '基础设置',
@@ -185,6 +188,12 @@ export const zhCN = {
     chartLabel: '图表',
     tabLabel: '数据',
     emptyState: '请先上传数据文件',
+  },
+  mobileNav: {
+    actions: '操作',
+    actionsEyebrow: '工作台',
+    actionsTitle: '快捷操作',
+    closeActions: '关闭操作面板',
   },
   help: {
     label: '帮助',

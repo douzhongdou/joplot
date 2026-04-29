@@ -112,6 +112,14 @@
   --dashboard-row-height: 72px;
 }
 
+@media (max-width: 639px) {
+  :root,
+  [data-theme="light"],
+  [data-theme="dark"] {
+    --navbar-height: 2.75rem;
+  }
+}
+
 @layer base {
   * {
     box-sizing: border-box;
@@ -125,7 +133,7 @@
 
   body {
     margin: 0;
-    min-width: 360px;
+    min-width: 320px;
     background: var(--color-base-200);
     color: var(--color-base-content);
     font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;

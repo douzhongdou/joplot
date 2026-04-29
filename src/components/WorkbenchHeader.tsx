@@ -23,6 +23,7 @@ interface Props {
   activeDatasetId: string | null
   filters: FilterRule[]
   filterJoinOperator: FilterJoinOperator
+  mobileSheet?: boolean
   onAddComponent: (kind: ChartKind) => void
   onUploadFiles: (files: File[], inputMethod?: TrackingInputMethod) => void | Promise<unknown>
   onResetDatasets: () => void
@@ -32,8 +33,8 @@ interface Props {
   onRemoveFilter: (filterId: string) => void
 }
 
-const actionButtonClass = 'inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius-box)] border-0 bg-transparent px-4 text-sm font-semibold text-base-content transition hover:bg-primary/8 hover:text-primary focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:text-base-content/40'
-const primaryActionButtonClass = 'inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius-box)] border-0 bg-transparent px-4 text-sm font-semibold text-primary transition hover:bg-primary/8 focus-visible:outline-none focus-visible:ring-0'
+const actionButtonClass = 'inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius-box)] border-0 bg-transparent px-3 text-sm font-semibold text-base-content transition hover:bg-primary/8 hover:text-primary focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:text-base-content/40 sm:px-4'
+const primaryActionButtonClass = 'inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius-box)] border-0 bg-transparent px-3 text-sm font-semibold text-primary transition hover:bg-primary/8 focus-visible:outline-none focus-visible:ring-0 sm:px-4'
 const shellClass = 'flex h-12 min-w-0 items-center rounded-[var(--radius-box)] border border-base-300 bg-base-100 px-4 text-sm text-base-content'
 const inputClass = 'h-12 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-4 text-sm text-base-content outline-none transition placeholder:text-base-content/40 focus:border-primary/35 focus:ring-2 focus:ring-primary/20'
 const ghostSelectTriggerClass = 'h-auto border-0 bg-transparent px-0 py-0 shadow-none hover:bg-transparent focus-visible:ring-0'
@@ -43,6 +44,7 @@ export function WorkbenchHeader({
   activeDatasetId,
   filters,
   filterJoinOperator,
+  mobileSheet = false,
   onAddComponent,
   onUploadFiles,
   onResetDatasets,
@@ -79,19 +81,23 @@ export function WorkbenchHeader({
   ]
 
   return (
-    <section className="sticky top-0 z-10 grid gap-5 border-b border-base-300 bg-base-100/95 px-5 py-4 backdrop-blur-xl">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3">
+    <section className={mobileSheet
+      ? 'grid gap-4 bg-base-100 px-5 py-5'
+      : 'sticky top-0 z-10 grid gap-5 border-b border-base-300 bg-base-100/95 px-5 py-4 backdrop-blur-xl'}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:gap-3">
           <FileUploader
             hasDatasets
             onFiles={onUploadFiles}
-            buttonClassName={actionButtonClass}
+            containerClassName={mobileSheet ? 'w-full sm:w-auto' : ''}
+            buttonClassName={`${actionButtonClass} ${mobileSheet ? 'w-full sm:w-auto' : 'max-sm:flex-1'}`}
           />
 
-          <div className="relative">
+          <div className={`relative ${mobileSheet ? 'w-full sm:w-auto' : ''}`}>
             <button
               type="button"
-              className={primaryActionButtonClass}
+              className={`${primaryActionButtonClass} ${mobileSheet ? 'w-full sm:w-auto' : 'max-sm:flex-1'}`}
               onClick={() => setShowAddMenu((value) => !value)}
             >
               <Plus size={16} strokeWidth={2.2} />
@@ -99,7 +105,7 @@ export function WorkbenchHeader({
             </button>
 
             {showAddMenu && (
-              <div className="absolute right-0 top-[calc(100%+0.625rem)] z-20 grid min-w-40 gap-1 rounded-[calc(var(--radius-box)+0.25rem)] border border-base-300 bg-base-100 p-2">
+              <div className="absolute left-0 top-[calc(100%+0.625rem)] z-20 grid min-w-40 gap-1 rounded-[calc(var(--radius-box)+0.25rem)] border border-base-300 bg-base-100 p-2 sm:left-auto sm:right-0">
                 {componentOptions.map((option) => {
                   const Icon = option.icon
 
@@ -126,19 +132,25 @@ export function WorkbenchHeader({
 
           <button
             type="button"
-            className={showFilters ? primaryActionButtonClass : actionButtonClass}
+            className={`${showFilters ? primaryActionButtonClass : actionButtonClass} ${mobileSheet ? 'w-full sm:w-auto' : 'max-sm:flex-1'}`}
             onClick={() => setShowFilters((value) => !value)}
           >
             <Filter size={16} strokeWidth={2.1} />
             {t('workbench.filters')}
           </button>
 
-          <button type="button" className={actionButtonClass} disabled>
-            <Palette size={16} strokeWidth={2.1} />
-            {t('workbench.theme')}
-          </button>
+          {!mobileSheet && (
+            <button type="button" className={`${actionButtonClass} max-sm:hidden`} disabled>
+              <Palette size={16} strokeWidth={2.1} />
+              {t('workbench.theme')}
+            </button>
+          )}
 
-          <button type="button" className={actionButtonClass} onClick={onResetDatasets}>
+          <button
+            type="button"
+            className={`${actionButtonClass} ${mobileSheet ? 'w-full sm:w-auto' : 'max-sm:flex-1'}`}
+            onClick={onResetDatasets}
+          >
             <RotateCcw size={16} strokeWidth={2.1} />
             {t('workbench.resetData')}
           </button>

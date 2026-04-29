@@ -71,6 +71,9 @@ export const jaJP = {
     emptyDescription: '基本設定と表示設定がここに表示されます。',
     duplicateCard: 'カードを複製',
     deleteCard: 'カードを削除',
+    mobileOpenButton: '編集',
+    mobileDrawerEyebrow: 'カードエディター',
+    closeDrawer: 'カードエディターを閉じる',
     baseTab: '基本設定',
     displayTab: '表示設定',
     baseSectionTitle: '基本設定',
@@ -185,6 +188,12 @@ export const jaJP = {
     chartLabel: 'チャート',
     tabLabel: 'データ',
     emptyState: 'データファイルを先にアップロードしてください',
+  },
+  mobileNav: {
+    actions: '操作',
+    actionsEyebrow: 'ワークベンチ',
+    actionsTitle: 'クイック操作',
+    closeActions: '操作パネルを閉じる',
   },
   help: {
     label: 'ヘルプ',

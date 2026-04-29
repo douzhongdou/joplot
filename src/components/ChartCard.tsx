@@ -28,6 +28,9 @@ interface Props {
   filteredRowsByDataset: Record<string, NormalizedRow[]>
   filterRevision: string
   selected: boolean
+  allowLayoutEditing?: boolean
+  showCopyImage?: boolean
+  mobileChrome?: boolean
   onSelect: () => void
   onDragStart: (event: PointerEvent<HTMLElement>) => void
   onResizeStart: (event: PointerEvent<HTMLButtonElement>) => void
@@ -66,6 +69,9 @@ export function ChartCard({
   filteredRowsByDataset,
   filterRevision,
   selected,
+  allowLayoutEditing = true,
+  showCopyImage = true,
+  mobileChrome = false,
   onSelect,
   onDragStart,
   onResizeStart,
@@ -515,26 +521,30 @@ export function ChartCard({
 
   return (
     <article
-      className={`relative flex h-full min-h-0 flex-col rounded-[calc(var(--radius-box)+0.25rem)] border bg-base-100 p-3 transition ${
-        selected
-          ? 'border-primary/40 ring-1 ring-primary/15'
-          : 'border-base-300 hover:border-primary/20'
-      }`}
+      className={mobileChrome
+        ? 'relative flex h-full min-h-0 flex-col bg-base-100 px-1 py-2'
+        : `relative flex h-full min-h-0 flex-col rounded-[calc(var(--radius-box)+0.25rem)] border bg-base-100 p-3 transition ${
+            selected
+              ? 'border-primary/40 ring-1 ring-primary/15'
+              : 'border-base-300 hover:border-primary/20'
+          }`}
       onMouseDown={onSelect}
     >
-      <div className="grid grid-cols-[36px_minmax(0,1fr)] items-start gap-3 pb-3">
-        <button
-          type="button"
-          className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary active:cursor-grabbing"
-          onPointerDown={onDragStart}
-          aria-label={t('chartCard.dragCard')}
-          title={t('chartCard.dragCard')}
-        >
-          <GripVertical size={16} strokeWidth={2.2} />
-        </button>
+      <div className={`grid items-start gap-3 pb-3 ${allowLayoutEditing ? 'grid-cols-[36px_minmax(0,1fr)]' : 'grid-cols-[minmax(0,1fr)]'}`}>
+        {allowLayoutEditing && (
+          <button
+            type="button"
+            className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary active:cursor-grabbing"
+            onPointerDown={onDragStart}
+            aria-label={t('chartCard.dragCard')}
+            title={t('chartCard.dragCard')}
+          >
+            <GripVertical size={16} strokeWidth={2.2} />
+          </button>
+        )}
 
         <div className="grid min-w-0 gap-2">
-          <h3 className="break-words text-xl font-semibold leading-none text-base-content">{card.title}</h3>
+          <h3 className="break-words text-lg font-semibold leading-tight text-base-content sm:text-xl sm:leading-none">{card.title}</h3>
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex h-7 items-center rounded-full border border-base-300 bg-base-200 px-3 text-xs font-medium text-base-content/70">
               {kindLabels[card.kind]}
@@ -592,6 +602,7 @@ export function ChartCard({
               layout={plotLayout}
               exportKind={card.kind}
               exportTitle={card.title}
+              frameless={mobileChrome}
             />
 
             <div className="flex flex-wrap items-center gap-2">
@@ -604,15 +615,17 @@ export function ChartCard({
               >
                 <ScanSearch size={15} strokeWidth={2.1} />
               </button>
-              <button
-                type="button"
-                className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/65 transition hover:bg-transparent hover:text-primary"
-                onClick={() => void handleCopyImage()}
-                aria-label={t('chartCard.copyImage')}
-                title={t('chartCard.copyImage')}
-              >
-                {copyToast ? <CopyCheck size={15} strokeWidth={2.1} /> : <Copy size={15} strokeWidth={2.1} />}
-              </button>
+              {showCopyImage && (
+                <button
+                  type="button"
+                  className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/65 transition hover:bg-transparent hover:text-primary"
+                  onClick={() => void handleCopyImage()}
+                  aria-label={t('chartCard.copyImage')}
+                  title={t('chartCard.copyImage')}
+                >
+                  {copyToast ? <CopyCheck size={15} strokeWidth={2.1} /> : <Copy size={15} strokeWidth={2.1} />}
+                </button>
+              )}
               <button
                 type="button"
                 className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/65 transition hover:bg-transparent hover:text-primary"
@@ -653,15 +666,17 @@ export function ChartCard({
         )}
       </div>
 
-      <button
-        type="button"
-        className="absolute bottom-3 right-3 inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary"
-        onPointerDown={onResizeStart}
-        aria-label={t('chartCard.resizeCard')}
-        title={t('chartCard.resizeCard')}
-      >
-        <MoveDiagonal2 size={15} strokeWidth={2.1} />
-      </button>
+      {allowLayoutEditing && (
+        <button
+          type="button"
+          className="absolute bottom-3 right-3 inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary"
+          onPointerDown={onResizeStart}
+          aria-label={t('chartCard.resizeCard')}
+          title={t('chartCard.resizeCard')}
+        >
+          <MoveDiagonal2 size={15} strokeWidth={2.1} />
+        </button>
+      )}
     </article>
   )
 }

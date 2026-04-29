@@ -20,6 +20,7 @@ interface Props {
   uirevision: string
   exportKind: ChartKind
   exportTitle: string
+  frameless?: boolean
   config?: Partial<Config>
 }
 
@@ -67,7 +68,7 @@ async function createPlotImagePayload(
 }
 
 export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
-  { data, layout, uirevision, exportKind, exportTitle, config },
+  { data, layout, uirevision, exportKind, exportTitle, frameless = false, config },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -104,6 +105,7 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
             ? navigator.clipboard as unknown as import('../lib/clipboard').ClipboardPort
             : undefined,
           ClipboardItemCtor: typeof ClipboardItem !== 'undefined' ? ClipboardItem : null,
+          allowTextFallback: false,
         })
       } catch (error) {
         console.error('Copy chart failed, falling back to download.', error)
@@ -303,5 +305,12 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
     }
   }, [])
 
-  return <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden rounded-[var(--radius-box)] border border-base-300 bg-white" />
+  return (
+    <div
+      ref={containerRef}
+      className={frameless
+        ? 'min-h-0 flex-1 overflow-hidden bg-white'
+        : 'min-h-0 flex-1 overflow-hidden rounded-[var(--radius-box)] border border-base-300 bg-white'}
+    />
+  )
 })

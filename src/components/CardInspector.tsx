@@ -222,7 +222,7 @@ export function CardInspector({
 
   if (!card) {
     return (
-      <section className="grid min-h-full place-items-center bg-base-100 px-6 py-16 text-center">
+      <section className="grid min-h-full place-items-center bg-base-100 px-5 py-14 text-center sm:px-6 sm:py-16">
         <div className="grid max-w-xs justify-items-center gap-3">
           <div className="inline-grid size-14 place-items-center rounded-[calc(var(--radius-box)+0.25rem)] bg-primary/10 text-primary">
             <Sparkles size={22} strokeWidth={2.2} />
@@ -238,9 +238,9 @@ export function CardInspector({
 
   return (
     <section ref={shellRef} className="grid min-h-full content-start bg-base-100">
-      <div className="flex items-start justify-between gap-3 border-base-300 px-6 py-5">
+      <div className="flex items-start justify-between gap-3 border-base-300 px-5 py-4 sm:px-6 sm:py-5">
         <div className="grid gap-1">
-          <h2 className="text-4xl font-semibold tracking-tight text-base-content">{currentKindLabel}</h2>
+          <h2 className="text-3xl font-semibold tracking-tight text-base-content sm:text-4xl">{currentKindLabel}</h2>
         </div>
 
         <div className="flex items-center gap-2">
@@ -253,7 +253,7 @@ export function CardInspector({
         </div>
       </div>
 
-      <div className="flex items-center gap-6 border-b border-base-300 px-6">
+      <div className="flex items-center gap-5 border-b border-base-300 px-5 sm:px-6">
         <button
           type="button"
           className={`inline-flex h-14 items-center border-b-2 text-base font-semibold transition ${
@@ -278,13 +278,13 @@ export function CardInspector({
         </button>
       </div>
 
-      <div className="px-6 pb-8">
+      <div className="px-5 pb-8 sm:px-6">
         {activeTab === 'base' && (
           <>
             <section className="border-b border-base-300 py-6">
               <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.baseSectionTitle')}</div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="grid gap-2 md:col-span-2">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="grid gap-2 sm:col-span-2">
                   <span className={fieldLabelClass}>{t('inspector.title')}</span>
                   <input
                     type="text"
@@ -367,7 +367,7 @@ export function CardInspector({
                 )}
 
                 {card.dataConfig.mode === 'aggregate' && (
-                  <div className="grid gap-4 md:col-span-2">
+                  <div className="grid gap-4 sm:col-span-2">
                     <div className="grid gap-2">
                       <span className={fieldLabelClass}>{t('inspector.aggregate.dataSources')}</span>
                       <div className="grid gap-2">
@@ -394,7 +394,7 @@ export function CardInspector({
                       </div>
                     </div>
 
-                    <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-4 sm:grid-cols-2">
                       <label className="grid gap-2">
                         <span className={fieldLabelClass}>{t('inspector.aggregate.xColumn')}</span>
                         <SelectMenu
@@ -582,8 +582,8 @@ export function CardInspector({
                         </div>
                       </div>
 
-                      <div className="grid gap-3">
-                        <SelectMenu
+                    <div className="grid gap-3">
+                      <SelectMenu
                           value={series.datasetId}
                           options={datasetOptions}
                           onChange={(value) => onChangeSeries(series.id, { datasetId: value })}
@@ -629,7 +629,7 @@ export function CardInspector({
                         {datasetsById[series.datasetId]?.fileName || t('cards.unnamedSeries')}
                       </strong>
                     </div>
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_160px]">
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
                       <label className="grid gap-2">
                         <span className={fieldLabelClass}>{t('inspector.displayName')}</span>
                         <input
@@ -666,7 +666,7 @@ export function CardInspector({
 
             <section className="py-6">
               <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.chartDisplaySectionTitle')}</div>
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <Switch
                   checked={card.showLegend}
                   label={t('inspector.legend')}
@@ -687,7 +687,7 @@ export function CardInspector({
 
             <section className="py-6">
               <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.axisRangeSectionTitle')}</div>
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <label className="grid gap-2">
                   <span className={fieldLabelClass}>{t('inspector.xRangeMin')}</span>
                   <input
@@ -778,7 +778,7 @@ function HeatmapFields({ config, datasets, onChange, fieldLabelClass }: HeatmapF
         />
       </label>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         <label className="grid gap-2">
           <span className={fieldLabelClass}>{t('inspector.heatmap.xColumn')}</span>
           <SelectMenu
