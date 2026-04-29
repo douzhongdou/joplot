@@ -75,7 +75,7 @@ pnpm install
 pnpm dev
 ```
 
-默认会启动一个本地 Vite 开发服务器，打开终端输出中的地址即可访问。
+默认会启动一个本地 Next.js 开发服务器，打开终端输出中的地址即可访问。
 
 ### 构建生产版本
 
@@ -83,16 +83,10 @@ pnpm dev
 pnpm build
 ```
 
-### 本地预览构建产物
-
-```bash
-pnpm preview
-```
-
 ### 运行测试
 
 ```bash
-node --test --experimental-strip-types ./tests/*.test.ts
+pnpm test
 ```
 
 ## 使用方式
@@ -116,7 +110,7 @@ node --test --experimental-strip-types ./tests/*.test.ts
 
 - React 19
 - TypeScript
-- Vite
+- Next.js App Router
 - Plotly.js
 - Papa Parse
 - Tailwind CSS 4
@@ -124,6 +118,7 @@ node --test --experimental-strip-types ./tests/*.test.ts
 ## 项目结构
 
 ```text
+app/            Next.js 页面、metadata 与多语言路由入口
 src/
   components/   界面组件与工作台交互
   hooks/        CSV 数据加载与状态管理
@@ -137,7 +132,7 @@ docs/           设计与规划文档
 ## 开发说明
 
 - 项目默认使用 `pnpm` 作为包管理器。
-- 当前仓库提供 `dev`、`build`、`preview` 三个常用脚本。
+- 当前仓库提供 `dev`、`build`、`start`、`test` 四个常用脚本。
 - 核心业务逻辑已包含测试文件，主要覆盖数据集构建、筛选、持久化和多语言初始化等能力。
 
 ## 开源协作

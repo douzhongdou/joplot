@@ -1,8 +1,10 @@
 export const LANGUAGE_STORAGE_KEY = 'plotnow-language'
 
 export const SUPPORTED_LANGUAGES = ['zh-CN', 'en', 'ja-JP'] as const
+export const ROUTE_LANGUAGES = ['zh', 'en', 'ja'] as const
 
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number]
+export type RouteLanguage = (typeof ROUTE_LANGUAGES)[number]
 
 export const LANGUAGE_PATHS: Record<SupportedLanguage, '/zh' | '/en' | '/ja'> = {
   'zh-CN': '/zh',
@@ -10,10 +12,26 @@ export const LANGUAGE_PATHS: Record<SupportedLanguage, '/zh' | '/en' | '/ja'> = 
   'ja-JP': '/ja',
 }
 
+export const ROUTE_LANGUAGE_TO_SUPPORTED_LANGUAGE: Record<RouteLanguage, SupportedLanguage> = {
+  zh: 'zh-CN',
+  en: 'en',
+  ja: 'ja-JP',
+}
+
+export const SUPPORTED_LANGUAGE_TO_ROUTE_LANGUAGE: Record<SupportedLanguage, RouteLanguage> = {
+  'zh-CN': 'zh',
+  en: 'en',
+  'ja-JP': 'ja',
+}
+
 export const LANGUAGE_HTML_LANG: Record<SupportedLanguage, string> = {
   'zh-CN': 'zh-CN',
   en: 'en',
   'ja-JP': 'ja',
+}
+
+export function isRouteLanguage(value: string): value is RouteLanguage {
+  return ROUTE_LANGUAGES.includes(value as RouteLanguage)
 }
 
 function normalizePathname(pathname?: string | null): string | null {
@@ -68,8 +86,20 @@ export function resolveLanguageFromPath(pathname?: string | null): SupportedLang
   }
 }
 
+export function resolveSupportedLanguageFromRouteLanguage(language: string): SupportedLanguage | null {
+  return isRouteLanguage(language) ? ROUTE_LANGUAGE_TO_SUPPORTED_LANGUAGE[language] : null
+}
+
 export function getLanguagePath(language: SupportedLanguage): string {
   return LANGUAGE_PATHS[language]
+}
+
+export function getRouteLanguage(language: SupportedLanguage): RouteLanguage {
+  return SUPPORTED_LANGUAGE_TO_ROUTE_LANGUAGE[language]
+}
+
+export function getHtmlLang(language: SupportedLanguage): string {
+  return LANGUAGE_HTML_LANG[language]
 }
 
 export function resolveInitialLanguage(

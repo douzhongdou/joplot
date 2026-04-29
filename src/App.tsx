@@ -1,3 +1,5 @@
+'use client'
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCsvData } from './hooks/useCsvData'
 import { AppNavbar } from './components/AppNavbar'
@@ -164,7 +166,7 @@ function normalizeWorkspaceFilters(persisted: PersistedState, datasets: CsvData[
 
 export default function App() {
   const { t, language } = useI18n()
-  const { datasets, parseFiles, resetDatasets } = useCsvData()
+  const { datasets, parseFiles, resetDatasets, hasRestoredDatasets } = useCsvData()
   const [cards, setCards] = useState<ChartCardConfig[]>([])
   const [workspaceFilters, setWorkspaceFilters] = useState<FilterRule[]>([])
   const [filterJoinOperator, setFilterJoinOperator] = useState<FilterJoinOperator>('and')
@@ -196,7 +198,7 @@ export default function App() {
     () => buildFilterRevision(workspaceFilters, filterJoinOperator),
     [filterJoinOperator, workspaceFilters],
   )
-  const hasDatasets = datasets.length > 0
+  const hasDatasets = hasRestoredDatasets && datasets.length > 0
 
   const selectedCard = useMemo(
     () => cards.find((card) => card.id === selectedCardId) ?? null,
@@ -219,6 +221,10 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (!hasRestoredDatasets) {
+      return
+    }
+
     if (datasets.length === 0) {
       window.localStorage.removeItem(STORAGE_KEY)
       previousDatasetCountRef.current = 0
@@ -280,10 +286,10 @@ export default function App() {
     }
 
     previousDatasetCountRef.current = datasets.length
-  }, [activeDatasetId, datasets, datasetsById, t])
+  }, [activeDatasetId, datasets, datasetsById, hasRestoredDatasets, t])
 
   useEffect(() => {
-    if (datasets.length === 0) {
+    if (!hasRestoredDatasets || datasets.length === 0) {
       return
     }
 
@@ -294,7 +300,7 @@ export default function App() {
       activeDatasetId,
     }
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-  }, [activeDatasetId, cards, datasets.length, filterJoinOperator, workspaceFilters])
+  }, [activeDatasetId, cards, datasets.length, filterJoinOperator, hasRestoredDatasets, workspaceFilters])
 
   useEffect(() => {
     if (cards.length === 0) {

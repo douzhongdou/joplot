@@ -5,6 +5,11 @@ import { readSpreadsheetFile } from '../lib/spreadsheetImport.ts'
 
 export const DATASET_STORAGE_KEY = 'csv-workbench-datasets'
 
+interface DatasetHydrationState {
+  datasets: CsvData[]
+  hasRestored: boolean
+}
+
 function toDatasetId(fileName: string, taken: Set<string>) {
   const base = fileName
     .trim()
@@ -25,14 +30,32 @@ function toDatasetId(fileName: string, taken: Set<string>) {
   return nextId
 }
 
+export function getInitialDatasetHydrationState(): DatasetHydrationState {
+  return {
+    datasets: [],
+    hasRestored: false,
+  }
+}
+
+export function restoreDatasetsAfterHydration(serialized: string | null | undefined): CsvData[] {
+  return deserializeDatasets(serialized)
+}
+
 export function useCsvData() {
-  const [datasets, setDatasets] = useState<CsvData[]>(() => {
+  const [{ datasets, hasRestored }, setDatasetState] = useState<DatasetHydrationState>(
+    getInitialDatasetHydrationState,
+  )
+
+  useEffect(() => {
     if (typeof window === 'undefined') {
-      return []
+      return
     }
 
-    return deserializeDatasets(window.localStorage.getItem(DATASET_STORAGE_KEY))
-  })
+    setDatasetState({
+      datasets: restoreDatasetsAfterHydration(window.localStorage.getItem(DATASET_STORAGE_KEY)),
+      hasRestored: true,
+    })
+  }, [])
 
   const parseFiles = useCallback(async (files: File[]) => {
     const takenIds = new Set(datasets.map((dataset) => dataset.id))
@@ -40,12 +63,15 @@ export function useCsvData() {
       files.map((file) => readSpreadsheetFile(file, toDatasetId(file.name, takenIds))),
     )
 
-    setDatasets((prev) => [...prev, ...parsed])
+    setDatasetState((prev) => ({
+      ...prev,
+      datasets: [...prev.datasets, ...parsed],
+    }))
     return parsed
   }, [datasets])
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
+    if (typeof window === 'undefined' || !hasRestored) {
       return
     }
 
@@ -58,11 +84,14 @@ export function useCsvData() {
     } catch {
       // Keep the session usable even if the browser rejects storage writes.
     }
-  }, [datasets])
+  }, [datasets, hasRestored])
 
   const resetDatasets = useCallback(() => {
-    setDatasets([])
+    setDatasetState((prev) => ({
+      ...prev,
+      datasets: [],
+    }))
   }, [])
 
-  return { datasets, parseFiles, resetDatasets }
+  return { datasets, parseFiles, resetDatasets, hasRestoredDatasets: hasRestored }
 }

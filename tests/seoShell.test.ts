@@ -1,51 +1,61 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import robots from '../app/robots.ts'
+import sitemap from '../app/sitemap.ts'
+import { getLanguageMetadata } from '../src/lib/siteMetadata.ts'
 
-import {
-  renderSeoShell,
-  seoShellContentByLanguage,
-} from '../src/lib/seoShell.ts'
+test('language metadata stays indexable for every public locale', () => {
+  for (const language of ['en', 'zh-CN', 'ja-JP'] as const) {
+    const metadata = getLanguageMetadata(language)
 
-test('seo shell content exists for every supported language', () => {
-  assert.deepEqual(Object.keys(seoShellContentByLanguage).sort(), ['en', 'ja-JP', 'zh-CN'])
-  assert.equal(seoShellContentByLanguage.en.featureItems.length >= 3, true)
-  assert.equal(seoShellContentByLanguage.en.faqItems.length >= 2, true)
+    assert.equal(metadata.robots?.index, true)
+    assert.equal(metadata.robots?.follow, true)
+    assert.equal(metadata.alternates?.languages?.en, 'https://joplot.com/en')
+    assert.equal(metadata.alternates?.languages?.['zh-CN'], 'https://joplot.com/zh')
+    assert.equal(metadata.alternates?.languages?.ja, 'https://joplot.com/ja')
+  }
 })
 
-test('renderSeoShell outputs crawlable hero, features, and faq content', () => {
-  const html = renderSeoShell('en')
+test('english metadata keeps the expected canonical title and description', () => {
+  const metadata = getLanguageMetadata('en')
 
-  assert.match(html, /<main id="seo-shell"/)
-  assert.match(html, /<h1>Drop in a CSV and get a chart instantly<\/h1>/)
-  assert.match(html, /<h2>Why teams use joplot<\/h2>/)
-  assert.match(html, /<h2>Frequently asked questions<\/h2>/)
-  assert.match(html, /Compare datasets in one workspace/)
-  assert.match(html, /Can I compare multiple CSV files at once\?/)
+  assert.equal(metadata.title, 'joplot | CSV charting and data analysis workspace')
+  assert.equal(metadata.description, 'Import multiple CSV files, build charts quickly, filter data, and compare datasets in one workspace.')
+  assert.equal(metadata.alternates?.canonical, 'https://joplot.com/en')
 })
 
-test('renderSeoShell stays hidden for JavaScript clients until the app mounts', () => {
-  const html = renderSeoShell('en')
+test('robots route allows crawling and points to the generated sitemap', () => {
+  const result = robots()
 
-  assert.match(html, /html\[data-js="true"\] #seo-shell/)
-  assert.match(html, /display:\s*none/)
+  assert.deepEqual(result.rules, {
+    userAgent: '*',
+    allow: '/',
+  })
+  assert.equal(result.sitemap, 'https://joplot.com/sitemap.xml')
 })
 
-test('renderSeoShell localizes HTML metadata content for chinese and japanese pages', () => {
-  const zhHtml = renderSeoShell('zh-CN')
-  const jaHtml = renderSeoShell('ja-JP')
+test('sitemap route includes root and all language pages', () => {
+  const result = sitemap()
 
-  assert.match(zhHtml, /将 CSV 拖进来，立刻出图/)
-  assert.match(zhHtml, /为什么团队会选择 joplot/)
-  assert.match(jaHtml, /CSV をドロップすると、すぐにグラフ化/)
-  assert.match(jaHtml, /joplot が選ばれる理由/)
-})
-
-test('localized html marks JavaScript clients before the seo shell is parsed', () => {
-  const html = readFileSync(new URL('../en/index.html', import.meta.url), 'utf8')
-
-  assert.match(
-    html,
-    /<script>\s*document\.documentElement\.dataset\.js = 'true'\s*<\/script>/,
+  assert.equal(result.length, 4)
+  assert.deepEqual(
+    result.map((entry) => entry.url),
+    [
+      'https://joplot.com/',
+      'https://joplot.com/en',
+      'https://joplot.com/zh',
+      'https://joplot.com/ja',
+    ],
   )
+})
+
+test('language sitemap entries publish hreflang alternates', () => {
+  const entries = sitemap().filter((entry) => entry.url !== 'https://joplot.com/')
+
+  for (const entry of entries) {
+    assert.equal(entry.alternates?.languages?.en, 'https://joplot.com/en')
+    assert.equal(entry.alternates?.languages?.['zh-CN'], 'https://joplot.com/zh')
+    assert.equal(entry.alternates?.languages?.ja, 'https://joplot.com/ja')
+    assert.equal(entry.alternates?.languages?.['x-default'], 'https://joplot.com/')
+  }
 })
