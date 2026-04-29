@@ -1,5 +1,4 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
-import Plotly from 'plotly.js/dist/plotly.min.js'
 import type { Config, Data, Layout } from 'plotly.js/dist/plotly.min.js'
 import { copyPngDataUrlToClipboard } from '../lib/clipboard'
 import { buildChartExportOptions, CHART_EXPORT_BACKGROUND_COLOR } from '../lib/chartExport'
@@ -24,21 +23,41 @@ interface Props {
   config?: Partial<Config>
 }
 
-type PlotlyRuntime = typeof Plotly & {
+type PlotlyRuntime = {
   Plots: {
     resize: (element: HTMLDivElement) => void
   }
+  react: (
+    element: HTMLDivElement,
+    data: Data[],
+    layout: Partial<Layout>,
+    config?: Partial<Config>,
+  ) => Promise<void>
+  purge: (element: HTMLDivElement) => void
   relayout: (element: HTMLDivElement, update: Record<string, unknown>) => Promise<void>
   toImage: (element: HTMLDivElement, options?: Record<string, unknown>) => Promise<string>
   downloadImage: (element: HTMLDivElement, options?: Record<string, unknown>) => Promise<void>
 }
 
-const plotlyRuntime = Plotly as PlotlyRuntime
+type PlotlyModule = typeof import('plotly.js/dist/plotly.min.js')
+
+let plotlyRuntimePromise: Promise<PlotlyRuntime> | null = null
+
+async function loadPlotlyRuntime(): Promise<PlotlyRuntime> {
+  if (!plotlyRuntimePromise) {
+    plotlyRuntimePromise = import('plotly.js/dist/plotly.min.js').then(
+      (module) => (module as PlotlyModule).default as PlotlyRuntime,
+    )
+  }
+
+  return plotlyRuntimePromise
+}
 
 async function createPlotImagePayload(
   graphDiv: HTMLDivElement,
   exportOptions: ReturnType<typeof buildChartExportOptions>,
 ) {
+  const plotlyRuntime = await loadPlotlyRuntime()
   const dataUrl = await plotlyRuntime.toImage(graphDiv, exportOptions.image)
 
   const response = await fetch(dataUrl)
@@ -60,6 +79,7 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
         return
       }
 
+      const plotlyRuntime = await loadPlotlyRuntime()
       await plotlyRuntime.relayout(graphDiv, buildAutorangeUpdate())
     },
     async copyImage() {
@@ -91,6 +111,7 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
           kind: exportKind,
           title: exportTitle,
         })
+        const plotlyRuntime = await loadPlotlyRuntime()
         await plotlyRuntime.downloadImage(graphDiv, {
           ...exportOptions.download,
         })
@@ -107,6 +128,7 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
         kind: exportKind,
         title: exportTitle,
       })
+      const plotlyRuntime = await loadPlotlyRuntime()
       await plotlyRuntime.downloadImage(graphDiv, {
         ...exportOptions.download,
       })
@@ -120,28 +142,32 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
       return
     }
 
-    void Plotly.react(
-      graphDiv,
-      data,
-      buildPlotLayout({
-        margin: { l: 78, r: 18, t: 24, b: 88 },
-        paper_bgcolor: CHART_EXPORT_BACKGROUND_COLOR,
-        plot_bgcolor: CHART_EXPORT_BACKGROUND_COLOR,
-        font: {
-          family: 'Segoe UI, PingFang SC, Microsoft YaHei, sans-serif',
-          size: 14,
-          color: resolveThemeColor('--color-base-content', '#111827'),
+    void (async () => {
+      const plotlyRuntime = await loadPlotlyRuntime()
+
+      await plotlyRuntime.react(
+        graphDiv,
+        data,
+        buildPlotLayout({
+          margin: { l: 78, r: 18, t: 24, b: 88 },
+          paper_bgcolor: CHART_EXPORT_BACKGROUND_COLOR,
+          plot_bgcolor: CHART_EXPORT_BACKGROUND_COLOR,
+          font: {
+            family: 'Segoe UI, PingFang SC, Microsoft YaHei, sans-serif',
+            size: 14,
+            color: resolveThemeColor('--color-base-content', '#111827'),
+          },
+          ...layout,
+        }, uirevision),
+        {
+          responsive: true,
+          displayModeBar: false,
+          scrollZoom: true,
+          displaylogo: false,
+          ...config,
         },
-        ...layout,
-      }, uirevision),
-      {
-        responsive: true,
-        displayModeBar: false,
-        scrollZoom: true,
-        displaylogo: false,
-        ...config,
-      },
-    )
+      )
+    })()
   }, [config, data, layout, uirevision])
 
   useEffect(() => {
@@ -149,7 +175,9 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
 
     return () => {
       if (graphDiv) {
-        Plotly.purge(graphDiv)
+        void loadPlotlyRuntime().then((plotlyRuntime) => {
+          plotlyRuntime.purge(graphDiv)
+        })
       }
     }
   }, [])
@@ -210,7 +238,9 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
       }
 
       if (Object.keys(relayout).length > 0) {
-        void plotlyRuntime.relayout(graphDiv, relayout)
+        void loadPlotlyRuntime().then((plotlyRuntime) => {
+          void plotlyRuntime.relayout(graphDiv, relayout)
+        })
       }
     }
 
@@ -260,7 +290,9 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
 
     const resizeObserver = new ResizeObserver(() => {
       if (containerRef.current) {
-        plotlyRuntime.Plots.resize(containerRef.current)
+        void loadPlotlyRuntime().then((plotlyRuntime) => {
+          plotlyRuntime.Plots.resize(containerRef.current!)
+        })
       }
     })
 

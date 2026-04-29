@@ -1,3 +1,5 @@
+'use client'
+
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
   getLanguagePath,
@@ -45,8 +47,14 @@ function getTranslationValue(dictionary: TranslationDictionary, key: string): Tr
   return typeof current === 'string' || typeof current === 'function' ? current : null
 }
 
-export function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [language, setLanguageState] = useState<SupportedLanguage>(() => resolveInitialLanguage(
+export function I18nProvider({
+  children,
+  initialLanguage,
+}: {
+  children: React.ReactNode
+  initialLanguage?: SupportedLanguage
+}) {
+  const [language, setLanguageState] = useState<SupportedLanguage>(() => initialLanguage ?? resolveInitialLanguage(
     typeof window !== 'undefined' ? window.location.pathname : null,
     typeof window !== 'undefined'
       ? window.localStorage.getItem(LANGUAGE_STORAGE_KEY)
@@ -116,11 +124,16 @@ export function useI18n() {
 
 export {
   getLanguagePath,
+  getRouteLanguage,
+  getHtmlLang,
+  isRouteLanguage,
   LANGUAGE_STORAGE_KEY,
   LANGUAGE_PATHS,
+  ROUTE_LANGUAGES,
   SUPPORTED_LANGUAGES,
   resolveLanguageFromPath,
   resolveInitialLanguage,
   normalizeLanguage,
+  resolveSupportedLanguageFromRouteLanguage,
 } from './config'
-export type { SupportedLanguage } from './config'
+export type { RouteLanguage, SupportedLanguage } from './config'
