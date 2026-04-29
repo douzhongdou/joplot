@@ -10,6 +10,10 @@ import {
 } from '../../src/i18n/config'
 import '../globals.css'
 
+const UMAMI_SCRIPT_URL = process.env.NEXT_PUBLIC_UMAMI_SCRIPT_URL || 'https://analytics.hardgit.com/script.js'
+const UMAMI_WEBSITE_ID = process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID?.trim()
+const UMAMI_DOMAINS = process.env.NEXT_PUBLIC_UMAMI_DOMAINS?.trim()
+
 export async function generateMetadata({
   params,
 }: {
@@ -47,12 +51,15 @@ export default async function LangLayout({
   return (
     <html lang={getHtmlLang(language)} suppressHydrationWarning>
       <body>
-        <Script
-          defer
-          src="https://analytics.hardgit.com/script.js"
-          data-website-id="ae3a3e3e-896b-4a99-bb52-66dc81e59839"
-          strategy="afterInteractive"
-        />
+        {UMAMI_WEBSITE_ID && (
+          <Script
+            defer
+            src={UMAMI_SCRIPT_URL}
+            data-website-id={UMAMI_WEBSITE_ID}
+            data-domains={UMAMI_DOMAINS || undefined}
+            strategy="afterInteractive"
+          />
+        )}
         {children}
       </body>
     </html>

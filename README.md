@@ -77,6 +77,26 @@ pnpm dev
 
 默认会启动一个本地 Next.js 开发服务器，打开终端输出中的地址即可访问。
 
+### 配置 Umami 环境变量
+
+项目会从公开环境变量中读取 Umami 配置；未配置时不会注入统计脚本。
+
+先复制一份环境变量模板为 `.env.local`，例如把仓库根目录下的 `.env.example` 复制为 `.env.local`。
+
+然后按环境填写：
+
+```env
+NEXT_PUBLIC_UMAMI_SCRIPT_URL=https://analytics.hardgit.com/script.js
+NEXT_PUBLIC_UMAMI_WEBSITE_ID=your-website-id
+NEXT_PUBLIC_UMAMI_DOMAINS=localhost
+```
+
+建议：
+
+- 本地开发环境使用单独的 Umami Website，例如 `Joplot Dev`
+- 生产环境 `joplot.com` 使用正式 Website
+- `NEXT_PUBLIC_UMAMI_DOMAINS` 只写 hostname，例如本地写 `localhost`，生产写 `joplot.com,www.joplot.com`
+
 ### 构建生产版本
 
 ```bash

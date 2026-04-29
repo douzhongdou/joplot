@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useCsvData } from './hooks/useCsvData'
 import { AppNavbar } from './components/AppNavbar'
 import { CardInspector } from './components/CardInspector'
@@ -10,6 +10,14 @@ import { DataView } from './components/DataView'
 import { HomeHero } from './components/HomeHero'
 import { WorkbenchHeader } from './components/WorkbenchHeader'
 import { useI18n } from './i18n'
+import {
+  buildLanguagePayload,
+  buildParseSuccessPayload,
+  buildUploadCsvPayload,
+  mapParseErrorToReason,
+  type TrackingInputMethod,
+} from './lib/analytics'
+import { track } from './lib/track'
 import { getUploadCopy, pickCsvFiles } from './lib/upload'
 import { loadSampleDatasetFile, type SampleDatasetId } from './lib/sampleData'
 import {
@@ -177,6 +185,7 @@ export default function App() {
   const [dragActive, setDragActive] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const dragDepthRef = useRef(0)
+  const hasTrackedPageLanguageRef = useRef(false)
   const previousDatasetCountRef = useRef(0)
   const uploadCopy = useMemo(() => getUploadCopy(language), [language])
 
@@ -219,6 +228,15 @@ export default function App() {
         return t('chartKinds.fallback')
     }
   }
+
+  useEffect(() => {
+    if (hasTrackedPageLanguageRef.current) {
+      return
+    }
+
+    track('page_language', buildLanguagePayload(language))
+    hasTrackedPageLanguageRef.current = true
+  }, [language])
 
   useEffect(() => {
     if (!hasRestoredDatasets) {
@@ -313,36 +331,57 @@ export default function App() {
     }
   }, [cards, selectedCardId])
 
-  async function handleIncomingFiles(files: File[]) {
+  const handleIncomingFiles = useCallback(async (
+    files: File[],
+    inputMethod: TrackingInputMethod = 'unknown',
+  ) => {
     if (files.length === 0) {
-      return
+      return []
     }
 
     setIsImporting(true)
 
     try {
-      const parsed = await parseFiles(files)
+      const result = await parseFiles(files)
+      const { successes, parsed, failures } = result
+
+      successes.forEach(({ dataset, file }) => {
+        track('upload_csv', buildUploadCsvPayload(dataset, file, inputMethod))
+        track('parse_success', buildParseSuccessPayload(dataset))
+      })
+
+      failures.forEach(({ error }) => {
+        track('parse_fail', {
+          reason: mapParseErrorToReason(error),
+        })
+      })
 
       if (parsed.length > 0) {
         setViewMode('chart')
         setActiveDatasetId(parsed[0].id)
         setRecentDatasetIds(parsed.map((dataset) => dataset.id))
       }
+
+      return parsed
     } finally {
       setIsImporting(false)
     }
-  }
+  }, [parseFiles])
 
-  async function handleLoadSample(sampleId: SampleDatasetId) {
+  const handleLoadSample = useCallback(async (sampleId: SampleDatasetId) => {
     setIsImporting(true)
 
     try {
       const file = await loadSampleDatasetFile(sampleId)
-      await handleIncomingFiles([file])
+      const parsed = await handleIncomingFiles([file], 'demo')
+
+      if (parsed.length > 0) {
+        track('load_demo_data', buildLanguagePayload(language))
+      }
     } finally {
       setIsImporting(false)
     }
-  }
+  }, [handleIncomingFiles, language])
 
   useEffect(() => {
     function handleDragEnter(event: DragEvent) {
@@ -392,7 +431,7 @@ export default function App() {
       const files = pickCsvFiles(Array.from(event.dataTransfer?.files ?? []))
 
       if (files.length > 0) {
-        void handleIncomingFiles(files)
+        void handleIncomingFiles(files, 'drag_drop')
       }
     }
 
@@ -407,7 +446,7 @@ export default function App() {
       window.removeEventListener('dragleave', handleDragLeave)
       window.removeEventListener('drop', handleDrop)
     }
-  }, [parseFiles])
+  }, [handleIncomingFiles])
 
   function addCard(kind: ChartCardConfig['kind']) {
     if (!activeDataset) {

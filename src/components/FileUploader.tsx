@@ -1,12 +1,13 @@
 import { useRef } from 'react'
 import type { ChangeEvent } from 'react'
 import { Plus } from 'lucide-react'
+import type { TrackingInputMethod } from '../lib/analytics'
 import { ACCEPTED_UPLOAD_TYPES, buildUploadHint, getUploadCopy, pickCsvFiles } from '../lib/upload'
 import { useI18n } from '../i18n'
 
 interface Props {
   hasDatasets: boolean
-  onFiles: (files: File[]) => void | Promise<void>
+  onFiles: (files: File[], inputMethod?: TrackingInputMethod) => void | Promise<unknown>
   buttonClassName?: string
   disabled?: boolean
 }
@@ -26,7 +27,7 @@ export function FileUploader({ hasDatasets, onFiles, buttonClassName = '', disab
     const files = pickCsvFiles(Array.from(event.target.files ?? []))
 
     if (files.length > 0) {
-      void onFiles(files)
+      void onFiles(files, 'file_picker')
       event.target.value = ''
     }
   }

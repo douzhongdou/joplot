@@ -10,6 +10,22 @@ interface DatasetHydrationState {
   hasRestored: boolean
 }
 
+export interface ParsedImportFailure {
+  file: File
+  error: unknown
+}
+
+export interface ParsedImportSuccess {
+  file: File
+  dataset: CsvData
+}
+
+export interface ParsedImportResult {
+  successes: ParsedImportSuccess[]
+  parsed: CsvData[]
+  failures: ParsedImportFailure[]
+}
+
 function toDatasetId(fileName: string, taken: Set<string>) {
   const base = fileName
     .trim()
@@ -41,6 +57,41 @@ export function restoreDatasetsAfterHydration(serialized: string | null | undefi
   return deserializeDatasets(serialized)
 }
 
+export async function parseImportedFiles(
+  files: File[],
+  existingDatasets: CsvData[],
+): Promise<ParsedImportResult> {
+  const takenIds = new Set(existingDatasets.map((dataset) => dataset.id))
+  const results = await Promise.all(
+    files.map(async (file) => {
+      try {
+        const dataset = await readSpreadsheetFile(file, toDatasetId(file.name, takenIds))
+        return { file, dataset, error: null }
+      } catch (error) {
+        return { file, dataset: null, error }
+      }
+    }),
+  )
+
+  return {
+    successes: results
+      .filter((result): result is { file: File; dataset: CsvData; error: null } => result.dataset !== null)
+      .map((result) => ({
+        file: result.file,
+        dataset: result.dataset,
+      })),
+    parsed: results
+      .map((result) => result.dataset)
+      .filter((dataset): dataset is CsvData => dataset !== null),
+    failures: results
+      .filter((result) => result.error !== null)
+      .map((result) => ({
+        file: result.file,
+        error: result.error,
+      })),
+  }
+}
+
 export function useCsvData() {
   const [{ datasets, hasRestored }, setDatasetState] = useState<DatasetHydrationState>(
     getInitialDatasetHydrationState,
@@ -58,16 +109,16 @@ export function useCsvData() {
   }, [])
 
   const parseFiles = useCallback(async (files: File[]) => {
-    const takenIds = new Set(datasets.map((dataset) => dataset.id))
-    const parsed = await Promise.all(
-      files.map((file) => readSpreadsheetFile(file, toDatasetId(file.name, takenIds))),
-    )
+    const result = await parseImportedFiles(files, datasets)
 
-    setDatasetState((prev) => ({
-      ...prev,
-      datasets: [...prev.datasets, ...parsed],
-    }))
-    return parsed
+    if (result.parsed.length > 0) {
+      setDatasetState((prev) => ({
+        ...prev,
+        datasets: [...prev.datasets, ...result.parsed],
+      }))
+    }
+
+    return result
   }, [datasets])
 
   useEffect(() => {

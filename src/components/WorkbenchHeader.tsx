@@ -12,6 +12,7 @@ import {
   Radar,
   RotateCcw,
 } from 'lucide-react'
+import type { TrackingInputMethod } from '../lib/analytics'
 import type { ChartKind, CsvData, FilterJoinOperator, FilterOperator, FilterRule } from '../types'
 import { FileUploader } from './FileUploader'
 import { SelectMenu } from './SelectMenu'
@@ -23,7 +24,7 @@ interface Props {
   filters: FilterRule[]
   filterJoinOperator: FilterJoinOperator
   onAddComponent: (kind: ChartKind) => void
-  onUploadFiles: (files: File[]) => void | Promise<void>
+  onUploadFiles: (files: File[], inputMethod?: TrackingInputMethod) => void | Promise<unknown>
   onResetDatasets: () => void
   onAddFilter: () => void
   onChangeFilterJoinOperator: (operator: FilterJoinOperator) => void
