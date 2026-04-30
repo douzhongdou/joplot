@@ -17,6 +17,8 @@ interface GestureState {
 interface Props {
   cards: ChartCard[]
   selectedCardId: string | null
+  interactive?: boolean
+  compact?: boolean
   onSelectCard: (cardId: string) => void
   onLayoutChange: (cardId: string, layout: DashboardLayout) => void
   renderCard: (card: ChartCard, controls: {
@@ -30,6 +32,8 @@ interface Props {
 export function DashboardCanvas({
   cards,
   selectedCardId,
+  interactive = true,
+  compact = false,
   onSelectCard,
   onLayoutChange,
   renderCard,
@@ -65,7 +69,7 @@ export function DashboardCanvas({
   }, [])
 
   useEffect(() => {
-    if (!gesture || !containerWidth) {
+    if (!gesture || !containerWidth || !interactive) {
       return
     }
 
@@ -106,6 +110,10 @@ export function DashboardCanvas({
   }, [containerWidth, gesture, onLayoutChange])
 
   function beginGesture(card: ChartCard, mode: GestureState['mode'], event: ReactPointerEvent<HTMLElement>) {
+    if (!interactive) {
+      return
+    }
+
     event.preventDefault()
     event.stopPropagation()
     onSelectCard(card.id)
@@ -122,7 +130,7 @@ export function DashboardCanvas({
     <section className="min-h-full">
       <div
         ref={containerRef}
-        className="grid gap-4 bg-base-200 px-5 py-6"
+        className={`grid bg-base-200 ${compact ? 'gap-2 px-0 py-2 pb-20 sm:gap-4 sm:px-5 sm:py-6 sm:pb-6' : 'gap-4 px-5 py-6'}`}
         style={{
           gridTemplateColumns: `repeat(${GRID_COLUMNS}, minmax(0, 1fr))`,
           gridTemplateRows: `repeat(${totalRows}, minmax(${GRID_ROW_HEIGHT}px, ${GRID_ROW_HEIGHT}px))`,

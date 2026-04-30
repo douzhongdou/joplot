@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { SquarePen } from 'lucide-react'
 import { useCsvData } from './hooks/useCsvData'
 import { AppNavbar } from './components/AppNavbar'
 import { CardInspector } from './components/CardInspector'
@@ -8,6 +9,8 @@ import { ChartCard } from './components/ChartCard'
 import { DashboardCanvas } from './components/DashboardCanvas'
 import { DataView } from './components/DataView'
 import { HomeHero } from './components/HomeHero'
+import { MobileBottomNav } from './components/MobileBottomNav'
+import { MobileInspectorDrawer } from './components/MobileInspectorDrawer'
 import { WorkbenchHeader } from './components/WorkbenchHeader'
 import { useI18n } from './i18n'
 import {
@@ -19,6 +22,11 @@ import {
 } from './lib/analytics'
 import { track } from './lib/track'
 import { getUploadCopy, pickCsvFiles } from './lib/upload'
+import {
+  isMobileViewport,
+  shouldShowMobileInspector,
+  toResponsiveCardLayout,
+} from './lib/mobileLayout'
 import { loadSampleDatasetFile, type SampleDatasetId } from './lib/sampleData'
 import {
   appendCardSeries,
@@ -184,6 +192,9 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'chart' | 'data'>('chart')
   const [dragActive, setDragActive] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false)
+  const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false)
+  const [viewportWidth, setViewportWidth] = useState<number | null>(null)
   const dragDepthRef = useRef(0)
   const hasTrackedPageLanguageRef = useRef(false)
   const previousDatasetCountRef = useRef(0)
@@ -208,11 +219,18 @@ export default function App() {
     [filterJoinOperator, workspaceFilters],
   )
   const hasDatasets = hasRestoredDatasets && datasets.length > 0
+  const mobile = viewportWidth !== null ? isMobileViewport(viewportWidth) : false
 
   const selectedCard = useMemo(
     () => cards.find((card) => card.id === selectedCardId) ?? null,
     [cards, selectedCardId],
   )
+  const displayCards = useMemo(
+    () => toResponsiveCardLayout(cards, mobile),
+    [cards, mobile],
+  )
+  const showMobileInspectorTrigger = shouldShowMobileInspector(hasDatasets, selectedCardId, mobile)
+  const showMobileBottomNav = mobile && hasDatasets
 
   function getLocalizedCardTitle(kind: ChartCardConfig['kind']) {
     switch (kind) {
@@ -237,6 +255,23 @@ export default function App() {
     track('page_language', buildLanguagePayload(language))
     hasTrackedPageLanguageRef.current = true
   }, [language])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const updateViewport = () => {
+      setViewportWidth(window.innerWidth)
+    }
+
+    updateViewport()
+    window.addEventListener('resize', updateViewport)
+
+    return () => {
+      window.removeEventListener('resize', updateViewport)
+    }
+  }, [])
 
   useEffect(() => {
     if (!hasRestoredDatasets) {
@@ -330,6 +365,18 @@ export default function App() {
       setSelectedCardId(cards[0].id)
     }
   }, [cards, selectedCardId])
+
+  useEffect(() => {
+    if (!mobile || viewMode !== 'chart' || !selectedCardId) {
+      setMobileInspectorOpen(false)
+    }
+  }, [mobile, selectedCardId, viewMode])
+
+  useEffect(() => {
+    if (!mobile || !hasDatasets) {
+      setMobileActionsOpen(false)
+    }
+  }, [hasDatasets, mobile])
 
   const handleIncomingFiles = useCallback(async (
     files: File[],
@@ -469,6 +516,7 @@ export default function App() {
 
     setCards((prev) => appendCardWithLayout(prev, nextCard))
     setSelectedCardId(nextCard.id)
+    setViewMode('chart')
   }
 
   function updateCard(cardId: string, patch: Partial<ChartCardConfig>) {
@@ -620,13 +668,13 @@ export default function App() {
 
   return (
     <div className="grid h-full grid-rows-[var(--navbar-height)_minmax(0,1fr)] bg-base-200 text-base-content">
-      <AppNavbar hasDatasets={hasDatasets} viewMode={viewMode} onChangeViewMode={setViewMode} />
+      <AppNavbar hasDatasets={hasDatasets} mobile={mobile} viewMode={viewMode} onChangeViewMode={setViewMode} />
 
-      <main className={hasDatasets && viewMode === 'chart'
-        ? 'grid min-h-0 grid-cols-[minmax(0,1fr)_var(--inspector-width)] max-[920px]:block'
+      <main className={hasDatasets && viewMode === 'chart' && !mobile
+        ? 'grid min-h-0 grid-cols-[minmax(0,1fr)_var(--inspector-width)]'
         : 'grid min-h-0 grid-cols-1'}
       >
-        <section className="min-h-0 min-w-0 overflow-auto bg-base-100">
+        <section className={`min-h-0 min-w-0 overflow-auto bg-base-100 ${showMobileBottomNav ? 'pb-16' : ''} ${showMobileInspectorTrigger && showMobileBottomNav ? 'pb-24' : ''}`}>
           {viewMode === 'data' && hasDatasets && (
             <DataView
               datasets={datasets}
@@ -635,7 +683,7 @@ export default function App() {
             />
           )}
 
-          {viewMode === 'chart' && hasDatasets && activeDataset && (
+          {viewMode === 'chart' && hasDatasets && activeDataset && !mobile && (
             <WorkbenchHeader
               datasets={datasets}
               activeDatasetId={activeDataset.id}
@@ -652,15 +700,21 @@ export default function App() {
           )}
 
           {!hasDatasets && (
-            <HomeHero busy={isImporting} onLoadSample={handleLoadSample} />
+            <HomeHero busy={isImporting} onLoadSample={handleLoadSample} onUploadFiles={handleIncomingFiles} />
           )}
 
           {viewMode === 'chart' && hasDatasets && cards.length > 0 && (
             <DashboardCanvas
-              cards={cards}
+              cards={displayCards}
               selectedCardId={selectedCardId}
+              interactive={!mobile}
+              compact={mobile}
               onSelectCard={setSelectedCardId}
-              onLayoutChange={(cardId, layout) => setCards((prev) => moveCardToLayout(prev, cardId, layout))}
+              onLayoutChange={(cardId, layout) => {
+                if (!mobile) {
+                  setCards((prev) => moveCardToLayout(prev, cardId, layout))
+                }
+              }}
               renderCard={(card, controls) => (
                 <ChartCard
                   key={card.id}
@@ -669,6 +723,9 @@ export default function App() {
                   filteredRowsByDataset={filteredRowsByDataset}
                   filterRevision={filterRevision}
                   selected={controls.selected}
+                  allowLayoutEditing={!mobile}
+                  showCopyImage={!mobile}
+                  mobileChrome={mobile}
                   onSelect={controls.onSelect}
                   onDragStart={controls.onDragStart}
                   onResizeStart={controls.onResizeStart}
@@ -677,8 +734,8 @@ export default function App() {
             />
           )}
         </section>
-        {hasDatasets && viewMode === 'chart' && (
-          <aside className="min-h-0 overflow-auto border-l border-base-300 bg-base-100 max-[920px]:border-l-0 max-[920px]:border-t">
+        {hasDatasets && viewMode === 'chart' && !mobile && (
+          <aside className="min-h-0 overflow-auto border-l border-base-300 bg-base-100">
             {activeDataset && (
               <CardInspector
                 card={selectedCard}
@@ -695,6 +752,92 @@ export default function App() {
           </aside>
         )}
       </main>
+
+      {showMobileInspectorTrigger && selectedCard && (
+        <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom,0px)+4.25rem)] right-3 z-30 sm:hidden">
+          <div className="pointer-events-auto">
+            <button
+              type="button"
+              className="inline-flex h-10 items-center justify-center gap-1.5 rounded-full bg-primary px-3 text-xs font-semibold text-primary-content shadow-[0_12px_28px_rgba(235,80,160,0.24)]"
+              onClick={() => setMobileInspectorOpen(true)}
+            >
+              <SquarePen size={14} strokeWidth={2.1} />
+              {t('inspector.mobileOpenButton')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showMobileBottomNav && (
+        <MobileBottomNav
+          activeView={viewMode}
+          actionsOpen={mobileActionsOpen}
+          onSelectView={(mode) => {
+            setViewMode(mode)
+            setMobileActionsOpen(false)
+          }}
+          onToggleActions={() => setMobileActionsOpen((current) => !current)}
+        />
+      )}
+
+      <MobileInspectorDrawer
+        open={mobileActionsOpen && showMobileBottomNav}
+        eyebrow={t('mobileNav.actionsEyebrow')}
+        title={t('mobileNav.actionsTitle')}
+        closeLabel={t('mobileNav.closeActions')}
+        onClose={() => setMobileActionsOpen(false)}
+      >
+        {activeDataset && (
+          <WorkbenchHeader
+            datasets={datasets}
+            activeDatasetId={activeDataset.id}
+            filters={workspaceFilters}
+            filterJoinOperator={filterJoinOperator}
+            mobileSheet
+            onAddComponent={(kind) => {
+              addCard(kind)
+              setMobileActionsOpen(false)
+            }}
+            onUploadFiles={async (files, inputMethod) => {
+              const parsed = await handleIncomingFiles(files, inputMethod)
+              if (parsed.length > 0) {
+                setMobileActionsOpen(false)
+              }
+              return parsed
+            }}
+            onResetDatasets={() => {
+              resetDatasets()
+              setMobileActionsOpen(false)
+            }}
+            onAddFilter={addFilter}
+            onChangeFilterJoinOperator={setFilterJoinOperator}
+            onChangeFilter={updateFilter}
+            onRemoveFilter={removeFilter}
+          />
+        )}
+      </MobileInspectorDrawer>
+
+      <MobileInspectorDrawer
+        open={mobileInspectorOpen && Boolean(selectedCard) && mobile && viewMode === 'chart'}
+        eyebrow={t('inspector.mobileDrawerEyebrow')}
+        title={selectedCard?.title ?? t('inspector.baseSectionTitle')}
+        closeLabel={t('inspector.closeDrawer')}
+        onClose={() => setMobileInspectorOpen(false)}
+      >
+        {activeDataset && selectedCard && (
+          <CardInspector
+            card={selectedCard}
+            datasets={datasets}
+            activeDatasetId={activeDataset.id}
+            onChangeCard={(patch) => selectedCard && updateCard(selectedCard.id, patch)}
+            onAddSeries={(datasetId) => selectedCard && addSeries(selectedCard.id, datasetId)}
+            onChangeSeries={(seriesId, patch) => selectedCard && updateSeries(selectedCard.id, seriesId, patch)}
+            onRemoveSeries={(seriesId) => selectedCard && removeSeries(selectedCard.id, seriesId)}
+            onDuplicate={() => selectedCard && duplicateCard(selectedCard.id)}
+            onRemove={() => selectedCard && removeCard(selectedCard.id)}
+          />
+        )}
+      </MobileInspectorDrawer>
 
       {dragActive && (
         <div className="pointer-events-none fixed inset-0 z-40 grid place-items-center bg-neutral/10">

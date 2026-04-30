@@ -14,6 +14,7 @@ interface CopyPngOptions {
   dataUrl: string
   clipboard?: ClipboardPort
   ClipboardItemCtor?: ClipboardItemPort | null
+  allowTextFallback?: boolean
 }
 
 export async function copyPngDataUrlToClipboard({
@@ -21,6 +22,7 @@ export async function copyPngDataUrlToClipboard({
   dataUrl,
   clipboard,
   ClipboardItemCtor,
+  allowTextFallback = true,
 }: CopyPngOptions): Promise<ClipboardCopyMode> {
   if (ClipboardItemCtor && clipboard?.write) {
     try {
@@ -48,7 +50,7 @@ export async function copyPngDataUrlToClipboard({
     }
   }
 
-  if (clipboard?.writeText) {
+  if (allowTextFallback && clipboard?.writeText) {
     await clipboard.writeText(dataUrl)
     return 'text'
   }

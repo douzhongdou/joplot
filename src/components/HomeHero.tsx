@@ -2,13 +2,16 @@ import { ArrowRight } from 'lucide-react'
 import { getUploadCopy } from '../lib/upload'
 import { getSampleDatasetCopy, type SampleDatasetId } from '../lib/sampleData'
 import { useI18n } from '../i18n'
+import type { TrackingInputMethod } from '../lib/analytics'
+import { FileUploader } from './FileUploader'
 
 interface Props {
   busy?: boolean
   onLoadSample: (id: SampleDatasetId) => void | Promise<void>
+  onUploadFiles: (files: File[], inputMethod?: TrackingInputMethod) => void | Promise<unknown>
 }
 
-export function HomeHero({ busy = false, onLoadSample }: Props) {
+export function HomeHero({ busy = false, onLoadSample, onUploadFiles }: Props) {
   const { language } = useI18n()
   const copy = getUploadCopy(language)
   const sample = getSampleDatasetCopy(language)[0]
@@ -24,11 +27,18 @@ export function HomeHero({ busy = false, onLoadSample }: Props) {
           {copy.heroSubtitle}
         </p>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="grid w-full gap-3 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+          <FileUploader
+            hasDatasets={false}
+            onFiles={onUploadFiles}
+            disabled={busy}
+            containerClassName="w-full sm:w-auto"
+            buttonClassName="h-12 w-full rounded-2xl border border-primary/15 bg-primary px-5 text-sm font-semibold text-primary-content shadow-none hover:border-primary hover:bg-primary sm:w-auto"
+          />
 
           <button
             type="button"
-            className="inline-flex h-12 items-center gap-2 rounded-2xl border border-base-300 bg-base-100 px-5 text-sm font-semibold text-base-content transition hover:border-primary/25 hover:bg-primary/8 hover:text-primary disabled:pointer-events-none disabled:text-base-content/45"
+            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-base-300 bg-base-100 px-5 text-sm font-semibold text-base-content transition hover:border-primary/25 hover:bg-primary/8 hover:text-primary disabled:pointer-events-none disabled:text-base-content/45 sm:w-auto"
             onClick={() => void onLoadSample(sample.id)}
             disabled={busy}
           >

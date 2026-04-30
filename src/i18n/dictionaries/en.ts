@@ -71,6 +71,9 @@ export const en = {
     emptyDescription: 'Base settings and display settings will appear here.',
     duplicateCard: 'Duplicate card',
     deleteCard: 'Delete card',
+    mobileOpenButton: 'Edit',
+    mobileDrawerEyebrow: 'Card editor',
+    closeDrawer: 'Close card editor',
     baseTab: 'Base settings',
     displayTab: 'Display settings',
     baseSectionTitle: 'Base settings',
@@ -185,6 +188,12 @@ export const en = {
     chartLabel: 'Chart',
     tabLabel: 'Data',
     emptyState: 'Upload a data file first',
+  },
+  mobileNav: {
+    actions: 'Actions',
+    actionsEyebrow: 'Workbench',
+    actionsTitle: 'Quick actions',
+    closeActions: 'Close actions panel',
   },
   help: {
     label: 'Help',
