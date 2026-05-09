@@ -22,8 +22,9 @@ export function AppNavbar({ hasDatasets, mobile = false, viewMode, onChangeViewM
     <header className="flex min-h-[var(--navbar-height)] items-center justify-between gap-2 border-b border-base-300 bg-base-100 px-3 py-1 sm:gap-3 sm:px-5 sm:py-2">
       <div className="flex min-w-0 items-center gap-2 sm:gap-3">
         <div className="h-7 overflow-hidden rounded-lg sm:h-9 sm:rounded-xl">
-          <img src="/navbar-icon.webp" alt="" className="block size-full object-contain" />
+          <img src="/navbar-icon.webp" alt="joplot" className="block size-full object-contain" />
         </div>
+        <span className="text-sm font-semibold text-base-content sm:text-base">joplot</span>
 
         {hasDatasets && !mobile ? (
           <div className="ml-2 flex items-center gap-1 sm:ml-4">

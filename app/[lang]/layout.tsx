@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Script from 'next/script'
 import { notFound } from 'next/navigation'
 import type { ReactNode } from 'react'
-import { getLanguageMetadata } from '../../src/lib/siteMetadata'
+import { getLanguageMetadata, getSoftwareApplicationJsonLd } from '../../src/lib/siteMetadata'
 import {
   getHtmlLang,
   isRouteLanguage,
@@ -43,6 +43,7 @@ export default async function LangLayout({
   }
 
   const language = resolveSupportedLanguageFromRouteLanguage(lang)
+  const softwareApplicationJsonLd = getSoftwareApplicationJsonLd()
 
   if (!language) {
     notFound()
@@ -60,6 +61,10 @@ export default async function LangLayout({
             strategy="afterInteractive"
           />
         )}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationJsonLd) }}
+        />
         {children}
       </body>
     </html>
