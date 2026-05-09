@@ -8,12 +8,20 @@ interface LanguageMetadataContent {
   description: string
 }
 
+const siteUrl = 'https://joplot.com'
+const canonicalLanguages = {
+  en: `${siteUrl}/en`,
+  'zh-CN': `${siteUrl}/zh`,
+  ja: `${siteUrl}/ja`,
+  'x-default': `${siteUrl}/en`,
+}
+
 const metadataByLanguage: Record<SupportedLanguage, LanguageMetadataContent> = {
   en: {
     path: '/en',
     locale: 'en_US',
-    title: 'joplot | CSV charting and data analysis workspace',
-    description: 'Import multiple CSV files, build charts quickly, filter data, and compare datasets in one workspace.',
+    title: 'joplot | Free online CSV plot tool',
+    description: 'Plot CSV files online with joplot. Import CSV or Excel files, build charts quickly, filter data, and compare datasets in one workspace.',
   },
   'zh-CN': {
     path: '/zh',
@@ -31,21 +39,23 @@ const metadataByLanguage: Record<SupportedLanguage, LanguageMetadataContent> = {
 
 export function getLanguageMetadata(language: SupportedLanguage): Metadata {
   const content = metadataByLanguage[language]
-  const url = `https://joplot.com${content.path}`
+  const url = `${siteUrl}${content.path}`
 
   return {
     title: content.title,
     description: content.description,
+    keywords: [
+      'joplot',
+      'CSV plot tool',
+      'plot CSV online',
+      'CSV chart generator',
+      'CSV to chart',
+    ],
     applicationName: 'joplot',
     authors: [{ name: 'joplot' }],
     alternates: {
       canonical: url,
-      languages: {
-        en: 'https://joplot.com/en',
-        'zh-CN': 'https://joplot.com/zh',
-        ja: 'https://joplot.com/ja',
-        'x-default': 'https://joplot.com/',
-      },
+      languages: canonicalLanguages,
     },
     openGraph: {
       type: 'website',
@@ -93,5 +103,30 @@ export function getLanguageMetadata(language: SupportedLanguage): Metadata {
       'theme-color': '#155eef',
       'apple-mobile-web-app-title': 'joplot',
     },
+  }
+}
+
+export function getSoftwareApplicationJsonLd() {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebApplication',
+    name: 'joplot',
+    alternateName: 'joplot CSV plot tool',
+    url: canonicalLanguages.en,
+    applicationCategory: ['DataVisualizationApplication', 'BusinessApplication'],
+    operatingSystem: 'Web',
+    description: 'joplot is a free online CSV plot tool for turning CSV and Excel files into clean charts in the browser.',
+    offers: {
+      '@type': 'Offer',
+      price: '0',
+      priceCurrency: 'USD',
+    },
+    featureList: [
+      'Plot CSV files online',
+      'Import CSV and Excel files',
+      'Generate charts without signup',
+      'Filter and compare multiple datasets',
+      'Export chart images',
+    ],
   }
 }

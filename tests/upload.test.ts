@@ -125,7 +125,11 @@ test('getUploadCopy exposes localized upload UI labels for supported formats', (
 })
 
 test('getUploadCopy provides hero and sample copy for english growth homepage', () => {
-  assert.equal(getUploadCopy('en').heroTitle, 'Drop in a CSV and get a chart instantly')
+  assert.equal(getUploadCopy('en').heroTitle, 'Plot CSV files online in seconds')
+  assert.equal(
+    getUploadCopy('en').heroSubtitle,
+    'joplot is a free CSV plot tool for turning CSV or Excel files into clean charts without signup.',
+  )
   assert.equal(getUploadCopy('en').sampleButton, 'Open sample data')
   assert.equal(getUploadCopy('en').sampleTitle, 'Sample data')
 })
