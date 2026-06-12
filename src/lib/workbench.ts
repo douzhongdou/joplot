@@ -108,6 +108,17 @@ function listPreferredYColumns(dataset: CsvData, xColumn: string) {
   return [...nonXColumns, ...xColumnFallback]
 }
 
+function stripFileExtension(fileName: string) {
+  const trimmed = fileName.trim()
+  const lastDotIndex = trimmed.lastIndexOf('.')
+
+  if (lastDotIndex <= 0) {
+    return trimmed
+  }
+
+  return trimmed.slice(0, lastDotIndex)
+}
+
 export function listAvailableSeriesYColumns(
   card: Pick<ChartCard, 'xColumn' | 'series'>,
   dataset: CsvData,
@@ -126,8 +137,45 @@ export function listAvailableSeriesYColumns(
     .filter((column) => !usedBindings.has(buildSeriesBindingKey(dataset.id, column)!))
 }
 
-function getSeriesLabel(dataset: CsvData, fallback: string) {
-  return dataset.fileName || fallback
+function getDatasetDisplayName(dataset: CsvData, fallback: string) {
+  return stripFileExtension(dataset.fileName) || dataset.fileName || fallback
+}
+
+function getSeriesLabel(dataset: CsvData, yColumn: string | null, fallback: string) {
+  const datasetName = getDatasetDisplayName(dataset, fallback)
+
+  return yColumn ? `${datasetName} - ${yColumn}` : datasetName
+}
+
+function isLegacyDefaultSeriesLabel(label: string, dataset: CsvData, fallback: string) {
+  return label === dataset.fileName || label === getDatasetDisplayName(dataset, fallback)
+}
+
+export function resolveSeriesLabel(
+  series: Pick<ChartSeries, 'label' | 'yColumn'>,
+  currentDataset: CsvData | undefined,
+  nextDataset: CsvData,
+  nextYColumn: string | null,
+  fallback = '数据系列',
+) {
+  if (!series.label) {
+    return getSeriesLabel(nextDataset, nextYColumn, fallback)
+  }
+
+  if (!currentDataset) {
+    return series.label
+  }
+
+  const currentDefaultLabel = getSeriesLabel(currentDataset, series.yColumn, fallback)
+
+  if (
+    series.label === currentDefaultLabel
+    || isLegacyDefaultSeriesLabel(series.label, currentDataset, fallback)
+  ) {
+    return getSeriesLabel(nextDataset, nextYColumn, fallback)
+  }
+
+  return series.label
 }
 
 function buildDatasetMap(datasets: CsvData[]) {
@@ -261,11 +309,15 @@ export function createCardSeries(
   xColumn: string,
   overrides: Partial<ChartSeries> = {},
 ): ChartSeries {
+  const yColumn = overrides.yColumn !== undefined
+    ? overrides.yColumn
+    : getDefaultYColumn(dataset, xColumn)
+
   return {
     id: makeSeriesId(dataset.id),
     datasetId: dataset.id,
-    label: getSeriesLabel(dataset, '数据系列'),
-    yColumn: getDefaultYColumn(dataset, xColumn),
+    label: overrides.label ?? getSeriesLabel(dataset, yColumn, '数据系列'),
+    yColumn,
     color: getChartColor(0),
     ...overrides,
   }
@@ -650,13 +702,18 @@ export function sanitizeCardsForDatasets(
 
         seenBindings.add(bindingKey)
 
+        const fallbackLabel = `数据系列 ${seriesIndex + 1}`
+        const defaultLabel = getSeriesLabel(dataset, yColumn, fallbackLabel)
+        const shouldUseDefaultLabel =
+          !series.label || isLegacyDefaultSeriesLabel(series.label, dataset, fallbackLabel)
+
         return {
           ...createCardSeries(dataset, xColumn, {
             color: getChartColor(seriesIndex),
           }),
           ...series,
           yColumn,
-          label: series.label || getSeriesLabel(dataset, `数据系列 ${seriesIndex + 1}`),
+          label: shouldUseDefaultLabel ? defaultLabel : series.label,
           color: isHexChartColor(series.color) ? series.color : getChartColor(seriesIndex),
         }
       })
