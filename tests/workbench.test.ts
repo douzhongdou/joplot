@@ -12,6 +12,7 @@ import {
   createDefaultCard,
   listAvailableSeriesYColumns,
   moveCardToLayout,
+  resolveSeriesLabel,
   sampleRows,
   sanitizeCardsForDatasets,
   summarizeNumericColumn,
@@ -87,6 +88,7 @@ test('createDefaultCard uses first column as x and creates a default series from
   assert.equal(defaultCard.series.length, 1)
   assert.equal(defaultCard.series[0].datasetId, fallbackDataset.id)
   assert.equal(defaultCard.series[0].yColumn, 'amount')
+  assert.equal(defaultCard.series[0].label, 'fallback - amount')
   assert.deepEqual(defaultCard.layout, { x: 0, y: 0, w: 12, h: 8 })
 })
 
@@ -107,6 +109,22 @@ test('sanitizeCardsForDatasets keeps legacy cards in raw mode and adds empty axi
   assert.deepEqual(sanitized.yRange, { min: '', max: '' })
 })
 
+test('sanitizeCardsForDatasets upgrades legacy filename-only default series labels', () => {
+  const dataset = createDataset()
+  const legacyCard = createDefaultCard(dataset)
+  const legacyWithOldDefaultLabel: ChartCard = {
+    ...legacyCard,
+    series: legacyCard.series.map((series) => ({
+      ...series,
+      label: dataset.fileName,
+    })),
+  }
+
+  const [sanitized] = sanitizeCardsForDatasets([legacyWithOldDefaultLabel], [dataset], dataset.id)
+
+  assert.equal(sanitized.series[0].label, 'primary - value')
+})
+
 test('appendCardSeries adds a compatible dataset as a new series on the same chart', () => {
   const primary = createDataset()
   const secondary = createSecondaryDataset()
@@ -117,6 +135,7 @@ test('appendCardSeries adds a compatible dataset as a new series on the same cha
   assert.equal(nextCard.series.length, 2)
   assert.equal(nextCard.series[1].datasetId, secondary.id)
   assert.equal(nextCard.series[1].yColumn, 'temperature')
+  assert.equal(nextCard.series[1].label, 'secondary - temperature')
 })
 
 test('appendCardSeries uses the next available numeric column instead of duplicating the same dataset field', () => {
@@ -128,6 +147,36 @@ test('appendCardSeries uses the next available numeric column instead of duplica
   assert.equal(nextCard.series.length, 2)
   assert.equal(nextCard.series[1].datasetId, primary.id)
   assert.equal(nextCard.series[1].yColumn, 'score')
+  assert.equal(nextCard.series[1].label, 'primary - score')
+})
+
+test('resolveSeriesLabel refreshes generated labels when the dataset field changes', () => {
+  const primary = createDataset()
+  const secondary = createSecondaryDataset()
+  const defaultCard = createDefaultCard(primary)
+  const [series] = defaultCard.series
+
+  assert.equal(
+    resolveSeriesLabel(series, primary, primary, 'score'),
+    'primary - score',
+  )
+  assert.equal(
+    resolveSeriesLabel(series, primary, secondary, 'temperature'),
+    'secondary - temperature',
+  )
+})
+
+test('resolveSeriesLabel preserves manually edited labels', () => {
+  const primary = createDataset()
+  const series = {
+    ...createDefaultCard(primary).series[0],
+    label: 'CPU 温度',
+  }
+
+  assert.equal(
+    resolveSeriesLabel(series, primary, primary, 'score'),
+    'CPU 温度',
+  )
 })
 
 test('appendCardSeries refuses to add a duplicate dataset field when no unique numeric column remains', () => {

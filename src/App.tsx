@@ -38,6 +38,7 @@ import {
   createAutoSeriesForDatasets,
   findAvailableSeriesYColumn,
   moveCardToLayout,
+  resolveSeriesLabel,
   sanitizeCardsForDatasets,
 } from './lib/workbench'
 import { getChartColor } from './lib/theme'
@@ -595,11 +596,19 @@ export default function App() {
             return series
           }
 
+          const resolvedYColumn = nextDataset ? (nextYColumn ?? series.yColumn) : (patch.yColumn ?? series.yColumn)
+          const currentDataset = datasetsById[series.datasetId]
+          const resolvedLabel = patch.label ?? (
+            nextDataset
+              ? resolveSeriesLabel(series, currentDataset, nextDataset, resolvedYColumn)
+              : series.label
+          )
+
           return {
             ...series,
             ...patch,
-            label: patch.datasetId && nextDataset ? nextDataset.fileName : (patch.label ?? series.label),
-            yColumn: nextDataset ? (nextYColumn ?? series.yColumn) : (patch.yColumn ?? series.yColumn),
+            label: resolvedLabel,
+            yColumn: resolvedYColumn,
           }
         }),
       }
