@@ -76,6 +76,7 @@ export function CardInspector({
     { value: 'area', label: t('chartKinds.area') },
     { value: 'scatter', label: t('chartKinds.scatter') },
     { value: 'bar', label: t('chartKinds.bar') },
+    { value: 'pie', label: t('chartKinds.pie') },
     { value: 'radar', label: t('chartKinds.radar') },
     { value: 'heatmap', label: t('chartKinds.heatmap') },
     { value: 'stats', label: t('chartKinds.stats') },
@@ -299,7 +300,10 @@ export function CardInspector({
                   <SelectMenu
                     value={card.kind}
                     options={kindOptions}
-                    onChange={(value) => onChangeCard({ kind: value })}
+                    onChange={(value) => onChangeCard({
+                      kind: value,
+                      ...(value === 'pie' ? { showLegend: false } : {}),
+                    })}
                     buttonClassName="shadow-none"
                   />
                 </label>
@@ -672,19 +676,24 @@ export function CardInspector({
                   label={t('inspector.legend')}
                   onChange={(checked) => onChangeCard({ showLegend: checked })}
                 />
-                <Switch
-                  checked={card.showGrid}
-                  label={t('inspector.gridLines')}
-                  onChange={(checked) => onChangeCard({ showGrid: checked })}
-                />
-                <Switch
-                  checked={card.showAxes}
-                  label={t('inspector.axes')}
-                  onChange={(checked) => onChangeCard({ showAxes: checked })}
-                />
+                {card.kind !== 'pie' && (
+                  <>
+                    <Switch
+                      checked={card.showGrid}
+                      label={t('inspector.gridLines')}
+                      onChange={(checked) => onChangeCard({ showGrid: checked })}
+                    />
+                    <Switch
+                      checked={card.showAxes}
+                      label={t('inspector.axes')}
+                      onChange={(checked) => onChangeCard({ showAxes: checked })}
+                    />
+                  </>
+                )}
               </div>
             </section>
 
+            {card.kind !== 'pie' && (
             <section className="py-6">
               <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.axisRangeSectionTitle')}</div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -733,6 +742,7 @@ export function CardInspector({
                 </label>
               </div>
             </section>
+            )}
           </>
         )}
       </div>

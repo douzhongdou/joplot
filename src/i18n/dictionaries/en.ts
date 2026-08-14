@@ -21,6 +21,7 @@ export const en = {
     line: 'Line Chart',
     scatter: 'Scatter Plot',
     bar: 'Bar Chart',
+    pie: 'Pie Chart',
     stats: 'Stats Card',
     area: 'Area Chart',
     radar: 'Radar Chart',

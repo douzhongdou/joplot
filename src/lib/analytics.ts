@@ -7,7 +7,7 @@ export type TrackingLanguage = (typeof TRACKING_LANGUAGES)[number]
 export const TRACKING_INPUT_METHODS = ['drag_drop', 'file_picker', 'paste', 'demo', 'unknown'] as const
 export type TrackingInputMethod = (typeof TRACKING_INPUT_METHODS)[number]
 
-export const TRACKING_CHART_TYPES = ['line', 'scatter', 'bar', 'stats', 'area', 'radar', 'heatmap', 'unknown'] as const
+export const TRACKING_CHART_TYPES = ['line', 'scatter', 'bar', 'pie', 'stats', 'area', 'radar', 'heatmap', 'unknown'] as const
 export type TrackingChartType = (typeof TRACKING_CHART_TYPES)[number]
 
 export const PARSE_FAIL_REASONS = ['invalid_format', 'empty_file', 'too_large', 'encoding_error', 'parse_error', 'unknown'] as const

@@ -21,6 +21,7 @@ export const jaJP = {
     line: '折れ線グラフ',
     scatter: '散布図',
     bar: '棒グラフ',
+    pie: '円グラフ',
     stats: '統計カード',
     area: 'エリアチャート',
     radar: 'レーダーチャート',

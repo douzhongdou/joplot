@@ -23,8 +23,9 @@ test('mapChartKindToTrackingType keeps supported chart kinds and falls back to u
   assert.equal(mapChartKindToTrackingType('line'), 'line')
   assert.equal(mapChartKindToTrackingType('radar'), 'radar')
   assert.equal(mapChartKindToTrackingType('heatmap'), 'heatmap')
+  assert.equal(mapChartKindToTrackingType('pie'), 'pie')
   assert.equal(mapChartKindToTrackingType('stats'), 'stats')
-  assert.equal(mapChartKindToTrackingType('pie'), 'unknown')
+  assert.equal(mapChartKindToTrackingType('unsupported'), 'unknown')
 })
 
 test('mapParseErrorToReason classifies known parser failures conservatively', () => {

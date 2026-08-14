@@ -1,4 +1,4 @@
-export type ChartKind = 'line' | 'scatter' | 'bar' | 'stats' | 'area' | 'radar' | 'heatmap'
+export type ChartKind = 'line' | 'scatter' | 'bar' | 'pie' | 'stats' | 'area' | 'radar' | 'heatmap'
 export type FilterOperator = 'contains' | 'equals' | 'gt' | 'lt' | 'between'
 export type FilterJoinOperator = 'and' | 'or'
 export type DrawMode = 'lines' | 'spline' | 'lines+markers' | 'spline+markers'

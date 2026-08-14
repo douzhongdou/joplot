@@ -21,6 +21,7 @@ export const zhCN = {
     line: '折线图',
     scatter: '散点图',
     bar: '柱状图',
+    pie: '饼图',
     stats: '统计卡',
     area: '面积图',
     radar: '雷达图',

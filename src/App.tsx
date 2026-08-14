@@ -241,8 +241,16 @@ export default function App() {
         return t('chartKinds.scatter')
       case 'bar':
         return t('chartKinds.bar')
+      case 'pie':
+        return t('chartKinds.pie')
       case 'stats':
         return t('chartKinds.stats')
+      case 'area':
+        return t('chartKinds.area')
+      case 'radar':
+        return t('chartKinds.radar')
+      case 'heatmap':
+        return t('chartKinds.heatmap')
       default:
         return t('chartKinds.fallback')
     }
