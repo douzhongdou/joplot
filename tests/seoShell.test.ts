@@ -7,9 +7,10 @@ import { getLanguageMetadata, getSoftwareApplicationJsonLd } from '../src/lib/si
 test('language metadata stays indexable for every public locale', () => {
   for (const language of ['en', 'zh-CN', 'ja-JP'] as const) {
     const metadata = getLanguageMetadata(language)
+    const robots = typeof metadata.robots === 'string' ? undefined : metadata.robots
 
-    assert.equal(metadata.robots?.index, true)
-    assert.equal(metadata.robots?.follow, true)
+    assert.equal(robots?.index, true)
+    assert.equal(robots?.follow, true)
     assert.equal(metadata.alternates?.languages?.en, 'https://joplot.com/en')
     assert.equal(metadata.alternates?.languages?.['zh-CN'], 'https://joplot.com/zh')
     assert.equal(metadata.alternates?.languages?.ja, 'https://joplot.com/ja')
