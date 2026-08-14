@@ -42,6 +42,14 @@ export const zhCN = {
     overlayBadge: 'CSV 上传',
     overlayTitle: '释放以上传一个或多个 CSV 文件',
   },
+  persistence: {
+    storageWarning: '数据量已超出浏览器本地存储上限，刷新页面后本次导入的数据将无法恢复，建议先备份原始文件。',
+  },
+  errorBoundary: {
+    title: '页面渲染出现了问题',
+    description: '可能是某些数据触发了意外情况。刷新页面即可恢复到最近一次保存的工作台状态。',
+    reload: '刷新页面',
+  },
   workbench: {
     addComponent: '添加组件',
     filters: '筛选',

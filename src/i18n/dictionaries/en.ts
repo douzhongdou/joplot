@@ -42,6 +42,14 @@ export const en = {
     overlayBadge: 'Data Upload',
     overlayTitle: 'Drop to upload one or more CSV or Excel files',
   },
+  persistence: {
+    storageWarning: 'The data exceeds the browser storage limit. Imported data will be lost after a page refresh, so keep a backup of the original files.',
+  },
+  errorBoundary: {
+    title: 'Something went wrong',
+    description: 'Some data may have triggered an unexpected error. Reload the page to restore your last saved workspace.',
+    reload: 'Reload page',
+  },
   workbench: {
     addComponent: 'Add component',
     filters: 'Filters',

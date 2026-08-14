@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   getInitialDatasetHydrationState,
   parseImportedFiles,
+  persistDatasetsToStorage,
   restoreDatasetsAfterHydration,
 } from '../src/hooks/useCsvData.ts'
 import { serializeDatasets } from '../src/lib/datasetPersistence.ts'
@@ -13,6 +14,7 @@ test('dataset hydration starts empty so server and first client render stay alig
   assert.deepEqual(getInitialDatasetHydrationState(), {
     datasets: [],
     hasRestored: false,
+    persistenceFailed: false,
   })
 })
 
@@ -51,4 +53,50 @@ test('parseImportedFiles keeps valid datasets and reports invalid uploads separa
   assert.equal(result.parsed[0].fileName, 'good.csv')
   assert.equal(result.failures.length, 1)
   assert.equal(result.failures[0].file.name, 'bad.csv')
+})
+
+function createStorageStub(overrides: Partial<Pick<Storage, 'setItem' | 'removeItem'>> = {}) {
+  const writes = new Map<string, string>()
+  const removals: string[] = []
+
+  return {
+    writes,
+    removals,
+    setItem: overrides.setItem ?? ((key: string, value: string) => { writes.set(key, value) }),
+    removeItem: overrides.removeItem ?? ((key: string) => { removals.push(key) }),
+  }
+}
+
+test('persistDatasetsToStorage writes the serialized payload and reports success', () => {
+  const dataset = buildDataset(['time', 'value'], [{ time: 'a', value: '1' }], 'demo.csv')
+  const storage = createStorageStub()
+
+  const persisted = persistDatasetsToStorage(storage, [dataset])
+
+  assert.equal(persisted, true)
+  assert.deepEqual([...storage.writes.keys()], ['csv-workbench-datasets'])
+  assert.equal(storage.writes.get('csv-workbench-datasets'), serializeDatasets([dataset]))
+})
+
+test('persistDatasetsToStorage clears the storage key when the last dataset is removed', () => {
+  const storage = createStorageStub()
+
+  const persisted = persistDatasetsToStorage(storage, [])
+
+  assert.equal(persisted, true)
+  assert.deepEqual(storage.removals, ['csv-workbench-datasets'])
+  assert.equal(storage.writes.size, 0)
+})
+
+test('persistDatasetsToStorage reports failure when the storage quota is exceeded', () => {
+  const dataset = buildDataset(['time', 'value'], [{ time: 'a', value: '1' }], 'demo.csv')
+  const storage = createStorageStub({
+    setItem: () => {
+      throw new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+    },
+  })
+
+  const persisted = persistDatasetsToStorage(storage, [dataset])
+
+  assert.equal(persisted, false)
 })

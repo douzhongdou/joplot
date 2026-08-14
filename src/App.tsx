@@ -183,7 +183,7 @@ function normalizeWorkspaceFilters(persisted: PersistedState, datasets: CsvData[
 
 export default function App() {
   const { t, language } = useI18n()
-  const { datasets, parseFiles, resetDatasets, hasRestoredDatasets } = useCsvData()
+  const { datasets, parseFiles, resetDatasets, hasRestoredDatasets, persistenceFailed } = useCsvData()
   const [cards, setCards] = useState<ChartCardConfig[]>([])
   const [workspaceFilters, setWorkspaceFilters] = useState<FilterRule[]>([])
   const [filterJoinOperator, setFilterJoinOperator] = useState<FilterJoinOperator>('and')
@@ -692,6 +692,15 @@ export default function App() {
         : 'grid min-h-0 grid-cols-1'}
       >
         <section className={`min-h-0 min-w-0 overflow-auto bg-base-100 ${showMobileBottomNav ? 'pb-16' : ''} ${showMobileInspectorTrigger && showMobileBottomNav ? 'pb-24' : ''}`}>
+          {hasDatasets && persistenceFailed && (
+            <div
+              role="status"
+              className="border-b border-warning/40 bg-warning/10 px-4 py-2.5 text-sm text-base-content sm:px-6"
+            >
+              {t('persistence.storageWarning')}
+            </div>
+          )}
+
           {viewMode === 'data' && hasDatasets && (
             <DataView
               datasets={datasets}

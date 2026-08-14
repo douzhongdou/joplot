@@ -42,6 +42,14 @@ export const jaJP = {
     overlayBadge: 'CSV アップロード',
     overlayTitle: 'ドロップして 1 件以上の CSV ファイルをアップロード',
   },
+  persistence: {
+    storageWarning: 'データ量がブラウザーの保存上限を超えました。ページを更新すると今回取り込んだデータは失われるため、元ファイルのバックアップをおすすめします。',
+  },
+  errorBoundary: {
+    title: '問題が発生しました',
+    description: '一部のデータが予期しないエラーを引き起こした可能性があります。ページを更新すると、最後に保存したワークスペースの状態に戻ります。',
+    reload: 'ページを更新',
+  },
   workbench: {
     addComponent: 'コンポーネントを追加',
     filters: 'フィルター',
