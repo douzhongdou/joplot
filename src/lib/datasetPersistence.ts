@@ -64,3 +64,28 @@ export function deserializeDatasets(serialized: string | null | undefined): CsvD
     return []
   }
 }
+
+/**
+ * Merges one dataset into the persisted workbench list, de-duplicating its id
+ * when needed. Returns the serialized list plus the id actually assigned.
+ */
+export function appendDatasetToSerialized(
+  existing: string | null | undefined,
+  dataset: CsvData,
+): { serialized: string; id: string } {
+  const current = deserializeDatasets(existing ?? null)
+  const takenIds = new Set(current.map((item) => item.id))
+
+  let id = dataset.id
+  let suffix = 2
+
+  while (takenIds.has(id)) {
+    id = `${dataset.id}-${suffix}`
+    suffix += 1
+  }
+
+  return {
+    serialized: serializeDatasets([...current, { ...dataset, id }]),
+    id,
+  }
+}

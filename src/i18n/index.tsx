@@ -2,9 +2,9 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
-  getLanguagePath,
   LANGUAGE_HTML_LANG,
   LANGUAGE_STORAGE_KEY,
+  replaceRouteLanguage,
   resolveInitialLanguage,
   type SupportedLanguage,
 } from './config'
@@ -81,8 +81,8 @@ export function I18nProvider({
         if (typeof window !== 'undefined') {
           window.localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage)
 
-          const targetPath = getLanguagePath(nextLanguage)
           const currentPath = window.location.pathname.replace(/\/+$/, '') || '/'
+          const targetPath = replaceRouteLanguage(currentPath, nextLanguage)
 
           if (currentPath !== targetPath) {
             window.location.assign(targetPath)
@@ -123,6 +123,7 @@ export function useI18n() {
 }
 
 export {
+  getFunctionStudioPath,
   getLanguagePath,
   getRouteLanguage,
   getHtmlLang,
@@ -131,6 +132,7 @@ export {
   LANGUAGE_PATHS,
   ROUTE_LANGUAGES,
   SUPPORTED_LANGUAGES,
+  replaceRouteLanguage,
   resolveLanguageFromPath,
   resolveInitialLanguage,
   normalizeLanguage,

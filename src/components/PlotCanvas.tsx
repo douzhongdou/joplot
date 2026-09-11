@@ -8,7 +8,7 @@ import type { ChartKind } from '../types'
 
 export type CopyImageResult = import('../lib/clipboard').ClipboardCopyMode | 'downloaded'
 
-interface PlotCanvasApi {
+export interface PlotCanvasApi {
   autorange: () => Promise<void>
   copyImage: () => Promise<CopyImageResult | null>
   downloadImage: () => Promise<void>

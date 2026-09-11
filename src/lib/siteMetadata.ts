@@ -106,6 +106,62 @@ export function getLanguageMetadata(language: SupportedLanguage): Metadata {
   }
 }
 
+const functionStudioContentByLanguage: Record<SupportedLanguage, { title: string; description: string }> = {
+  en: {
+    title: 'joplot | Free online function plotter',
+    description: 'Graph y = f(x) formulas instantly in the browser. Overlay curves, tune parameters with sliders, and send sampled points to the CSV workbench.',
+  },
+  'zh-CN': {
+    title: 'joplot | 在线函数画板',
+    description: '输入 y = f(x) 公式即刻出图，支持多曲线叠加、参数滑块和渐近线断线，并可把采样点发送到 CSV 工作台继续分析。',
+  },
+  'ja-JP': {
+    title: 'joplot | オンライン関数プロッター',
+    description: 'y = f(x) の数式を入力するだけでグラフを描画。複数曲線の重ね合わせ、スライダーでのパラメータ調整、CSV ワークベンチへの送信に対応。',
+  },
+}
+
+const functionStudioCanonicalLanguages = {
+  en: `${siteUrl}/en/function`,
+  'zh-CN': `${siteUrl}/zh/function`,
+  ja: `${siteUrl}/ja/function`,
+  'x-default': `${siteUrl}/en/function`,
+}
+
+export function getFunctionStudioMetadata(language: SupportedLanguage): Metadata {
+  const base = getLanguageMetadata(language)
+  const content = functionStudioContentByLanguage[language]
+  const url = `${siteUrl}${metadataByLanguage[language].path}/function`
+
+  return {
+    ...base,
+    title: content.title,
+    description: content.description,
+    keywords: [
+      'joplot',
+      'function plotter',
+      'graph a function online',
+      'plot equation online',
+      'y = f(x) grapher',
+    ],
+    alternates: {
+      canonical: url,
+      languages: functionStudioCanonicalLanguages,
+    },
+    openGraph: {
+      ...base.openGraph,
+      url,
+      title: content.title,
+      description: content.description,
+    },
+    twitter: {
+      ...base.twitter,
+      title: content.title,
+      description: content.description,
+    },
+  }
+}
+
 export function getSoftwareApplicationJsonLd() {
   return {
     '@context': 'https://schema.org',

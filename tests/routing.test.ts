@@ -15,3 +15,9 @@ test('resolveLocaleRedirect prioritizes zh over default', () => {
 test('resolveLocaleRedirect maps ja browsers to /ja', () => {
   assert.equal(resolveLocaleRedirect('ja-JP,ja;q=0.9,en;q=0.8'), '/ja')
 })
+
+test('resolveLocaleRedirect keeps the requested sub-path when redirecting', () => {
+  assert.equal(resolveLocaleRedirect('zh-CN', '/function'), '/zh/function')
+  assert.equal(resolveLocaleRedirect(null, '/function/'), '/en/function')
+  assert.equal(resolveLocaleRedirect('ja', '/'), '/ja')
+})

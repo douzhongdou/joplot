@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import robots from '../app/robots.ts'
 import sitemap from '../app/sitemap.ts'
-import { getLanguageMetadata, getSoftwareApplicationJsonLd } from '../src/lib/siteMetadata.ts'
+import { getFunctionStudioMetadata, getLanguageMetadata, getSoftwareApplicationJsonLd } from '../src/lib/siteMetadata.ts'
 
 test('language metadata stays indexable for every public locale', () => {
   for (const language of ['en', 'zh-CN', 'ja-JP'] as const) {
@@ -45,13 +45,16 @@ test('robots route allows crawling and points to the generated sitemap', () => {
 test('sitemap route includes only canonical indexable language pages', () => {
   const result = sitemap()
 
-  assert.equal(result.length, 3)
+  assert.equal(result.length, 6)
   assert.deepEqual(
     result.map((entry) => entry.url),
     [
       'https://joplot.com/en',
       'https://joplot.com/zh',
       'https://joplot.com/ja',
+      'https://joplot.com/en/function',
+      'https://joplot.com/zh/function',
+      'https://joplot.com/ja/function',
     ],
   )
 })
@@ -60,10 +63,26 @@ test('language sitemap entries publish hreflang alternates', () => {
   const entries = sitemap()
 
   for (const entry of entries) {
-    assert.equal(entry.alternates?.languages?.en, 'https://joplot.com/en')
-    assert.equal(entry.alternates?.languages?.['zh-CN'], 'https://joplot.com/zh')
-    assert.equal(entry.alternates?.languages?.ja, 'https://joplot.com/ja')
-    assert.equal(entry.alternates?.languages?.['x-default'], 'https://joplot.com/en')
+    const suffix = entry.url.endsWith('/function') ? '/function' : ''
+
+    assert.equal(entry.alternates?.languages?.en, `https://joplot.com/en${suffix}`)
+    assert.equal(entry.alternates?.languages?.['zh-CN'], `https://joplot.com/zh${suffix}`)
+    assert.equal(entry.alternates?.languages?.ja, `https://joplot.com/ja${suffix}`)
+    assert.equal(entry.alternates?.languages?.['x-default'], `https://joplot.com/en${suffix}`)
+  }
+})
+
+test('function studio metadata publishes its own canonical and hreflang set', () => {
+  for (const language of ['en', 'zh-CN', 'ja-JP'] as const) {
+    const metadata = getFunctionStudioMetadata(language)
+    const robots = typeof metadata.robots === 'string' ? undefined : metadata.robots
+
+    assert.equal(robots?.index, true)
+    assert.equal(metadata.alternates?.languages?.en, 'https://joplot.com/en/function')
+    assert.equal(metadata.alternates?.languages?.['zh-CN'], 'https://joplot.com/zh/function')
+    assert.equal(metadata.alternates?.languages?.ja, 'https://joplot.com/ja/function')
+    assert.match(String(metadata.alternates?.canonical), /\/function$/)
+    assert.notEqual(metadata.title, getLanguageMetadata(language).title)
   }
 })
 
