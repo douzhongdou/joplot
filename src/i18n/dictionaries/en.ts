@@ -241,7 +241,7 @@ export const en = {
       sigmoid: 'Sigmoid',
       sinc: 'Sinc',
       cubic: 'Cubic',
-      asymptote: 'Asymptotes',
+      tangent: 'Tangent',
       amplitude: 'Tunable amplitude',
     },
     sendToWorkbench: 'Send to workbench',

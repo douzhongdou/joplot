@@ -10,6 +10,6 @@ export const FUNCTION_EXAMPLES: FunctionExample[] = [
   { id: 'sigmoid', expression: '1 / (1 + exp(-x))' },
   { id: 'sinc', expression: 'sin(x) / x' },
   { id: 'cubic', expression: 'x^3 - 3x' },
-  { id: 'asymptote', expression: 'tan(x)' },
+  { id: 'tangent', expression: 'tan(x)' },
   { id: 'amplitude', expression: 'a * sin(b*x) * exp(-x/5)' },
 ]

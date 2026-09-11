@@ -241,7 +241,7 @@ export const jaJP = {
       sigmoid: 'シグモイド',
       sinc: 'sinc 関数',
       cubic: '三次多項式',
-      asymptote: '漸近線',
+      tangent: 'タンジェント',
       amplitude: '振幅の調整',
     },
     sendToWorkbench: 'ワークベンチへ送る',

@@ -241,7 +241,7 @@ export const zhCN = {
       sigmoid: 'S 形曲线',
       sinc: 'sinc 函数',
       cubic: '三次多项式',
-      asymptote: '渐近线',
+      tangent: '正切函数',
       amplitude: '可调振幅',
     },
     sendToWorkbench: '发送到工作台',

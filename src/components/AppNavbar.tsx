@@ -46,7 +46,6 @@ export function AppNavbar({
         <div className="h-7 overflow-hidden rounded-lg sm:h-9 sm:rounded-xl">
           <img src="/navbar-icon.webp" alt="joplot" className="block size-full object-contain" />
         </div>
-        <span className="hidden text-sm font-semibold text-base-content sm:inline sm:text-base">joplot</span>
 
         <nav className="ml-1 flex items-center gap-0.5 sm:ml-3" aria-label={t('nav.sectionsLabel')}>
           <Link
