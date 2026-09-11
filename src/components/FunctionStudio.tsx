@@ -29,6 +29,7 @@ import {
   type FunctionParamState,
 } from '../lib/functionStudioPersistence'
 import { getChartColor } from '../lib/theme'
+import { CHART_HOVERLABEL } from '../lib/tooltipStyle'
 import { buildDataset } from '../lib/workbench'
 
 const EXPRESSION_DEBOUNCE_MS = 120
@@ -281,6 +282,7 @@ export function FunctionStudio() {
     showlegend: showLegend,
     legend: { orientation: 'h', x: 0, y: -0.18, font: { size: 12 } },
     hovermode: 'x',
+    hoverlabel: CHART_HOVERLABEL,
     xaxis: {
       zeroline: true,
       zerolinewidth: 1.4,

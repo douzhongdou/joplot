@@ -19,6 +19,7 @@ import { track } from '../lib/track'
 import { buildChartDataRevision, summarizeNumericColumn } from '../lib/workbench'
 import { buildPieGrid, buildPieTraces, shouldShowPieLegend } from '../lib/pie'
 import { getChartColor, resolveThemeColor } from '../lib/theme'
+import { CHART_HOVERLABEL } from '../lib/tooltipStyle'
 import type { ChartCard as ChartCardConfig, CsvData, NormalizedRow } from '../types'
 import type { CopyImageResult } from './PlotCanvas'
 import { useI18n } from '../i18n'
@@ -356,12 +357,7 @@ export function ChartCard({
       showlegend: card.kind === 'pie'
         ? showPieLegend
         : card.showLegend && renderedSeriesCount > 1,
-      hoverlabel: {
-        bgcolor: '#ffffff',
-        bordercolor: '#e5e7eb',
-        font: { color: '#111827' },
-        pad: { t: 6, b: 6, l: 10, r: 10 },
-      },
+      hoverlabel: CHART_HOVERLABEL,
     }
 
     if (card.kind === 'pie') {
