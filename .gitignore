@@ -11,3 +11,5 @@ __pycache__
 .env.local
 .env.*.local
 tsconfig.tsbuildinfo
+.mimosa
+.zcode-shots
