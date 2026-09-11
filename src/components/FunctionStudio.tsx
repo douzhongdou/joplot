@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, Copy, Download, Eye, EyeOff, Maximize2, Plus, Send, Trash2 } from 'lucide-react'
+import { Eye, EyeOff, Plus, Send, Trash2 } from 'lucide-react'
 import type { Data, Layout } from 'plotly.js/dist/plotly.min.js'
 import { AppNavbar } from './AppNavbar'
 import { PlotCanvas, type PlotCanvasApi } from './PlotCanvas'
+import { PlotToolbar } from './PlotToolbar'
 import { DATASET_STORAGE_KEY } from '../hooks/useCsvData'
 import { getLanguagePath, useI18n } from '../i18n'
-import { appendDatasetToSerialized } from '../lib/datasetPersistence'
+import { appendDatasetToSerialized, writePendingChartDatasetIds } from '../lib/datasetPersistence'
 import { ExpressionError, parseExpression, type ParsedExpression } from '../lib/expression'
 import { FUNCTION_EXAMPLES, type FunctionExample } from '../lib/functionExamples'
 import {
@@ -28,7 +29,7 @@ import {
   type FunctionCurveState,
   type FunctionParamState,
 } from '../lib/functionStudioPersistence'
-import { getChartColor } from '../lib/theme'
+import { CHART_AXIS_FALLBACK, CHART_GRID_FALLBACK, getChartColor, resolveThemeColor } from '../lib/theme'
 import { CHART_HOVERLABEL } from '../lib/tooltipStyle'
 import { buildDataset } from '../lib/workbench'
 
@@ -40,8 +41,7 @@ const DEFAULT_PARAM: Omit<FunctionParamState, 'name'> = { value: 1, min: -5, max
 const sectionTitleClass = 'text-xs font-medium uppercase tracking-[0.12em] text-base-content/55'
 const inputClass = 'h-10 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition placeholder:text-base-content/40 focus:border-primary/35 focus:ring-2 focus:ring-primary/20'
 const compactInputClass = 'h-8 w-full min-w-0 rounded-lg border border-base-300 bg-base-100 px-2 text-xs text-base-content outline-none transition focus:border-primary/35 focus:ring-2 focus:ring-primary/20'
-const iconButtonClass = 'inline-grid size-8 shrink-0 place-items-center rounded-lg border-0 bg-transparent text-base-content/55 transition hover:text-primary disabled:pointer-events-none disabled:opacity-35'
-const toolbarButtonClass = 'inline-flex h-9 items-center justify-center gap-1.5 rounded-[var(--radius-box)] border border-base-300 bg-base-100 px-3 text-sm font-semibold text-base-content transition hover:border-primary/35 hover:text-primary disabled:pointer-events-none disabled:opacity-50'
+const iconButtonClass = 'inline-grid size-8 shrink-0 place-items-center rounded-lg border-0 bg-transparent text-base-content/55 transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 disabled:pointer-events-none disabled:opacity-35'
 const primaryButtonClass = 'inline-flex h-9 items-center justify-center gap-1.5 rounded-[var(--radius-box)] bg-primary px-3.5 text-sm font-semibold text-primary-content transition hover:brightness-105 disabled:pointer-events-none disabled:opacity-50'
 const chipClass = 'inline-flex h-8 items-center rounded-full border border-base-300 bg-base-100 px-3 text-xs font-medium text-base-content/80 transition hover:border-primary/40 hover:text-primary'
 
@@ -121,6 +121,7 @@ export function FunctionStudio() {
   const [params, setParams] = useState<FunctionParamState[]>([])
   const [rangeTick, setRangeTick] = useState(0)
   const [copyFeedback, setCopyFeedback] = useState<'idle' | 'copied' | 'downloaded'>('idle')
+  const [exportBusy, setExportBusy] = useState(false)
   const [sendFeedback, setSendFeedback] = useState<SendFeedback | null>(null)
 
   const domain = useMemo(() => resolveDomain(xMinText, xMaxText), [xMinText, xMaxText])
@@ -243,7 +244,7 @@ export function FunctionStudio() {
       name: curve.expression,
       line: { color: curve.color, width: 2.2 },
       connectgaps: false,
-      hovertemplate: `x = %{x:.4g}<br>y = %{y:.4g}<extra>${curve.expression}</extra>`,
+      hovertemplate: `%{y:.4g}<extra>${curve.expression}</extra>`,
     })),
     [sampledCurves],
   )
@@ -272,8 +273,8 @@ export function FunctionStudio() {
   const yaxis = useMemo(() => ({
     zeroline: true,
     zerolinewidth: 1.4,
-    zerolinecolor: 'rgba(17, 24, 39, 0.35)',
-    gridcolor: 'rgba(17, 24, 39, 0.08)',
+    zerolinecolor: resolveThemeColor('--chart-axis', CHART_AXIS_FALLBACK),
+    gridcolor: resolveThemeColor('--chart-grid', CHART_GRID_FALLBACK),
     ...(yRange ? { range: yRange } : {}),
   }), [yRange])
 
@@ -281,13 +282,13 @@ export function FunctionStudio() {
     margin: { l: 56, r: 20, t: 20, b: showLegend ? 76 : 48 },
     showlegend: showLegend,
     legend: { orientation: 'h', x: 0, y: -0.18, font: { size: 12 } },
-    hovermode: 'x',
+    hovermode: 'x unified',
     hoverlabel: CHART_HOVERLABEL,
     xaxis: {
       zeroline: true,
       zerolinewidth: 1.4,
-      zerolinecolor: 'rgba(17, 24, 39, 0.35)',
-      gridcolor: 'rgba(17, 24, 39, 0.08)',
+      zerolinecolor: resolveThemeColor('--chart-axis', CHART_AXIS_FALLBACK),
+      gridcolor: resolveThemeColor('--chart-grid', CHART_GRID_FALLBACK),
     },
     yaxis,
   }), [showLegend, yaxis])
@@ -363,13 +364,36 @@ export function FunctionStudio() {
     }))
   }
 
-  async function handleCopyImage() {
-    const result = await plotRef.current?.copyImage()
+  function handleAutorange() {
+    setYMinText('')
+    setYMaxText('')
+    setRangeTick((tick) => tick + 1)
+    void plotRef.current?.autorange()
+  }
 
-    if (result === 'downloaded') {
-      setCopyFeedback('downloaded')
-    } else if (result) {
-      setCopyFeedback('copied')
+  async function handleCopyImage() {
+    setExportBusy(true)
+
+    try {
+      const result = await plotRef.current?.copyImage()
+
+      if (result === 'downloaded') {
+        setCopyFeedback('downloaded')
+      } else if (result) {
+        setCopyFeedback('copied')
+      }
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
+  async function handleDownloadImage() {
+    setExportBusy(true)
+
+    try {
+      await plotRef.current?.downloadImage()
+    } finally {
+      setExportBusy(false)
     }
   }
 
@@ -381,13 +405,17 @@ export function FunctionStudio() {
 
     try {
       let serialized = window.localStorage.getItem(DATASET_STORAGE_KEY) ?? ''
+      const sentDatasetIds: string[] = []
 
       sampledCurves.forEach((curve) => {
         const dataset = buildDataset(['x', 'y'], sampledCurveToCsvRows(curve), curve.expression)
-        serialized = appendDatasetToSerialized(serialized, dataset).serialized
+        const result = appendDatasetToSerialized(serialized, dataset)
+        serialized = result.serialized
+        sentDatasetIds.push(result.id)
       })
 
       window.localStorage.setItem(DATASET_STORAGE_KEY, serialized)
+      writePendingChartDatasetIds(window.localStorage, sentDatasetIds)
       setSendFeedback({ kind: 'success', count: sampledCurves.length })
       window.setTimeout(() => {
         window.location.assign(getLanguagePath(language))
@@ -492,7 +520,7 @@ export function FunctionStudio() {
                           </button>
                           <button
                             type="button"
-                            className={iconButtonClass}
+                            className={iconButtonClass.replace('hover:text-primary', 'hover:text-error')}
                             onClick={() => removeCurve(curve.id)}
                             disabled={curves.length <= 1}
                             aria-label={t('functionStudio.removeCurve')}
@@ -581,6 +609,7 @@ export function FunctionStudio() {
                     value={samples}
                     onChange={(event) => setSamples(Number(event.target.value))}
                     className="w-full accent-primary"
+                    aria-label={t('functionStudio.samplesLabel')}
                   />
                 </label>
               </section>
@@ -676,44 +705,15 @@ export function FunctionStudio() {
 
           <section className="order-1 flex h-[52vh] min-h-[320px] flex-col lg:order-2 lg:h-auto lg:min-h-0">
             <div className="flex flex-wrap items-center gap-2 border-b border-base-300 bg-base-100 px-3 py-2 sm:px-4">
-              <button
-                type="button"
-                className={toolbarButtonClass}
-                onClick={() => {
-                  setYMinText('')
-                  setYMaxText('')
-                  setRangeTick((tick) => tick + 1)
-                }}
+              <PlotToolbar
+                labeled
+                busy={exportBusy}
+                copyState={copyFeedback}
                 disabled={sampledCurves.length === 0}
-                title={t('functionStudio.autorangeHint')}
-              >
-                <Maximize2 size={15} strokeWidth={2.1} />
-                <span className="hidden sm:inline">{t('chartCard.autorange')}</span>
-              </button>
-              <button
-                type="button"
-                className={toolbarButtonClass}
-                onClick={() => void handleCopyImage()}
-                disabled={sampledCurves.length === 0}
-              >
-                {copyFeedback === 'idle' ? <Copy size={15} strokeWidth={2.1} /> : <Check size={15} strokeWidth={2.1} />}
-                <span className="hidden sm:inline">
-                  {copyFeedback === 'copied'
-                    ? t('chartCard.copySuccess')
-                    : copyFeedback === 'downloaded'
-                      ? t('chartCard.copyDownloadedFallback')
-                      : t('chartCard.copyImage')}
-                </span>
-              </button>
-              <button
-                type="button"
-                className={toolbarButtonClass}
-                onClick={() => void plotRef.current?.downloadImage()}
-                disabled={sampledCurves.length === 0}
-              >
-                <Download size={15} strokeWidth={2.1} />
-                <span className="hidden sm:inline">{t('chartCard.downloadImage')}</span>
-              </button>
+                onAutorange={handleAutorange}
+                onCopyImage={() => void handleCopyImage()}
+                onDownloadImage={() => void handleDownloadImage()}
+              />
 
               <div className="ml-auto flex items-center gap-2">
                 {sendFeedback && (

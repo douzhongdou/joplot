@@ -9,8 +9,28 @@ function readCssVariable(name: string) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
+export const CHART_GRID_FALLBACK = 'rgba(15, 23, 42, 0.1)'
+export const CHART_AXIS_FALLBACK = 'rgba(15, 23, 42, 0.7)'
+
 export function resolveThemeColor(name: string, fallback: string) {
   return readCssVariable(name) || fallback
+}
+
+export function withAlpha(color: string, alpha: number): string {
+  const match = /^#(?:([0-9a-fA-F]{3})|([0-9a-fA-F]{6}))$/.exec(color.trim())
+
+  if (!match) {
+    return color
+  }
+
+  const hex = match[1]
+    ? match[1].split('').map((ch) => ch + ch).join('')
+    : match[2]
+  const red = parseInt(hex.slice(0, 2), 16)
+  const green = parseInt(hex.slice(2, 4), 16)
+  const blue = parseInt(hex.slice(4, 6), 16)
+
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`
 }
 
 function hslToHex(hue: number, saturation: number, lightness: number) {

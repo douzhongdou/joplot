@@ -37,7 +37,7 @@ type InspectorTab = 'base' | 'display'
 
 const fieldLabelClass = 'text-xs font-medium uppercase tracking-[0.12em] text-base-content/55'
 const inputClass = 'h-12 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-4 text-sm text-base-content outline-none transition placeholder:text-base-content/40 focus:border-primary/35 focus:ring-2 focus:ring-primary/20'
-const iconButtonClass = 'inline-grid size-10 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary focus-visible:outline-none focus-visible:ring-0'
+const iconButtonClass = 'inline-grid size-10 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20'
 
 const aggregationOptions: AggregationKind[] = [
   'sum',
@@ -248,15 +248,19 @@ export function CardInspector({
           <button type="button" className={iconButtonClass} onClick={onDuplicate} aria-label={t('inspector.duplicateCard')} title={t('inspector.duplicateCard')}>
             <Copy size={16} strokeWidth={2.1} />
           </button>
-          <button type="button" className={iconButtonClass} onClick={onRemove} aria-label={t('inspector.deleteCard')} title={t('inspector.deleteCard')}>
+          <button type="button" className={`${iconButtonClass} hover:text-error`} onClick={onRemove} aria-label={t('inspector.deleteCard')} title={t('inspector.deleteCard')}>
             <Trash2 size={16} strokeWidth={2.1} />
           </button>
         </div>
       </div>
 
-      <div className="flex items-center gap-5 border-b border-base-300 px-5 sm:px-6">
+      <div role="tablist" className="flex items-center gap-5 border-b border-base-300 px-5 sm:px-6">
         <button
           type="button"
+          role="tab"
+          id="inspector-tab-basic"
+          aria-selected={activeTab === 'base'}
+          aria-controls="inspector-panel-basic"
           className={`inline-flex h-14 items-center border-b-2 text-base font-semibold transition ${
             activeTab === 'base'
               ? 'border-primary text-primary'
@@ -268,6 +272,10 @@ export function CardInspector({
         </button>
         <button
           type="button"
+          role="tab"
+          id="inspector-tab-display"
+          aria-selected={activeTab === 'display'}
+          aria-controls="inspector-panel-display"
           className={`inline-flex h-14 items-center border-b-2 text-base font-semibold transition ${
             activeTab === 'display'
               ? 'border-primary text-primary'
@@ -281,7 +289,7 @@ export function CardInspector({
 
       <div className="px-5 pb-8 sm:px-6">
         {activeTab === 'base' && (
-          <>
+          <div role="tabpanel" id="inspector-panel-basic" aria-labelledby="inspector-tab-basic">
             <section className="border-b border-base-300 py-6">
               <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.baseSectionTitle')}</div>
               <div className="grid gap-4 sm:grid-cols-2">
@@ -383,6 +391,7 @@ export function CardInspector({
                             <button
                               key={dataset.id}
                               type="button"
+                              aria-pressed={selected}
                               className={`flex min-h-12 items-center justify-between rounded-[var(--radius-field)] border px-4 text-left text-sm transition ${
                                 selected
                                   ? 'border-primary/20 bg-primary/10 text-primary'
@@ -509,7 +518,7 @@ export function CardInspector({
                 {card.kind !== 'stats' && (
                   <button
                     type="button"
-                    className="inline-grid size-11 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-primary transition hover:bg-transparent hover:text-primary/80 focus-visible:outline-none focus-visible:ring-0"
+                    className="inline-grid size-11 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-primary transition hover:bg-transparent hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
                     onClick={() => onAddSeries(activeDatasetId ?? undefined)}
                     aria-label={t('inspector.addSeries')}
                     title={t('inspector.addSeries')}
@@ -553,14 +562,17 @@ export function CardInspector({
                             onClick={() => setOpenMenuSeriesId((value) => value === series.id ? null : series.id)}
                             aria-label={t('inspector.seriesMenu')}
                             title={t('inspector.seriesMenu')}
+                            aria-haspopup="menu"
+                            aria-expanded={openMenuSeriesId === series.id}
                           >
                             <MoreHorizontal size={16} strokeWidth={2.1} />
                           </button>
 
                           {openMenuSeriesId === series.id && (
-                            <div className="absolute right-0 top-[calc(100%+0.5rem)] z-20 grid min-w-36 gap-1 rounded-[calc(var(--radius-box)+0.25rem)] border border-base-300 bg-base-100 p-2">
+                            <div role="menu" className="absolute right-0 top-[calc(100%+0.5rem)] z-20 grid min-w-36 gap-1 rounded-[calc(var(--radius-box)+0.25rem)] border border-base-300 bg-base-100 p-2">
                               <button
                                 type="button"
+                                role="menuitem"
                                 className="inline-flex h-10 items-center rounded-[var(--radius-field)] px-3 text-left text-sm text-base-content transition hover:bg-base-200"
                                 onClick={() => {
                                   setActiveTab('display')
@@ -572,6 +584,7 @@ export function CardInspector({
                               {card.series.length > 1 && (
                                 <button
                                   type="button"
+                                  role="menuitem"
                                   className="inline-flex h-10 items-center rounded-[var(--radius-field)] px-3 text-left text-sm text-error transition hover:bg-error/10"
                                   onClick={() => {
                                     onRemoveSeries(series.id)
@@ -617,11 +630,11 @@ export function CardInspector({
               </div>
             </section>
             )}
-          </>
+          </div>
         )}
 
         {activeTab === 'display' && (
-          <>
+          <div role="tabpanel" id="inspector-panel-display" aria-labelledby="inspector-tab-display">
             <section className="border-b border-base-300 py-6">
               <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.seriesDisplaySectionTitle')}</div>
               <div className="grid">
@@ -722,7 +735,7 @@ export function CardInspector({
                 <label className="grid gap-2">
                   <span className={fieldLabelClass}>{t('inspector.yRangeMin')}</span>
                   <input
-                    type="number"
+                    type="text"
                     value={card.yRange.min}
                     placeholder={t('inspector.autoRangePlaceholder')}
                     onChange={(event) => onChangeCard({ yRange: { ...card.yRange, min: event.target.value } })}
@@ -733,7 +746,7 @@ export function CardInspector({
                 <label className="grid gap-2">
                   <span className={fieldLabelClass}>{t('inspector.yRangeMax')}</span>
                   <input
-                    type="number"
+                    type="text"
                     value={card.yRange.max}
                     placeholder={t('inspector.autoRangePlaceholder')}
                     onChange={(event) => onChangeCard({ yRange: { ...card.yRange, max: event.target.value } })}
@@ -743,7 +756,7 @@ export function CardInspector({
               </div>
             </section>
             )}
-          </>
+          </div>
         )}
       </div>
     </section>

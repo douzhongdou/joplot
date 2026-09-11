@@ -21,6 +21,7 @@ import {
   type TrackingInputMethod,
 } from './lib/analytics'
 import { track } from './lib/track'
+import { takePendingChartDatasetIds } from './lib/datasetPersistence'
 import { getUploadCopy, pickCsvFiles } from './lib/upload'
 import {
   isMobileViewport,
@@ -303,6 +304,9 @@ export default function App() {
 
     if (previousCount === 0) {
       const persistedRaw = window.localStorage.getItem(STORAGE_KEY)
+      const pendingDatasets = takePendingChartDatasetIds(window.localStorage)
+        .map((id) => datasetsById[id])
+        .filter((dataset): dataset is CsvData => Boolean(dataset))
 
       if (!persistedRaw) {
         const defaultCard = createAutoBoundCard(datasets, datasets[0], 'line', t('cards.defaultLineTitle'))
@@ -326,11 +330,21 @@ export default function App() {
           : [createAutoBoundCard(datasets, datasets[0], 'line', t('cards.defaultLineTitle'))]
         const restoredFilters = normalizeWorkspaceFilters(persisted, datasets)
 
-        setCards(restoredCards)
+        const sentCard = pendingDatasets.length > 0
+          ? createAutoBoundCard(
+              pendingDatasets,
+              pendingDatasets[0],
+              'line',
+              pendingDatasets.length === 1 ? pendingDatasets[0].fileName : t('cards.defaultLineTitle'),
+            )
+          : null
+        const nextCards = sentCard ? appendCardWithLayout(restoredCards, sentCard) : restoredCards
+
+        setCards(nextCards)
         setWorkspaceFilters(restoredFilters)
         setFilterJoinOperator(persisted.filterJoinOperator ?? 'and')
-        setActiveDatasetId(restoredActiveDatasetId)
-        setSelectedCardId(restoredCards[0]?.id ?? null)
+        setActiveDatasetId(pendingDatasets[0]?.id ?? restoredActiveDatasetId)
+        setSelectedCardId(sentCard?.id ?? nextCards[0]?.id ?? null)
         setRecentDatasetIds(datasets.map((dataset) => dataset.id))
       } catch {
         const defaultCard = createAutoBoundCard(datasets, datasets[0], 'line', t('cards.defaultLineTitle'))

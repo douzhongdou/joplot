@@ -103,7 +103,7 @@ export function AppNavbar({
           placeholder={t('language.label')}
           triggerAriaLabel={t('language.label')}
           align="right"
-          buttonClassName="h-8 w-8 justify-center rounded-lg border-0 bg-transparent px-0 shadow-none hover:bg-transparent focus-visible:ring-0 sm:h-9 sm:w-9 sm:rounded-xl"
+          buttonClassName="h-8 w-8 justify-center rounded-lg border-0 bg-transparent px-0 shadow-none hover:bg-transparent focus-visible:ring-2 focus-visible:ring-primary/20 sm:h-9 sm:w-9 sm:rounded-xl"
           menuClassName="min-w-[9rem]"
           renderTrigger={(_, open) => (
             <Languages
