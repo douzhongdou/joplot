@@ -1,5 +1,6 @@
 const CHART_FALLBACKS = ['#155eef', '#dd6b20', '#0f766e', '#b93815', '#3b3f98', '#7a3e9d']
 const generatedChartColors = [...CHART_FALLBACKS]
+const resolvedColors = new Map<string, string>()
 
 function readCssVariable(name: string) {
   if (typeof window === 'undefined') {
@@ -13,7 +14,36 @@ export const CHART_GRID_FALLBACK = 'rgba(15, 23, 42, 0.1)'
 export const CHART_AXIS_FALLBACK = 'rgba(15, 23, 42, 0.7)'
 
 export function resolveThemeColor(name: string, fallback: string) {
-  return readCssVariable(name) || fallback
+  const color = readCssVariable(name)
+  if (!color) return fallback
+
+  const cached = resolvedColors.get(color)
+  if (cached) return cached
+
+  // Custom properties retain color-mix()/oklch() expressions. Let the browser
+  // render into sRGB so Plotly receives a color its parser can understand.
+  try {
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 1
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    if (!context) return fallback
+
+    // Invalid or unsupported canvas colors leave fillStyle unchanged.
+    context.fillStyle = '#000000'
+    context.fillStyle = color
+    const first = context.fillStyle
+    context.fillStyle = '#ffffff'
+    context.fillStyle = color
+    if (first !== context.fillStyle) return fallback
+
+    context.fillRect(0, 0, 1, 1)
+    const [red, green, blue, alpha] = context.getImageData(0, 0, 1, 1).data
+    const resolved = `rgba(${red}, ${green}, ${blue}, ${alpha / 255})`
+    resolvedColors.set(color, resolved)
+    return resolved
+  } catch {
+    return fallback
+  }
 }
 
 export function withAlpha(color: string, alpha: number): string {

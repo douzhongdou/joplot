@@ -22,6 +22,7 @@ import {
 } from './lib/analytics'
 import { track } from './lib/track'
 import { takePendingChartDatasetIds } from './lib/datasetPersistence'
+import { buildAutoBoundSeries, pickBestSharedXColumn, restoreWorkbench, type PersistedState } from './lib/workbenchRestore'
 import { getUploadCopy, pickCsvFiles } from './lib/upload'
 import {
   isMobileViewport,
@@ -36,7 +37,6 @@ import {
   buildFilterRevision,
   createCard,
   createCardSeries,
-  createAutoSeriesForDatasets,
   findAvailableSeriesYColumn,
   moveCardToLayout,
   resolveSeriesLabel,
@@ -46,15 +46,6 @@ import { getChartColor } from './lib/theme'
 import type { ChartCard as ChartCardConfig, ChartSeries, CsvData, FilterJoinOperator, FilterRule } from './types'
 
 const STORAGE_KEY = 'csv-workbench-dashboard'
-
-interface PersistedState {
-  cards?: ChartCardConfig[]
-  filters?: FilterRule[]
-  filtersByDataset?: Record<string, FilterRule[]>
-  workspaceFilters?: FilterRule[]
-  filterJoinOperator?: FilterJoinOperator
-  activeDatasetId?: string | null
-}
 
 function createFilterRule(dataset: CsvData | null): FilterRule {
   return {
@@ -79,107 +70,6 @@ function cloneSeries(series: ChartSeries): ChartSeries {
     ...series,
     id: `${series.datasetId}-series-${Math.random().toString(36).slice(2, 10)}`,
   }
-}
-
-function buildAutoBoundSeries(
-  datasets: CsvData[],
-  primaryDataset: CsvData,
-  kind: ChartCardConfig['kind'],
-): ChartSeries[] {
-  const xColumn = pickBestSharedXColumn(datasets, primaryDataset)
-
-  const autoSeries = createAutoSeriesForDatasets(
-    datasets,
-    xColumn,
-    kind === 'stats' ? 1 : undefined,
-  )
-
-  if (autoSeries.length > 0) {
-    return autoSeries.map((series, index) => ({
-      ...series,
-      color: getChartColor(index),
-    }))
-  }
-
-  const fallbackSeries = createCardSeries(primaryDataset, xColumn, {
-    color: getChartColor(0),
-  })
-
-  return fallbackSeries.yColumn ? [fallbackSeries] : []
-}
-
-function pickBestSharedXColumn(datasets: CsvData[], primaryDataset: CsvData) {
-  const scoredHeaders = primaryDataset.headers.map((header) => ({
-    header,
-    count: datasets.filter((dataset) => dataset.headers.includes(header)).length,
-  }))
-
-  return scoredHeaders.sort((left, right) => right.count - left.count)[0]?.header
-    ?? primaryDataset.headers[0]
-    ?? ''
-}
-
-function createAutoBoundCard(
-  datasets: CsvData[],
-  primaryDataset: CsvData,
-  kind: ChartCardConfig['kind'],
-  title?: string,
-): ChartCardConfig {
-  const xColumn = primaryDataset.headers[0] ?? ''
-  const series = buildAutoBoundSeries(datasets, primaryDataset, kind)
-  const card = createCard(kind, primaryDataset, {
-    title: title ?? createCard(kind, primaryDataset).title,
-    xColumn,
-    series,
-  })
-
-  if (series.length > 0) {
-    card.series = series
-  }
-
-  return card
-}
-
-function normalizeWorkspaceFilters(persisted: PersistedState, datasets: CsvData[]): FilterRule[] {
-  const availableHeaders = new Set(datasets.flatMap((dataset) => dataset.headers))
-
-  const normalizeRule = (filter: FilterRule): FilterRule | null => {
-    if (!availableHeaders.has(filter.column)) {
-      return null
-    }
-
-    return {
-      ...filter,
-      column: filter.column,
-    }
-  }
-
-  if (persisted.workspaceFilters) {
-    return persisted.workspaceFilters
-      .map(normalizeRule)
-      .filter((filter): filter is FilterRule => filter !== null)
-  }
-
-  const activeDatasetId = persisted.activeDatasetId
-
-  if (persisted.filtersByDataset) {
-    const fallbackDatasetId = activeDatasetId && persisted.filtersByDataset[activeDatasetId]
-      ? activeDatasetId
-      : datasets[0]?.id
-    const legacyFilters = fallbackDatasetId ? persisted.filtersByDataset[fallbackDatasetId] ?? [] : []
-
-    return legacyFilters
-      .map(normalizeRule)
-      .filter((filter): filter is FilterRule => filter !== null)
-  }
-
-  if (persisted.filters) {
-    return persisted.filters
-      .map(normalizeRule)
-      .filter((filter): filter is FilterRule => filter !== null)
-  }
-
-  return []
 }
 
 export default function App() {
@@ -303,58 +193,18 @@ export default function App() {
     const previousCount = previousDatasetCountRef.current
 
     if (previousCount === 0) {
-      const persistedRaw = window.localStorage.getItem(STORAGE_KEY)
-      const pendingDatasets = takePendingChartDatasetIds(window.localStorage)
-        .map((id) => datasetsById[id])
-        .filter((dataset): dataset is CsvData => Boolean(dataset))
-
-      if (!persistedRaw) {
-        const defaultCard = createAutoBoundCard(datasets, datasets[0], 'line', t('cards.defaultLineTitle'))
-        setCards([defaultCard])
-        setWorkspaceFilters([])
-        setFilterJoinOperator('and')
-        setActiveDatasetId(datasets[0].id)
-        setSelectedCardId(defaultCard.id)
-        setRecentDatasetIds(datasets.map((dataset) => dataset.id))
-        previousDatasetCountRef.current = datasets.length
-        return
-      }
-
-      try {
-        const persisted = JSON.parse(persistedRaw) as PersistedState
-        const restoredActiveDatasetId = persisted.activeDatasetId && datasetsById[persisted.activeDatasetId]
-          ? persisted.activeDatasetId
-          : datasets[0].id
-        const restoredCards = persisted.cards && persisted.cards.length > 0
-          ? sanitizeCardsForDatasets(persisted.cards, datasets, restoredActiveDatasetId)
-          : [createAutoBoundCard(datasets, datasets[0], 'line', t('cards.defaultLineTitle'))]
-        const restoredFilters = normalizeWorkspaceFilters(persisted, datasets)
-
-        const sentCard = pendingDatasets.length > 0
-          ? createAutoBoundCard(
-              pendingDatasets,
-              pendingDatasets[0],
-              'line',
-              pendingDatasets.length === 1 ? pendingDatasets[0].fileName : t('cards.defaultLineTitle'),
-            )
-          : null
-        const nextCards = sentCard ? appendCardWithLayout(restoredCards, sentCard) : restoredCards
-
-        setCards(nextCards)
-        setWorkspaceFilters(restoredFilters)
-        setFilterJoinOperator(persisted.filterJoinOperator ?? 'and')
-        setActiveDatasetId(pendingDatasets[0]?.id ?? restoredActiveDatasetId)
-        setSelectedCardId(sentCard?.id ?? nextCards[0]?.id ?? null)
-        setRecentDatasetIds(datasets.map((dataset) => dataset.id))
-      } catch {
-        const defaultCard = createAutoBoundCard(datasets, datasets[0], 'line', t('cards.defaultLineTitle'))
-        setCards([defaultCard])
-        setWorkspaceFilters([])
-        setFilterJoinOperator('and')
-        setActiveDatasetId(datasets[0].id)
-        setSelectedCardId(defaultCard.id)
-        setRecentDatasetIds(datasets.map((dataset) => dataset.id))
-      }
+      const restored = restoreWorkbench(
+        window.localStorage.getItem(STORAGE_KEY),
+        datasets,
+        takePendingChartDatasetIds(window.localStorage),
+        t('cards.defaultLineTitle'),
+      )
+      setCards(restored.cards)
+      setWorkspaceFilters(restored.workspaceFilters)
+      setFilterJoinOperator(restored.filterJoinOperator)
+      setActiveDatasetId(restored.activeDatasetId)
+      setSelectedCardId(restored.selectedCardId)
+      setRecentDatasetIds(datasets.map((dataset) => dataset.id))
     } else {
       setCards((prev) => sanitizeCardsForDatasets(prev, datasets, activeDatasetId))
       setWorkspaceFilters((prev) => prev.filter((filter) => datasets.some((dataset) => dataset.headers.includes(filter.column))))
