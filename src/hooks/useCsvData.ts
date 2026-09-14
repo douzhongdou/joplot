@@ -8,6 +8,7 @@ export const DATASET_STORAGE_KEY = 'csv-workbench-datasets'
 interface DatasetHydrationState {
   datasets: CsvData[]
   hasRestored: boolean
+  persistenceFailed: boolean
 }
 
 export interface ParsedImportFailure {
@@ -50,6 +51,24 @@ export function getInitialDatasetHydrationState(): DatasetHydrationState {
   return {
     datasets: [],
     hasRestored: false,
+    persistenceFailed: false,
+  }
+}
+
+export function persistDatasetsToStorage(
+  storage: Pick<Storage, 'setItem' | 'removeItem'>,
+  datasets: CsvData[],
+): boolean {
+  try {
+    if (datasets.length === 0) {
+      storage.removeItem(DATASET_STORAGE_KEY)
+    } else {
+      storage.setItem(DATASET_STORAGE_KEY, serializeDatasets(datasets))
+    }
+
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -93,7 +112,7 @@ export async function parseImportedFiles(
 }
 
 export function useCsvData() {
-  const [{ datasets, hasRestored }, setDatasetState] = useState<DatasetHydrationState>(
+  const [{ datasets, hasRestored, persistenceFailed }, setDatasetState] = useState<DatasetHydrationState>(
     getInitialDatasetHydrationState,
   )
 
@@ -102,10 +121,11 @@ export function useCsvData() {
       return
     }
 
-    setDatasetState({
+    setDatasetState((prev) => ({
+      ...prev,
       datasets: restoreDatasetsAfterHydration(window.localStorage.getItem(DATASET_STORAGE_KEY)),
       hasRestored: true,
-    })
+    }))
   }, [])
 
   const parseFiles = useCallback(async (files: File[]) => {
@@ -126,15 +146,13 @@ export function useCsvData() {
       return
     }
 
-    try {
-      if (datasets.length === 0) {
-        window.localStorage.removeItem(DATASET_STORAGE_KEY)
-      } else {
-        window.localStorage.setItem(DATASET_STORAGE_KEY, serializeDatasets(datasets))
-      }
-    } catch {
-      // Keep the session usable even if the browser rejects storage writes.
-    }
+    const persisted = persistDatasetsToStorage(window.localStorage, datasets)
+
+    setDatasetState((prev) => (
+      prev.persistenceFailed === !persisted
+        ? prev
+        : { ...prev, persistenceFailed: !persisted }
+    ))
   }, [datasets, hasRestored])
 
   const resetDatasets = useCallback(() => {
@@ -144,5 +162,5 @@ export function useCsvData() {
     }))
   }, [])
 
-  return { datasets, parseFiles, resetDatasets, hasRestoredDatasets: hasRestored }
+  return { datasets, parseFiles, resetDatasets, hasRestoredDatasets: hasRestored, persistenceFailed }
 }

@@ -58,6 +58,8 @@ function createCardTitle(kind: ChartKind): string {
       return '散点图'
     case 'bar':
       return '柱状图'
+    case 'pie':
+      return '饼图'
     case 'stats':
       return '统计卡'
     case 'area':
@@ -374,7 +376,7 @@ export function createCard(
     series: [initialSeries],
     drawMode: 'lines',
     lineWidth: 2,
-    showLegend: true,
+    showLegend: kind !== 'pie',
     showGrid: true,
     showAxes: true,
     xRange: createEmptyAxisRange(),

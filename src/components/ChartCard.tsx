@@ -1,14 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
 import {
-  Copy,
-  CopyCheck,
-  Download,
   GripVertical,
   MoveDiagonal2,
-  ScanSearch,
 } from 'lucide-react'
 import { PlotCanvas } from './PlotCanvas'
+import { PlotToolbar, type PlotCopyState } from './PlotToolbar'
 import { buildAggregatedSeries, toPlotSeries } from '../lib/aggregation'
 import {
   buildChartTypePayload,
@@ -17,7 +14,9 @@ import {
 } from '../lib/analytics'
 import { track } from '../lib/track'
 import { buildChartDataRevision, summarizeNumericColumn } from '../lib/workbench'
-import { getChartColor, resolveThemeColor } from '../lib/theme'
+import { buildPieGrid, buildPieTraces, shouldShowPieLegend } from '../lib/pie'
+import { CHART_AXIS_FALLBACK, CHART_GRID_FALLBACK, getChartColor, resolveThemeColor, withAlpha } from '../lib/theme'
+import { CHART_HOVERLABEL } from '../lib/tooltipStyle'
 import type { ChartCard as ChartCardConfig, CsvData, NormalizedRow } from '../types'
 import type { CopyImageResult } from './PlotCanvas'
 import { useI18n } from '../i18n'
@@ -79,12 +78,14 @@ export function ChartCard({
   const { t, formatNumber } = useI18n()
   const plotRef = useRef<PlotCanvasApi>(null)
   const renderEventSignatureRef = useRef<string | null>(null)
-  const [copyToast, setCopyToast] = useState('')
+  const [copyState, setCopyState] = useState<PlotCopyState>('idle')
+  const [exportBusy, setExportBusy] = useState(false)
 
   const kindLabels: Record<ChartCardConfig['kind'], string> = {
     line: t('chartKinds.line'),
     scatter: t('chartKinds.scatter'),
     bar: t('chartKinds.bar'),
+    pie: t('chartKinds.pie'),
     stats: t('chartKinds.stats'),
     area: t('chartKinds.area'),
     radar: t('chartKinds.radar'),
@@ -92,14 +93,14 @@ export function ChartCard({
   }
 
   useEffect(() => {
-    if (!copyToast) {
+    if (copyState === 'idle') {
       return
     }
 
-    const timeoutId = window.setTimeout(() => setCopyToast(''), 1600)
+    const timeoutId = window.setTimeout(() => setCopyState('idle'), 1600)
 
     return () => window.clearTimeout(timeoutId)
-  }, [copyToast])
+  }, [copyState])
 
   const validSeries = useMemo(() => (
     card.dataConfig.mode === 'raw'
@@ -216,7 +217,7 @@ export function ChartCard({
             theta: closedX,
             r: closedY,
             fill: 'toself' as const,
-            fillcolor: `${color}22`,
+            fillcolor: withAlpha(color, 0.13),
             marker: { color, size: 6 },
             line: { color, width: card.lineWidth },
             name: series.name,
@@ -236,12 +237,28 @@ export function ChartCard({
           theta: closedTheta,
           r: closedR,
           fill: 'toself' as const,
-          fillcolor: `${series.color}22`,
+          fillcolor: withAlpha(series.color, 0.13),
           marker: { color: series.color, size: 6 },
           line: { color: series.color, width: card.lineWidth },
           name: series.label,
         }
       })
+    }
+
+    if (card.kind === 'pie') {
+      if (aggregateResult) {
+        return buildPieTraces(toPlotSeries(aggregateResult).map((series) => ({
+          name: series.name,
+          labels: series.x,
+          values: series.y,
+        })))
+      }
+
+      return buildPieTraces(validSeries.map(({ series, rows }) => ({
+        name: series.label,
+        labels: rows.map((row) => row.raw[card.xColumn] ?? ''),
+        values: rows.map((row) => row.numeric[series.yColumn!]),
+      })))
     }
 
     if (aggregateResult) {
@@ -273,7 +290,7 @@ export function ChartCard({
             type: (useScatter ? 'scatter' : 'scattergl') as 'scatter' | 'scattergl',
             mode: 'lines' as const,
             fill: 'tozeroy' as const,
-            fillcolor: `${color}33`,
+            fillcolor: withAlpha(color, 0.2),
           }
         }
 
@@ -314,7 +331,7 @@ export function ChartCard({
           type: (useScatter ? 'scatter' : 'scattergl') as 'scatter' | 'scattergl',
           mode: 'lines' as const,
           fill: 'tozeroy' as const,
-          fillcolor: `${series.color}33`,
+          fillcolor: withAlpha(series.color, 0.2),
         }
       }
 
@@ -330,20 +347,29 @@ export function ChartCard({
   const renderedSeriesCount = aggregateResult ? aggregateResult.series.length : validSeries.length
 
   const plotLayout = useMemo(() => {
-    const gridColor = resolveThemeColor('--chart-grid', 'rgba(15, 23, 42, 0.08)')
-    const axisColor = resolveThemeColor('--chart-axis', 'rgba(15, 23, 42, 0.72)')
+    const gridColor = resolveThemeColor('--chart-grid', CHART_GRID_FALLBACK)
+    const axisColor = resolveThemeColor('--chart-axis', CHART_AXIS_FALLBACK)
+    const showPieLegend = card.kind === 'pie' && shouldShowPieLegend(card.showLegend, plotData)
 
     const base: Record<string, unknown> = {
-      showlegend: card.showLegend && renderedSeriesCount > 1,
-      hoverlabel: {
-        bgcolor: '#ffffff',
-        bordercolor: '#e5e7eb',
-        font: { color: '#111827' },
-        pad: { t: 6, b: 6, l: 10, r: 10 },
-      },
+      showlegend: card.kind === 'pie'
+        ? showPieLegend
+        : card.showLegend && renderedSeriesCount > 1,
+      hoverlabel: CHART_HOVERLABEL,
     }
 
-    if (card.kind === 'radar') {
+    if (card.kind === 'pie') {
+      base.grid = buildPieGrid(plotData.length)
+      base.margin = { l: 24, r: 24, t: plotData.length > 1 ? 48 : 24, b: showPieLegend ? 72 : 24 }
+      base.uniformtext = { minsize: 12, mode: 'hide' }
+      base.legend = {
+        orientation: 'h',
+        x: 0.5,
+        xanchor: 'center',
+        y: -0.08,
+        yanchor: 'top',
+      }
+    } else if (card.kind === 'radar') {
       base.polar = {
         radialaxis: { visible: card.showAxes, gridcolor: gridColor, color: axisColor },
         angularaxis: { gridcolor: gridColor, color: axisColor },
@@ -398,6 +424,7 @@ export function ChartCard({
     card.yMin,
     card.yRange.max,
     card.yRange.min,
+    plotData.length,
     renderedSeriesCount,
     validSeries,
   ])
@@ -492,49 +519,75 @@ export function ChartCard({
   }, [card.kind, primaryAnalyticsDataset, renderEventSignature])
 
   async function handleCopyImage() {
-    const mode = await plotRef.current?.copyImage()
-    let nextLabel = ''
-
-    switch (mode) {
-      case 'binary':
-      case 'html':
-      case 'text':
-        nextLabel = t('chartCard.copySuccess')
-        track('copy_image', buildChartTypePayload(card.kind))
-        break
-      case 'downloaded':
-        nextLabel = t('chartCard.copyDownloadedFallback')
-        break
-      default:
-        nextLabel = ''
+    if (exportBusy) {
+      return
     }
 
-    if (nextLabel) {
-      setCopyToast(nextLabel)
+    setExportBusy(true)
+
+    try {
+      const mode = await plotRef.current?.copyImage()
+
+      switch (mode) {
+        case 'binary':
+        case 'html':
+        case 'text':
+          setCopyState('copied')
+          track('copy_image', buildChartTypePayload(card.kind))
+          break
+        case 'downloaded':
+          setCopyState('downloaded')
+          break
+      }
+    } finally {
+      setExportBusy(false)
     }
   }
 
   async function handleDownloadImage() {
-    await plotRef.current?.downloadImage()
-    track('download_png', buildChartTypePayload(card.kind))
+    if (exportBusy) {
+      return
+    }
+
+    setExportBusy(true)
+
+    try {
+      await plotRef.current?.downloadImage()
+      track('download_png', buildChartTypePayload(card.kind))
+    } finally {
+      setExportBusy(false)
+    }
   }
 
   return (
     <article
       className={mobileChrome
-        ? 'relative flex h-full min-h-0 flex-col bg-base-100 px-1 py-2'
-        : `relative flex h-full min-h-0 flex-col rounded-[calc(var(--radius-box)+0.25rem)] border bg-base-100 p-3 transition ${
+        ? 'relative flex h-full min-h-0 flex-col bg-base-100 px-1 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25'
+        : `relative flex h-full min-h-0 flex-col rounded-[calc(var(--radius-box)+0.25rem)] border bg-base-100 p-3 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 ${
             selected
               ? 'border-primary/40 ring-1 ring-primary/15'
               : 'border-base-300 hover:border-primary/20'
           }`}
       onMouseDown={onSelect}
+      onFocus={onSelect}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) {
+          return
+        }
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onSelect()
+        }
+      }}
+      role="group"
+      aria-label={card.title}
+      tabIndex={0}
     >
       <div className={`grid items-start gap-3 pb-3 ${allowLayoutEditing ? 'grid-cols-[36px_minmax(0,1fr)]' : 'grid-cols-[minmax(0,1fr)]'}`}>
         {allowLayoutEditing && (
           <button
             type="button"
-            className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary active:cursor-grabbing"
+            className="inline-grid size-9 cursor-grab place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary active:cursor-grabbing"
             onPointerDown={onDragStart}
             aria-label={t('chartCard.dragCard')}
             title={t('chartCard.dragCard')}
@@ -558,7 +611,7 @@ export function ChartCard({
 
       <div className="flex min-h-0 flex-1 flex-col">
         {card.kind === 'stats' && aggregateSummary && (
-          <div className="grid flex-1 grid-cols-3 gap-3 max-md:grid-cols-1">
+          <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3">
             {[
               [t('chartCard.stats.dataset'), aggregateSummary.seriesName],
               [t('chartCard.stats.validValues'), String(aggregateSummary.count)],
@@ -576,7 +629,7 @@ export function ChartCard({
         )}
 
         {card.kind === 'stats' && !aggregateSummary && summary && primarySeries && (
-          <div className="grid flex-1 grid-cols-3 gap-3 max-md:grid-cols-1">
+          <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3">
             {[
               [t('chartCard.stats.dataset'), primarySeries.dataset.fileName],
               [t('chartCard.stats.validValues'), String(summary.count)],
@@ -606,39 +659,18 @@ export function ChartCard({
             />
 
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/65 transition hover:bg-transparent hover:text-primary"
-                onClick={() => void plotRef.current?.autorange()}
-                aria-label={t('chartCard.autorange')}
-                title={t('chartCard.autorange')}
-              >
-                <ScanSearch size={15} strokeWidth={2.1} />
-              </button>
-              {showCopyImage && (
-                <button
-                  type="button"
-                  className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/65 transition hover:bg-transparent hover:text-primary"
-                  onClick={() => void handleCopyImage()}
-                  aria-label={t('chartCard.copyImage')}
-                  title={t('chartCard.copyImage')}
-                >
-                  {copyToast ? <CopyCheck size={15} strokeWidth={2.1} /> : <Copy size={15} strokeWidth={2.1} />}
-                </button>
-              )}
-              <button
-                type="button"
-                className="inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/65 transition hover:bg-transparent hover:text-primary"
-                onClick={() => void handleDownloadImage()}
-                aria-label={t('chartCard.downloadImage')}
-                title={t('chartCard.downloadImage')}
-              >
-                <Download size={15} strokeWidth={2.1} />
-              </button>
+              <PlotToolbar
+                busy={exportBusy}
+                copyState={copyState}
+                showCopy={showCopyImage}
+                onAutorange={() => void plotRef.current?.autorange()}
+                onCopyImage={() => void handleCopyImage()}
+                onDownloadImage={() => void handleDownloadImage()}
+              />
 
-              {copyToast && (
+              {copyState !== 'idle' && (
                 <div className="inline-flex h-9 items-center rounded-full bg-primary/10 px-3 text-xs font-semibold text-primary">
-                  {copyToast}
+                  {copyState === 'copied' ? t('chartCard.copySuccess') : t('chartCard.copyDownloadedFallback')}
                 </div>
               )}
             </div>

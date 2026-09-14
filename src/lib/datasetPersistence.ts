@@ -64,3 +64,62 @@ export function deserializeDatasets(serialized: string | null | undefined): CsvD
     return []
   }
 }
+
+/**
+ * Merges one dataset into the persisted workbench list, de-duplicating its id
+ * when needed. Returns the serialized list plus the id actually assigned.
+ */
+export function appendDatasetToSerialized(
+  existing: string | null | undefined,
+  dataset: CsvData,
+): { serialized: string; id: string } {
+  const current = deserializeDatasets(existing ?? null)
+  const takenIds = new Set(current.map((item) => item.id))
+
+  let id = dataset.id
+  let suffix = 2
+
+  while (takenIds.has(id)) {
+    id = `${dataset.id}-${suffix}`
+    suffix += 1
+  }
+
+  return {
+    serialized: serializeDatasets([...current, { ...dataset, id }]),
+    id,
+  }
+}
+
+export const PENDING_CHART_DATASETS_KEY = 'csv-workbench-pending-chart-datasets'
+
+/**
+ * Records datasets sent from the function studio so the workbench opens a
+ * fresh chart for them on next load. Consumed once by the workbench.
+ */
+export function writePendingChartDatasetIds(
+  storage: Pick<Storage, 'setItem'>,
+  ids: string[],
+) {
+  storage.setItem(PENDING_CHART_DATASETS_KEY, JSON.stringify(ids))
+}
+
+export function takePendingChartDatasetIds(
+  storage: Pick<Storage, 'getItem' | 'removeItem'>,
+): string[] {
+  const raw = storage.getItem(PENDING_CHART_DATASETS_KEY)
+  storage.removeItem(PENDING_CHART_DATASETS_KEY)
+
+  if (!raw) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown
+
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === 'string')
+      : []
+  } catch {
+    return []
+  }
+}

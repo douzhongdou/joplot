@@ -11,6 +11,7 @@ const OPTIONS: Array<{ kind: ChartKind; label: string }> = [
   { kind: 'line', label: '新增折线图' },
   { kind: 'scatter', label: '新增散点图' },
   { kind: 'bar', label: '新增柱状图' },
+  { kind: 'pie', label: '新增饼图' },
   { kind: 'stats', label: '新增统计卡' },
 ]
 

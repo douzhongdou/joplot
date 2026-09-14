@@ -74,16 +74,44 @@ export function normalizeLanguage(input?: string | null): SupportedLanguage | nu
 export function resolveLanguageFromPath(pathname?: string | null): SupportedLanguage | null {
   const normalizedPathname = normalizePathname(pathname)
 
-  switch (normalizedPathname) {
-    case '/zh':
-      return 'zh-CN'
-    case '/ja':
-      return 'ja-JP'
-    case '/en':
-      return 'en'
-    default:
-      return null
+  if (!normalizedPathname) {
+    return null
   }
+
+  const routeLanguage = extractRouteLanguage(normalizedPathname)
+
+  return routeLanguage ? ROUTE_LANGUAGE_TO_SUPPORTED_LANGUAGE[routeLanguage] : null
+}
+
+function extractRouteLanguage(normalizedPathname: string): RouteLanguage | null {
+  const firstSegment = normalizedPathname.split('/')[1] ?? ''
+
+  return isRouteLanguage(firstSegment) ? firstSegment : null
+}
+
+/**
+ * Swaps the language prefix of a localized path while keeping the rest of the
+ * route, e.g. `/zh/function` -> `/en/function`. Unprefixed paths resolve to the
+ * language root.
+ */
+export function replaceRouteLanguage(pathname: string, nextLanguage: SupportedLanguage): string {
+  const targetPath = LANGUAGE_PATHS[nextLanguage]
+  const normalized = pathname.trim().replace(/\/+$/, '') || '/'
+  const currentRoute = extractRouteLanguage(normalized.toLowerCase())
+
+  if (!currentRoute) {
+    return targetPath
+  }
+
+  const rest = normalized.slice(currentRoute.length + 1)
+
+  return `${targetPath}${rest}`
+}
+
+export const FUNCTION_STUDIO_ROUTE_SEGMENT = 'function'
+
+export function getFunctionStudioPath(language: SupportedLanguage): string {
+  return `${LANGUAGE_PATHS[language]}/${FUNCTION_STUDIO_ROUTE_SEGMENT}`
 }
 
 export function resolveSupportedLanguageFromRouteLanguage(language: string): SupportedLanguage | null {

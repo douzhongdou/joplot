@@ -53,13 +53,15 @@ export function HomeHero({ busy = false, onLoadSample, onUploadFiles }: Props) {
           <svg viewBox="0 0 380 220" className="block h-auto w-full">
             <defs>
               <linearGradient id="heroChartFill" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="#fa9ccc" stopOpacity="0.28" />
-                <stop offset="100%" stopColor="#eb50a0ff" stopOpacity="0" />
+                <stop offset="0%" style={{ stopColor: 'var(--color-primary)' }} stopOpacity="0.28" />
+                <stop offset="100%" style={{ stopColor: 'var(--color-primary)' }} stopOpacity="0" />
               </linearGradient>
             </defs>
-            <g stroke="#e5e7eb" strokeWidth="1">
+            <g strokeWidth="1" style={{ stroke: 'var(--chart-axis)' }}>
               <line x1="24" y1="24" x2="24" y2="188" />
               <line x1="24" y1="188" x2="356" y2="188" />
+            </g>
+            <g strokeWidth="1" style={{ stroke: 'var(--chart-grid)' }}>
               <line x1="24" y1="56" x2="356" y2="56" />
               <line x1="24" y1="104" x2="356" y2="104" />
               <line x1="24" y1="152" x2="356" y2="152" />
@@ -71,7 +73,7 @@ export function HomeHero({ busy = false, onLoadSample, onUploadFiles }: Props) {
             <path
               d="M24 162 L82 150 L140 126 L198 134 L256 92 L314 58 L356 38"
               fill="none"
-              stroke="#eb50a0ff"
+              stroke="var(--color-primary)"
               strokeWidth="4"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -79,7 +81,7 @@ export function HomeHero({ busy = false, onLoadSample, onUploadFiles }: Props) {
             {[24, 82, 140, 198, 256, 314, 356].map((x, index) => {
               const points = [162, 150, 126, 134, 92, 58, 38]
               return (
-                <circle key={x} cx={x} cy={points[index]} r="5" fill="#e7278aff" />
+                <circle key={x} cx={x} cy={points[index]} r="5" fill="var(--color-primary)" />
               )
             })}
           </svg>

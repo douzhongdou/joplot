@@ -10,3 +10,6 @@ __pycache__
 .env
 .env.local
 .env.*.local
+tsconfig.tsbuildinfo
+.mimosa
+.zcode-shots

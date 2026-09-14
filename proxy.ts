@@ -2,9 +2,13 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { resolveLocaleRedirect } from './src/lib/localeRouting'
 
+const LOCALE_REDIRECT_PATHS = new Set(['/', '/function'])
+
 export function proxy(request: NextRequest) {
-  if (request.nextUrl.pathname === '/') {
-    const redirectPath = resolveLocaleRedirect(request.headers.get('accept-language'))
+  const { pathname } = request.nextUrl
+
+  if (LOCALE_REDIRECT_PATHS.has(pathname)) {
+    const redirectPath = resolveLocaleRedirect(request.headers.get('accept-language'), pathname)
     return NextResponse.redirect(new URL(redirectPath, request.url), 308)
   }
 
@@ -12,5 +16,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/'],
+  matcher: ['/', '/function'],
 }

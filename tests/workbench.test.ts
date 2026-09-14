@@ -309,20 +309,21 @@ test('updateAggregationConfig does not auto-pick a group field when switching to
 test('buildChartDataRevision changes when aggregate calculation settings change', () => {
   const dataset = createDataset()
   const card = createDefaultCard(dataset)
+  const aggregation: AggregationConfig = {
+    datasetIds: [dataset.id],
+    xColumn: 'time',
+    xKind: 'category',
+    timeBucket: 'month',
+    groupMode: 'file',
+    groupColumn: null,
+    metricColumn: 'value',
+    aggregation: 'max',
+  }
   const aggregateCard: ChartCard = {
     ...card,
     dataConfig: {
       mode: 'aggregate',
-      aggregation: {
-        datasetIds: [dataset.id],
-        xColumn: 'time',
-        xKind: 'category',
-        timeBucket: 'month',
-        groupMode: 'file',
-        groupColumn: null,
-        metricColumn: 'value',
-        aggregation: 'max',
-      },
+      aggregation,
     },
   }
 
@@ -332,7 +333,7 @@ test('buildChartDataRevision changes when aggregate calculation settings change'
     dataConfig: {
       mode: 'aggregate',
       aggregation: {
-        ...aggregateCard.dataConfig.aggregation,
+        ...aggregation,
         aggregation: 'sum',
       },
     },

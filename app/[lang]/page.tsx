@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import App from '../../src/App'
+import { ErrorBoundary } from '../../src/components/ErrorBoundary'
 import { I18nProvider } from '../../src/i18n'
 import { resolveSupportedLanguageFromRouteLanguage } from '../../src/i18n/config'
 
@@ -21,7 +22,9 @@ export default async function LocalizedPage({
 
   return (
     <I18nProvider initialLanguage={language}>
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </I18nProvider>
   )
 }
