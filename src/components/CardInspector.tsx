@@ -238,9 +238,9 @@ export function CardInspector({
   const currentKindLabel = kindOptions.find((option) => option.value === card.kind)?.label ?? t('chartKinds.fallback')
 
   return (
-    <section ref={shellRef} className="grid min-h-full content-start bg-base-100">
+    <section ref={shellRef} className="grid min-h-full grid-cols-[minmax(0,1fr)] content-start bg-base-100">
       <div className="flex items-start justify-between gap-3 border-base-300 px-5 py-4 sm:px-6 sm:py-5">
-        <div className="grid gap-1">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1">
           <h2 className="text-3xl font-semibold tracking-tight text-base-content sm:text-4xl">{currentKindLabel}</h2>
         </div>
 
@@ -292,8 +292,8 @@ export function CardInspector({
           <div role="tabpanel" id="inspector-panel-basic" aria-labelledby="inspector-tab-basic">
             <section className="border-b border-base-300 py-6">
               <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.baseSectionTitle')}</div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="grid gap-2 sm:col-span-2">
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
+                <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2 sm:col-span-2">
                   <span className={fieldLabelClass}>{t('inspector.title')}</span>
                   <input
                     type="text"
@@ -303,7 +303,7 @@ export function CardInspector({
                   />
                 </label>
 
-                <label className="grid gap-2">
+                <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                   <span className={fieldLabelClass}>{t('inspector.chartKind')}</span>
                   <SelectMenu
                     value={card.kind}
@@ -317,7 +317,7 @@ export function CardInspector({
                 </label>
 
                 {card.kind !== 'heatmap' && (
-                <label className="grid gap-2">
+                <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                   <span className={fieldLabelClass}>{t('inspector.dataMode')}</span>
                   <SelectMenu
                     value={card.dataConfig.mode}
@@ -338,7 +338,7 @@ export function CardInspector({
                 )}
 
                 {card.dataConfig.mode === 'raw' && card.kind !== 'heatmap' && (
-                <label className="grid gap-2">
+                <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                   <span className={fieldLabelClass}>{t('inspector.sharedXAxis')}</span>
                   <SelectMenu
                     value={card.xColumn}
@@ -354,7 +354,7 @@ export function CardInspector({
 
                 {card.dataConfig.mode === 'raw' && (card.kind === 'line' || card.kind === 'area') && (
                   <>
-                    <label className="grid gap-2">
+                    <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                       <span className={fieldLabelClass}>{t('inspector.drawMode')}</span>
                       <SelectMenu
                         value={card.drawMode}
@@ -364,7 +364,7 @@ export function CardInspector({
                       />
                     </label>
 
-                    <label className="grid gap-2">
+                    <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                       <span className={fieldLabelClass}>{t('inspector.lineWidth')}</span>
                       <input
                         type="number"
@@ -379,10 +379,10 @@ export function CardInspector({
                 )}
 
                 {card.dataConfig.mode === 'aggregate' && (
-                  <div className="grid gap-4 sm:col-span-2">
-                    <div className="grid gap-2">
+                  <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4 sm:col-span-2">
+                    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                       <span className={fieldLabelClass}>{t('inspector.aggregate.dataSources')}</span>
-                      <div className="grid gap-2">
+                      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                         {datasets.map((dataset) => {
                           const selected = card.dataConfig.mode === 'aggregate'
                             && card.dataConfig.aggregation.datasetIds.includes(dataset.id)
@@ -399,7 +399,7 @@ export function CardInspector({
                               }`}
                               onClick={() => toggleAggregationDataset(dataset.id)}
                             >
-                              <span className="min-w-0 flex-1 truncate font-medium">{dataset.fileName}</span>
+                              <span className="min-w-0 flex-1 truncate font-medium" title={dataset.fileName}>{dataset.fileName}</span>
                               <span className="text-xs">{t('common.rowCount', { count: formatNumber(dataset.rowCount) })}</span>
                             </button>
                           )
@@ -407,8 +407,8 @@ export function CardInspector({
                       </div>
                     </div>
 
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label className="grid gap-2">
+                    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
+                      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                         <span className={fieldLabelClass}>{t('inspector.aggregate.xColumn')}</span>
                         <SelectMenu
                           value={card.dataConfig.aggregation.xColumn}
@@ -421,7 +421,7 @@ export function CardInspector({
                         />
                       </label>
 
-                      <label className="grid gap-2">
+                      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                         <span className={fieldLabelClass}>{t('inspector.aggregate.xKind')}</span>
                         <SelectMenu
                           value={card.dataConfig.aggregation.xKind}
@@ -435,7 +435,7 @@ export function CardInspector({
                       </label>
 
                       {card.dataConfig.aggregation.xKind === 'time' && (
-                        <label className="grid gap-2">
+                        <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                           <span className={fieldLabelClass}>{t('inspector.aggregate.timeBucket')}</span>
                           <SelectMenu
                             value={card.dataConfig.aggregation.timeBucket}
@@ -449,7 +449,7 @@ export function CardInspector({
                         </label>
                       )}
 
-                      <label className="grid gap-2">
+                      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                         <span className={fieldLabelClass}>{t('inspector.aggregate.metricColumn')}</span>
                         <SelectMenu
                           value={card.dataConfig.aggregation.metricColumn}
@@ -462,7 +462,7 @@ export function CardInspector({
                         />
                       </label>
 
-                      <label className="grid gap-2">
+                      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                         <span className={fieldLabelClass}>{t('inspector.aggregate.aggregation')}</span>
                         <SelectMenu
                           value={card.dataConfig.aggregation.aggregation}
@@ -475,7 +475,7 @@ export function CardInspector({
                         />
                       </label>
 
-                      <label className="grid gap-2">
+                      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                         <span className={fieldLabelClass}>{t('inspector.aggregate.groupMode')}</span>
                         <SelectMenu
                           value={card.dataConfig.aggregation.groupMode}
@@ -491,7 +491,7 @@ export function CardInspector({
                       </label>
 
                       {card.dataConfig.aggregation.groupMode === 'field' && (
-                        <label className="grid gap-2">
+                        <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                           <span className={fieldLabelClass}>{t('inspector.aggregate.groupColumn')}</span>
                           <SelectMenu
                             value={card.dataConfig.aggregation.groupColumn}
@@ -528,7 +528,7 @@ export function CardInspector({
                 )}
               </div>
 
-              <div className="grid">
+              <div className="grid grid-cols-[minmax(0,1fr)]">
                 {card.series.map((series) => {
                   const dataset = datasetsById[series.datasetId]
                   const numericOptions = dataset
@@ -550,9 +550,9 @@ export function CardInspector({
                     }))
 
                   return (
-                    <div key={series.id} className="grid gap-3 border-b border-base-300 py-4 last:border-b-0">
+                    <div key={series.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 border-b border-base-300 py-4 last:border-b-0">
                       <div className="flex items-center justify-between gap-3">
-                        <strong className="truncate text-sm font-semibold text-base-content">
+                        <strong className="min-w-0 flex-1 break-words text-sm font-semibold text-base-content">
                           {series.label || dataset?.fileName || t('cards.unnamedSeries')}
                         </strong>
                         <div className="relative inspector-series-actions">
@@ -599,7 +599,7 @@ export function CardInspector({
                         </div>
                       </div>
 
-                    <div className="grid gap-3">
+                    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
                       <SelectMenu
                           value={series.datasetId}
                           options={datasetOptions}
@@ -637,17 +637,17 @@ export function CardInspector({
           <div role="tabpanel" id="inspector-panel-display" aria-labelledby="inspector-tab-display">
             <section className="border-b border-base-300 py-6">
               <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.seriesDisplaySectionTitle')}</div>
-              <div className="grid">
+              <div className="grid grid-cols-[minmax(0,1fr)]">
                 {card.series.map((series) => (
-                  <div key={series.id} className="grid gap-3 border-b border-base-300 py-4 last:border-b-0">
-                    <div className="grid gap-1">
+                  <div key={series.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 border-b border-base-300 py-4 last:border-b-0">
+                    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1">
                       <span className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{t('inspector.dataSource')}</span>
-                      <strong className="text-sm font-semibold text-base-content">
+                      <strong className="min-w-0 break-words text-sm font-semibold text-base-content">
                         {datasetsById[series.datasetId]?.fileName || t('cards.unnamedSeries')}
                       </strong>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
-                      <label className="grid gap-2">
+                    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
+                      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                         <span className={fieldLabelClass}>{t('inspector.displayName')}</span>
                         <input
                           type="text"
@@ -658,7 +658,7 @@ export function CardInspector({
                         />
                       </label>
 
-                      <div className="grid gap-2">
+                      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                         <span className={fieldLabelClass}>{t('inspector.seriesColor')}</span>
                         <label className="relative flex h-12 items-center gap-3 rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-4 text-sm text-base-content">
                           <span className="size-5 rounded-md border border-base-300" style={{ background: series.color }} />
@@ -683,7 +683,7 @@ export function CardInspector({
 
             <section className="py-6">
               <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.chartDisplaySectionTitle')}</div>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
                 <Switch
                   checked={card.showLegend}
                   label={t('inspector.legend')}
@@ -709,8 +709,8 @@ export function CardInspector({
             {card.kind !== 'pie' && (
             <section className="py-6">
               <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.axisRangeSectionTitle')}</div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="grid gap-2">
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
+                <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                   <span className={fieldLabelClass}>{t('inspector.xRangeMin')}</span>
                   <input
                     type="text"
@@ -721,7 +721,7 @@ export function CardInspector({
                   />
                 </label>
 
-                <label className="grid gap-2">
+                <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                   <span className={fieldLabelClass}>{t('inspector.xRangeMax')}</span>
                   <input
                     type="text"
@@ -732,7 +732,7 @@ export function CardInspector({
                   />
                 </label>
 
-                <label className="grid gap-2">
+                <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                   <span className={fieldLabelClass}>{t('inspector.yRangeMin')}</span>
                   <input
                     type="text"
@@ -743,7 +743,7 @@ export function CardInspector({
                   />
                 </label>
 
-                <label className="grid gap-2">
+                <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                   <span className={fieldLabelClass}>{t('inspector.yRangeMax')}</span>
                   <input
                     type="text"
@@ -778,7 +778,7 @@ function HeatmapFields({ config, datasets, onChange, fieldLabelClass }: HeatmapF
 
   return (
     <>
-      <label className="grid gap-2">
+      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
         <span className={fieldLabelClass}>{t('inspector.heatmap.dataset')}</span>
         <SelectMenu
           value={config.datasetId}
@@ -801,8 +801,8 @@ function HeatmapFields({ config, datasets, onChange, fieldLabelClass }: HeatmapF
         />
       </label>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="grid gap-2">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
+        <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
           <span className={fieldLabelClass}>{t('inspector.heatmap.xColumn')}</span>
           <SelectMenu
             value={config.xColumn}
@@ -812,7 +812,7 @@ function HeatmapFields({ config, datasets, onChange, fieldLabelClass }: HeatmapF
           />
         </label>
 
-        <label className="grid gap-2">
+        <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
           <span className={fieldLabelClass}>{t('inspector.heatmap.yColumn')}</span>
           <SelectMenu
             value={config.yColumn}
@@ -823,7 +823,7 @@ function HeatmapFields({ config, datasets, onChange, fieldLabelClass }: HeatmapF
         </label>
       </div>
 
-      <label className="grid gap-2">
+      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
         <span className={fieldLabelClass}>{t('inspector.heatmap.zColumn')}</span>
         <SelectMenu
           value={config.zColumn ?? ''}

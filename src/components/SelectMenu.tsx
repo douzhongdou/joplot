@@ -176,7 +176,7 @@ export function SelectMenu<T extends string = string>({
           renderTrigger(selectedOption, open)
         ) : (
           <>
-            <span className="min-w-0 flex-1 truncate text-base font-medium">
+            <span className="min-w-0 flex-1 truncate text-base font-medium" title={selectedOption?.label ?? resolvedPlaceholder}>
               {selectedOption?.label ?? resolvedPlaceholder}
             </span>
             <ChevronDown
@@ -191,12 +191,12 @@ export function SelectMenu<T extends string = string>({
 
       {open && (
         <div
-          className={`absolute z-30 mt-2 max-h-64 min-w-full overflow-auto rounded-[calc(var(--radius-box)+0.25rem)] border border-base-300 bg-base-100 p-2 ${align === 'right' ? 'right-0' : 'left-0'} ${menuClassName}`.trim()}
+          className={`absolute z-30 mt-2 max-h-64 min-w-full max-w-full overflow-auto rounded-[calc(var(--radius-box)+0.25rem)] border border-base-300 bg-base-100 p-2 ${align === 'right' ? 'right-0' : 'left-0'} ${menuClassName}`.trim()}
           role="listbox"
           tabIndex={-1}
           onKeyDown={handleMenuKeyDown}
         >
-          <div className="grid gap-1">
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1">
             {options.map((option) => {
               const optionIndex = enabledOptions.findIndex((item) => item.value === option.value)
               const selected = option.value === value
@@ -235,7 +235,7 @@ export function SelectMenu<T extends string = string>({
                   }}
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{option.label}</span>
+                    <span className="block truncate text-sm font-medium" title={option.label}>{option.label}</span>
                     {option.description && (
                       <span className="block truncate text-xs text-base-content/55">{option.description}</span>
                     )}

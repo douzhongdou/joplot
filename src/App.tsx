@@ -625,7 +625,7 @@ export default function App() {
           )}
         </section>
         {hasDatasets && viewMode === 'chart' && !mobile && (
-          <aside className="min-h-0 overflow-auto border-l border-base-300 bg-base-100">
+          <aside className="min-h-0 overflow-x-hidden overflow-y-auto border-l border-base-300 bg-base-100">
             {activeDataset && (
               <CardInspector
                 card={selectedCard}
