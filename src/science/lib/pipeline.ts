@@ -53,6 +53,24 @@ function requireSeries(
   return value
 }
 
+export function runStep(
+  step: AnalysisStep,
+  input: ScienceValue | undefined,
+  secondInput: ScienceValue | undefined,
+): ScienceValue {
+  const definition = getOperator(step.op)
+  if (!definition) {
+    throw new Error(`step ${step.id}: unknown operator "${step.op}"`)
+  }
+
+  const first = requireSeries(input, step, step.inputId, 'input')
+  const second = definition.secondInput
+    ? requireSeries(secondInput, step, step.secondInputId, 'second input')
+    : undefined
+
+  return definition.run(first, second, step.params, { id: step.outputId, name: step.outputId })
+}
+
 export function runPipeline(base: ScienceValue[], steps: AnalysisStep[]): PipelineResult {
   const values = [...base]
   const errors: Record<string, string> = {}
@@ -60,25 +78,13 @@ export function runPipeline(base: ScienceValue[], steps: AnalysisStep[]): Pipeli
 
   for (const step of steps) {
     const started = performance.now()
-    const definition = getOperator(step.op)
-    if (!definition) {
-      errors[step.id] = `step ${step.id}: unknown operator "${step.op}"`
-      timings[step.id] = performance.now() - started
-      continue
-    }
-
     const input = values.find((value) => value.id === step.inputId)
     const secondInput = step.secondInputId
       ? values.find((value) => value.id === step.secondInputId)
       : undefined
 
     try {
-      const first = requireSeries(input, step, step.inputId, 'input')
-      const second = definition.secondInput
-        ? requireSeries(secondInput, step, step.secondInputId, 'second input')
-        : undefined
-
-      values.push(definition.run(first, second, step.params, { id: step.outputId, name: step.outputId }))
+      values.push(runStep(step, input, secondInput))
     } catch (error) {
       errors[step.id] = error instanceof Error ? error.message : String(error)
     }

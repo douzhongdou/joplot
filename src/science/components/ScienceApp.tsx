@@ -6,6 +6,7 @@ import { values1d } from '../lib/dense.ts'
 import { SCIENCE_COLORS } from '../lib/colors.ts'
 import { createScienceCopy, type ScienceLanguage } from '../lib/i18n.ts'
 import { defaultParams, nextStepId, type AnalysisStep, type OpKind } from '../lib/pipeline.ts'
+import { computeDirtySteps } from '../lib/dirty.ts'
 import { createSampleWorkspace } from '../lib/workspace.ts'
 import { useComputeHost, type ComputeResult } from '../compute/host.ts'
 import { AnalysisPanel, ResultsPanel, type StepStatus } from './AnalysisPanel.tsx'
@@ -93,27 +94,31 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   const [timings, setTimings] = useState<Record<string, number>>({})
   const [status, setStatus] = useState<RunStatus>('idle')
   const [errorText, setErrorText] = useState('')
-  const [dirtyFrom, setDirtyFrom] = useState(0)
-  const [runningFrom, setRunningFrom] = useState(0)
+  const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set())
+  const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
   const [autoRun, setAutoRun] = useState(true)
 
   const stepsRef = useRef(steps)
   stepsRef.current = steps
-  const dirtyFromRef = useRef(dirtyFrom)
-  dirtyFromRef.current = dirtyFrom
+  const dirtyIdsRef = useRef(dirtyIds)
+  dirtyIdsRef.current = dirtyIds
   const lastStepsRef = useRef<AnalysisStep[]>([])
   const timingsRef = useRef<Record<string, number>>({})
   const sequence = useRef(0)
 
-  const run = useCallback(async (requestedFrom = 0, reset = false) => {
+  const run = useCallback(async (ids: Iterable<string>, reset = false) => {
+    const list = [...ids]
+    if (list.length === 0 && !reset) {
+      return
+    }
+
     const id = (sequence.current += 1)
-    const from = reset ? 0 : Math.min(requestedFrom, dirtyFromRef.current)
     setStatus('running')
-    setRunningFrom(from)
+    setRunningIds(new Set(list))
     setErrorText('')
 
     try {
-      const next = await host.run(stepsRef.current, { reset, startIndex: from })
+      const next = await host.run(stepsRef.current, { reset, dirtyIds: list })
       if (id !== sequence.current) {
         return
       }
@@ -121,8 +126,8 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
       timingsRef.current = { ...timingsRef.current, ...next.timings }
       setTimings(timingsRef.current)
       lastStepsRef.current = stepsRef.current
-      dirtyFromRef.current = stepsRef.current.length
-      setDirtyFrom(stepsRef.current.length)
+      dirtyIdsRef.current = new Set()
+      setDirtyIds(new Set())
       setStatus('ready')
     } catch (error) {
       if (id !== sequence.current) {
@@ -133,23 +138,20 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
     }
   }, [host])
 
-  // 步骤变化 → 定位首个变化的下标（引用比较），标脏；自动模式则从该处防抖运行。
+  // 步骤变化 → 依赖级脏传播；自动模式则防抖运行「变脏的那些步骤」。
   useEffect(() => {
-    const previous = lastStepsRef.current
-    const max = Math.min(previous.length, steps.length)
-    let diff = 0
-    while (diff < max && previous[diff] === steps[diff]) {
-      diff += 1
+    const dirty = computeDirtySteps(steps, lastStepsRef.current)
+    if (dirty.size > 0) {
+      const merged = new Set([...dirtyIdsRef.current, ...dirty])
+      dirtyIdsRef.current = merged
+      setDirtyIds(merged)
     }
 
-    dirtyFromRef.current = Math.min(dirtyFromRef.current, diff)
-    setDirtyFrom((current) => Math.min(current, diff))
-
-    if (!autoRun) {
+    if (!autoRun || dirty.size === 0) {
       return
     }
     const timer = setTimeout(() => {
-      void run(diff, false)
+      void run(dirty, false)
     }, 180)
     return () => clearTimeout(timer)
   }, [steps, autoRun, run])
@@ -162,9 +164,10 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
 
   const reload = () => {
     lastStepsRef.current = []
-    dirtyFromRef.current = 0
+    dirtyIdsRef.current = new Set()
     timingsRef.current = {}
     setTimings({})
+    setDirtyIds(new Set())
     setSteps(createSampleWorkspace().steps)
     setSelectedId('fit1')
   }
@@ -210,6 +213,12 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
     })
   }
 
+  const runToStep = (index: number) => {
+    const upto = steps.slice(0, index + 1)
+    const dirtyUpTo = upto.filter((step) => dirtyIdsRef.current.has(step.id)).map((step) => step.id)
+    void run(dirtyUpTo.length > 0 ? dirtyUpTo : [steps[index].id], false)
+  }
+
   const stepStatus = (index: number): StepStatus => {
     const step = steps[index]
     if (!step) {
@@ -218,16 +227,16 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
     if (errors[step.id]) {
       return 'error'
     }
-    if (status === 'running' && index >= runningFrom && index < steps.length) {
+    if (status === 'running' && runningIds.has(step.id)) {
       return 'running'
     }
-    if (index >= dirtyFrom) {
+    if (dirtyIds.has(step.id)) {
       return 'dirty'
     }
     return 'clean'
   }
 
-  const isDirty = dirtyFrom < steps.length
+  const isDirty = dirtyIds.size > 0
   const statusText = status === 'running'
     ? copy.running
     : status === 'error'
@@ -315,8 +324,9 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
               </label>
               <button
                 type="button"
-                onClick={() => void run(0, false)}
-                className="h-7 shrink-0 rounded-[var(--radius-field)] bg-primary px-2.5 text-[11px] font-semibold text-primary-content transition hover:opacity-90"
+                disabled={!isDirty}
+                onClick={() => void run(dirtyIdsRef.current, false)}
+                className="h-7 shrink-0 rounded-[var(--radius-field)] bg-primary px-2.5 text-[11px] font-semibold text-primary-content transition hover:opacity-90 disabled:opacity-40"
               >
                 {copy.runAll}
               </button>
@@ -335,7 +345,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
           onAdd={addStep}
           onUpdate={updateStep}
           onRemove={removeStep}
-          onRunStep={(index) => void run(index, false)}
+          onRunStep={runToStep}
         />
         <ResultsPanel value={selected} copy={copy} />
       </div>

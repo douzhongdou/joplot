@@ -6,8 +6,8 @@ export interface RunRequest {
   type: 'run'
   requestId: number
   reset: boolean
-  /** 从第几个步骤开始算（之前的步骤复用 Worker 侧缓存）。 */
-  startIndex: number
+  /** 需要重算的步骤 id；其余步骤复用 Worker 侧缓存。 */
+  dirtyIds: string[]
   steps: AnalysisStep[]
   previewTarget: number
 }

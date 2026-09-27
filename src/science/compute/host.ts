@@ -18,7 +18,10 @@ export interface ComputeResult {
 }
 
 export interface ComputeHost {
-  run(steps: AnalysisStep[], options?: { reset?: boolean; startIndex?: number; previewTarget?: number }): Promise<ComputeResult>
+  run(
+    steps: AnalysisStep[],
+    options?: { reset?: boolean; dirtyIds?: Iterable<string>; previewTarget?: number },
+  ): Promise<ComputeResult>
   terminate(): void
 }
 
@@ -78,7 +81,7 @@ export function createComputeHost(): ComputeHost {
           type: 'run',
           requestId,
           reset: Boolean(options.reset),
-          startIndex: Math.max(0, Math.floor(options.startIndex ?? 0)),
+          dirtyIds: options.dirtyIds ? [...options.dirtyIds] : [],
           steps,
           previewTarget: options.previewTarget ?? DEFAULT_PREVIEW_TARGET,
         }

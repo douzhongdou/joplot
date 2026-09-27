@@ -1,15 +1,15 @@
 /**
  * 常驻计算 Worker。
  *
- * 数据驻留在 Worker 内（`store` / `cache`），主线程只发流水线描述、只收降采样预览。
+ * 数据驻留在 Worker 内（`cache`），主线程只发可重算的步骤集合、只收降采样预览。
  *
- * 分步运行：请求带 `startIndex`，之前的步骤直接复用缓存结果，只重算 startIndex 起的部分。
- * 只有当缓存缺失（例如刚 reset）时，才回退为从第 0 步开始。
+ * 依赖级增量：只有 `dirtyIds` 里的步骤会重算；其余步骤直接复用缓存输出。
+ * 若某个干净步骤的输入尚未就绪（例如它的上游这次被算过），按顺序自然满足。
  */
 
 import type { ScienceValue } from '../types.ts'
 import { createSampleWorkspace } from '../lib/workspace.ts'
-import { runPipeline } from '../lib/pipeline.ts'
+import { runStep } from '../lib/pipeline.ts'
 import { toPreview } from './preview.ts'
 import type { WorkerRequest, WorkerResponse } from './protocol.ts'
 
@@ -40,28 +40,39 @@ scope.addEventListener('message', (event: MessageEvent) => {
       cache.clear()
     }
 
-    const total = request.steps.length
-    let start = Math.max(0, Math.min(request.startIndex, total))
-
-    // 前缀缓存必须完整，否则回退到从头算。
-    for (let i = 0; i < start; i += 1) {
-      if (!cache.has(request.steps[i].outputId)) {
-        start = 0
-        break
-      }
+    const dirty = new Set(request.dirtyIds)
+    const available = new Map<string, ScienceValue>()
+    for (const value of base) {
+      available.set(value.id, value)
     }
 
-    const seed: ScienceValue[] = [...base]
-    for (let i = 0; i < start; i += 1) {
-      const cached = cache.get(request.steps[i].outputId)
-      if (cached) {
-        seed.push(cached)
-      }
-    }
+    const values: ScienceValue[] = [...base]
+    const errors: Record<string, string> = {}
+    const timings: Record<string, number> = {}
 
-    const { values, errors, timings } = runPipeline(seed, request.steps.slice(start))
-    for (const value of values) {
-      cache.set(value.id, value)
+    for (const step of request.steps) {
+      const cached = cache.get(step.outputId)
+
+      if (!dirty.has(step.id) && cached) {
+        available.set(step.outputId, cached)
+        values.push(cached)
+        continue
+      }
+
+      const stepStarted = performance.now()
+      try {
+        const value = runStep(
+          step,
+          available.get(step.inputId),
+          step.secondInputId ? available.get(step.secondInputId) : undefined,
+        )
+        available.set(step.outputId, value)
+        cache.set(step.outputId, value)
+        values.push(value)
+      } catch (error) {
+        errors[step.id] = error instanceof Error ? error.message : String(error)
+      }
+      timings[step.id] = performance.now() - stepStarted
     }
 
     post({
