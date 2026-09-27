@@ -75,6 +75,24 @@ test('fit reports standard errors for well-conditioned data', () => {
   assert.ok(slope.stderr < 1e-6)
 })
 
+test('large-N fit subsamples for speed but reports on the full data', () => {
+  const count = 100_000
+  const x = new Float64Array(count)
+  const y = new Float64Array(count)
+  for (let i = 0; i < count; i += 1) {
+    x[i] = i / 1000
+    y[i] = 1.25 * x[i] + 3
+  }
+
+  const outcome = fitModel({ x, y, expr: 'a*x + b', initial: { a: 0, b: 0 } })
+
+  assert.ok(Math.abs(parameter(outcome, 'a') - 1.25) < 1e-6)
+  assert.ok(Math.abs(parameter(outcome, 'b') - 3) < 1e-4)
+  assert.equal(outcome.fitted.length, count)
+  assert.equal(outcome.residual.length, count)
+  assert.ok(outcome.rSquared > 0.999999)
+})
+
 test('power model recovers a quadratic law', () => {
   const count = 120
   const x = new Float64Array(count)

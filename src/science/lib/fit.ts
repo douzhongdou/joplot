@@ -217,6 +217,8 @@ export interface FitOptions {
   expr: string
   initial?: Record<string, number>
   maxIterations?: number
+  /** 拟合抽样上限：超过则先抽样拟合，再在全量上报告。 */
+  maxFitPoints?: number
 }
 
 export function collectFitParameters(expr: string): string[] {
@@ -241,10 +243,27 @@ export function fitModel(options: FitOptions): FitOutcome {
 
   const count = Math.min(x.length, y.length)
   const dimension = parameterNames.length
+
+  // 大 N 时先抽样拟合，再在全量上出残差（拟合用抽样、报告用全量）。
+  const maxFitPoints = options.maxFitPoints ?? 20000
+  const fitCount = Math.max(dimension + 1, Math.min(count, maxFitPoints))
+  let fitX = x
+  let fitY = y
+  if (fitCount < count) {
+    fitX = new Float64Array(fitCount)
+    fitY = new Float64Array(fitCount)
+    const stride = (count - 1) / (fitCount - 1)
+    for (let i = 0; i < fitCount; i += 1) {
+      const index = Math.round(i * stride)
+      fitX[i] = x[index]
+      fitY[i] = y[index]
+    }
+  }
+
   const parameterBuffer = new Float64Array(dimension)
-  const predictions = new Float64Array(count)
-  const highBuffer = new Float64Array(count)
-  const lowBuffer = new Float64Array(count)
+  const predictions = new Float64Array(fitCount)
+  const highBuffer = new Float64Array(fitCount)
+  const lowBuffer = new Float64Array(fitCount)
 
   const fillParameters = (values: number[]): void => {
     for (let i = 0; i < dimension; i += 1) parameterBuffer[i] = values[i]
@@ -253,10 +272,10 @@ export function fitModel(options: FitOptions): FitOutcome {
   // 批量求值：一次算完整段预测，再据此求残差 —— 全程零每点分配。
   const residuals = (values: number[]): Float64Array => {
     fillParameters(values)
-    parsed.evaluateInto(x, null, parameterBuffer, predictions, count)
-    const result = new Float64Array(count)
-    for (let i = 0; i < count; i += 1) {
-      result[i] = Number.isFinite(predictions[i]) ? y[i] - predictions[i] : Number.NaN
+    parsed.evaluateInto(fitX, null, parameterBuffer, predictions, fitCount)
+    const result = new Float64Array(fitCount)
+    for (let i = 0; i < fitCount; i += 1) {
+      result[i] = Number.isFinite(predictions[i]) ? fitY[i] - predictions[i] : Number.NaN
     }
     return result
   }
@@ -276,7 +295,7 @@ export function fitModel(options: FitOptions): FitOutcome {
   }
 
   const jacobian = (values: number[]): number[][] => {
-    const jac: number[][] = Array.from({ length: count }, () => new Array<number>(dimension).fill(0))
+    const jac: number[][] = Array.from({ length: fitCount }, () => new Array<number>(dimension).fill(0))
     for (let j = 0; j < dimension; j += 1) {
       const step = 1e-6 * Math.max(1, Math.abs(values[j]))
       const forward = values.slice()
@@ -284,10 +303,10 @@ export function fitModel(options: FitOptions): FitOutcome {
       forward[j] += step
       backward[j] -= step
       fillParameters(forward)
-      parsed.evaluateInto(x, null, parameterBuffer, highBuffer, count)
+      parsed.evaluateInto(fitX, null, parameterBuffer, highBuffer, fitCount)
       fillParameters(backward)
-      parsed.evaluateInto(x, null, parameterBuffer, lowBuffer, count)
-      for (let i = 0; i < count; i += 1) {
+      parsed.evaluateInto(fitX, null, parameterBuffer, lowBuffer, fitCount)
+      for (let i = 0; i < fitCount; i += 1) {
         jac[i][j] = (highBuffer[i] - lowBuffer[i]) / (2 * step)
       }
     }
@@ -308,7 +327,7 @@ export function fitModel(options: FitOptions): FitOutcome {
     )
     const gradient = new Array<number>(dimension).fill(0)
 
-    for (let i = 0; i < count; i += 1) {
+    for (let i = 0; i < fitCount; i += 1) {
       for (let a = 0; a < dimension; a += 1) {
         gradient[a] += jac[i][a] * residual[i]
         for (let b = 0; b < dimension; b += 1) {
@@ -351,9 +370,22 @@ export function fitModel(options: FitOptions): FitOutcome {
     }
   }
 
-  const residual = residuals(parameters)
+  // 报告用全量：在最终参数上对完整数据求预测、残差、R²、RMSE。
+  const fullPredictions = new Float64Array(count)
+  fillParameters(parameters)
+  parsed.evaluateInto(x, null, parameterBuffer, fullPredictions, count)
+
+  const residual = new Float64Array(count)
   const fitted = new Float64Array(count)
+  let fullSse = 0
   for (let i = 0; i < count; i += 1) {
+    if (Number.isFinite(fullPredictions[i])) {
+      residual[i] = y[i] - fullPredictions[i]
+      fullSse += residual[i] * residual[i]
+    } else {
+      residual[i] = Number.NaN
+      fullSse = Number.POSITIVE_INFINITY
+    }
     fitted[i] = y[i] - residual[i]
   }
 
@@ -363,25 +395,25 @@ export function fitModel(options: FitOptions): FitOutcome {
     const delta = y[i] - yMean
     totalSumSquares += delta * delta
   }
-  const rSquared = totalSumSquares > 0 ? 1 - sse / totalSumSquares : Number.NaN
+  const rSquared = totalSumSquares > 0 ? 1 - fullSse / totalSumSquares : Number.NaN
 
-  // 参数协方差 ≈ σ² (JᵀJ)⁻¹，σ² = SSE / (n - p)
+  // 参数协方差 ≈ σ² (JᵀJ)⁻¹（用抽样数据，σ² = fitSSE / (fitCount - p)）
   const standardErrors = new Array<number>(dimension).fill(Number.NaN)
   const finalJacobian = jacobian(parameters)
   const finalNormal: number[][] = Array.from({ length: dimension }, () =>
     new Array<number>(dimension).fill(0),
   )
-  for (let i = 0; i < count; i += 1) {
+  for (let i = 0; i < fitCount; i += 1) {
     for (let a = 0; a < dimension; a += 1) {
       for (let b = 0; b < dimension; b += 1) {
         finalNormal[a][b] += finalJacobian[i][a] * finalJacobian[i][b]
       }
     }
   }
-  if (count > dimension && Number.isFinite(sse)) {
+  if (fitCount > dimension && Number.isFinite(sse)) {
     try {
       const covariance = invertMatrix(finalNormal)
-      const sigmaSquared = sse / (count - dimension)
+      const sigmaSquared = sse / (fitCount - dimension)
       for (let i = 0; i < dimension; i += 1) {
         standardErrors[i] = Math.sqrt(Math.max(0, covariance[i][i] * sigmaSquared))
       }
@@ -399,7 +431,7 @@ export function fitModel(options: FitOptions): FitOutcome {
     fitted,
     residual,
     rSquared,
-    rmse: Math.sqrt(sse / count),
+    rmse: Math.sqrt(fullSse / count),
     iterations,
     converged,
   }
