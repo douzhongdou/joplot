@@ -22,9 +22,12 @@ src/superplot/
   types.ts                 列式数据集、频谱配置/结果类型
   index.ts                 模块公共出口
   components/
-    SuperPlotApp.tsx       页面主应用：导入、数据集切换、波形/频谱切换
-    WaveformPanel.tsx      波形面板：多信号、抽稀、统计、按窗口重新抽稀
-    SpectrumPanel.tsx      独立频谱面板：FFT 参数、峰值表
+    SuperPlotApp.tsx       顶栏（品牌/文件/数据集/语言）+ 空态 + 元信息条
+    SuperPlotWorkspace.tsx 工作区布局：上排双 plot，下排通栏设置区，持有全部交互状态
+    WaveformPanel.tsx      波形三件套：WaveformPlot（图表+按窗口重抽稀）/
+                           WaveformControls（X 轴/抽稀/信号）/ WaveformStats（统计）
+    SpectrumPanel.tsx      频谱三件套：useSpectrumModel（状态+FFT 派生）/
+                           SpectrumPlot / SpectrumControls（含 FFT 参数组）/ SpectrumResults（峰值表+摘要）
     PlotlyChart.tsx        通用 Plotly 封装（react/restyle/导出/视野回调）
     Controls.tsx           轻量表单控件
   lib/
@@ -54,7 +57,7 @@ src/superplot/
 ### 按窗口重新抽稀（progressive detail）
 
 波形默认用**极值包络**抽稀：每个像素柱保留该区间的 min 与 max，尖峰/毛刺不会被抹掉。
-用户缩放后，`PlotlyChart` 通过交互事件回调当前 X 视野，`WaveformPanel` 只截取该窗口内的原始
+用户缩放后，`PlotlyChart` 通过交互事件回调当前 X 视野，`WaveformPlot` 只截取该窗口内的原始
 样本重新抽稀，再用 `Plotly.restyle` 就地替换数据，因此：
 
 - 全览时 140 万行 → 约 4000 个包络点；

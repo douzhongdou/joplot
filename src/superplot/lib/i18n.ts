@@ -17,6 +17,7 @@ export interface SuperPlotCopy {
   replaceFile: string
   parsing: (percent: string, rows: string) => string
   parseFailed: string
+  onlyCsv: string
   noDatasets: string
   rowsLabel: string
   sizeLabel: string
@@ -24,6 +25,7 @@ export interface SuperPlotCopy {
   timeColumnLabel: string
   columnsLabel: string
   activeDataset: string
+  settings: string
   waveform: {
     title: string
     xAxis: string
@@ -68,6 +70,7 @@ export interface SuperPlotCopy {
     decibels: string
     logFrequency: string
     peakTable: string
+    noPeaks: string
     frequency: string
     magnitude: string
     relative: string
@@ -94,6 +97,7 @@ const zhCN: SuperPlotCopy = {
   replaceFile: '追加文件',
   parsing: (percent, rows) => `解析中 ${percent} · ${rows} 行`,
   parseFailed: '解析失败，请确认文件是带表头的 CSV。',
+  onlyCsv: '仅支持 CSV 文件，其他格式已跳过。',
   noDatasets: '还没有数据，先导入一个 CSV。',
   rowsLabel: '行数',
   sizeLabel: '大小',
@@ -101,6 +105,7 @@ const zhCN: SuperPlotCopy = {
   timeColumnLabel: '时间列',
   columnsLabel: '数值列',
   activeDataset: '当前数据集',
+  settings: '设置',
   waveform: {
     title: '波形',
     xAxis: 'X 轴',
@@ -145,6 +150,7 @@ const zhCN: SuperPlotCopy = {
     decibels: 'dB',
     logFrequency: '对数频率轴',
     peakTable: '峰值',
+    noPeaks: '暂未检出明显峰值，可尝试调整窗函数或 Welch 段数。',
     frequency: '频率',
     magnitude: '幅度',
     relative: '相对',
@@ -181,6 +187,7 @@ const en: SuperPlotCopy = {
   replaceFile: 'Add file',
   parsing: (percent, rows) => `Parsing ${percent} · ${rows} rows`,
   parseFailed: 'Parse failed. Make sure the file is a CSV with a header row.',
+  onlyCsv: 'Only CSV files are supported — other files were skipped.',
   noDatasets: 'No data yet — import a CSV to begin.',
   rowsLabel: 'Rows',
   sizeLabel: 'Size',
@@ -188,6 +195,7 @@ const en: SuperPlotCopy = {
   timeColumnLabel: 'Time column',
   columnsLabel: 'Numeric columns',
   activeDataset: 'Active dataset',
+  settings: 'Settings',
   waveform: {
     title: 'Waveform',
     xAxis: 'X axis',
@@ -232,6 +240,7 @@ const en: SuperPlotCopy = {
     decibels: 'dB',
     logFrequency: 'Log frequency axis',
     peakTable: 'Peaks',
+    noPeaks: 'No clear peaks yet — try a different window or Welch segment count.',
     frequency: 'Frequency',
     magnitude: 'Magnitude',
     relative: 'Relative',

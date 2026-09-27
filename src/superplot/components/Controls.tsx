@@ -128,11 +128,15 @@ export function Button({
   onClick,
   variant = 'default',
   disabled = false,
+  expanded,
+  label,
 }: {
   children: ReactNode
   onClick?: () => void
   variant?: 'default' | 'primary' | 'ghost'
   disabled?: boolean
+  expanded?: boolean
+  label?: string
 }) {
   const styles = variant === 'primary'
     ? 'bg-primary text-primary-content hover:opacity-90'
@@ -144,6 +148,8 @@ export function Button({
     <button
       type="button"
       disabled={disabled}
+      aria-expanded={expanded}
+      aria-label={label}
       className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-[var(--radius-field)] px-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${styles}`}
       onClick={onClick}
     >

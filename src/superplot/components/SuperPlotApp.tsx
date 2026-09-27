@@ -1,13 +1,12 @@
 'use client'
 
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { Activity, Database, FileUp, Loader2, UploadCloud } from 'lucide-react'
+import { Activity, Database, FileUp, Loader2, UploadCloud, X } from 'lucide-react'
 import type { SuperDataset } from '../types.ts'
 import { readSuperDataset, toSuperDatasetId, type ParseProgress } from '../lib/parse.ts'
 import { createSuperPlotCopy, type SuperPlotLanguage } from '../lib/i18n.ts'
 import { formatBytes, formatCount, formatFrequency } from '../lib/format.ts'
-import { WaveformPanel } from './WaveformPanel.tsx'
-import { SpectrumPanel } from './SpectrumPanel.tsx'
+import { SuperPlotWorkspace } from './SuperPlotWorkspace.tsx'
 
 interface Props {
   language: SuperPlotLanguage
@@ -35,7 +34,7 @@ export function SuperPlotApp({ language, routeLanguage }: Props) {
   const importFiles = useCallback(async (files: File[]) => {
     const csvFiles = files.filter((file) => file.name.toLowerCase().endsWith('.csv'))
     if (csvFiles.length === 0) {
-      setError(copy.parseFailed)
+      setError(files.length > 0 ? copy.onlyCsv : copy.parseFailed)
       return
     }
 
@@ -79,7 +78,7 @@ export function SuperPlotApp({ language, routeLanguage }: Props) {
         }
       }
     }
-  }, [copy.parseFailed])
+  }, [copy.onlyCsv, copy.parseFailed])
 
   function handleFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) {
@@ -95,29 +94,91 @@ export function SuperPlotApp({ language, routeLanguage }: Props) {
 
   return (
     <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] bg-base-200 text-base-content">
-      <header className="flex flex-wrap items-center gap-3 border-b border-base-300 bg-base-100 px-4 py-3 sm:px-6">
-        <div className="flex items-center gap-2">
-          <span className="grid size-9 place-items-center rounded-[var(--radius-box)] bg-primary/12 text-primary">
-            <Activity size={18} strokeWidth={2.4} />
+      <header className="flex items-center gap-2 border-b border-base-300 bg-base-100 px-3 py-2 sm:px-4">
+        <div className="flex shrink-0 items-center gap-1.5" title={copy.title}>
+          <span className="grid size-7 place-items-center rounded-lg bg-primary/12 text-primary">
+            <Activity size={15} strokeWidth={2.4} />
           </span>
-          <div className="leading-tight">
-            <div className="text-sm font-semibold text-base-content">{copy.branding}</div>
-            <div className="text-[11px] text-base-content/50">large-data · FFT</div>
+          <span className="hidden text-sm font-semibold text-base-content lg:inline">{copy.branding}</span>
+        </div>
+
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".csv,text/csv"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            handleFiles(event.target.files)
+            event.target.value = ''
+          }}
+        />
+        <button
+          type="button"
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-field)] bg-primary px-2.5 text-xs font-semibold text-primary-content transition hover:opacity-90"
+          onClick={() => inputRef.current?.click()}
+        >
+          <FileUp size={13} /> {copy.chooseFile}
+        </button>
+
+        {datasets.length > 0 && (
+          <button
+            type="button"
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-field)] border border-base-300 px-2.5 text-xs font-medium text-base-content/75 transition hover:border-primary/40"
+            onClick={() => inputRef.current?.click()}
+          >
+            <UploadCloud size={13} /> {copy.replaceFile}
+          </button>
+        )}
+
+        {datasets.length > 0 && (
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
+            {datasets.map((dataset) => (
+              <button
+                key={dataset.id}
+                type="button"
+                aria-current={dataset.id === activeDataset?.id ? 'true' : undefined}
+                onClick={() => setActiveDatasetId(dataset.id)}
+                className={`inline-flex h-7 max-w-48 shrink-0 items-center gap-1.5 truncate rounded-full border px-2.5 text-xs font-medium transition ${
+                  dataset.id === activeDataset?.id
+                    ? 'border-primary/40 bg-primary/10 text-primary'
+                    : 'border-base-300 bg-base-200/50 text-base-content/65 hover:text-base-content'
+                }`}
+                title={`${dataset.fileName} · ${formatCount(dataset.rowCount, locale)} rows`}
+              >
+                <Database size={12} className="shrink-0" />
+                <span className="truncate">{dataset.fileName}</span>
+              </button>
+            ))}
           </div>
-        </div>
+        )}
 
-        <div className="hidden items-center gap-2 rounded-full border border-base-300 bg-base-200/60 px-3 py-1.5 text-[11px] font-medium text-base-content/55 sm:inline-flex">
-          <span className="size-2 rounded-full bg-primary" />
-          {copy.timeDomain}
-          <span className="text-base-content/25">/</span>
-          <span className="size-2 rounded-full bg-secondary" />
-          {copy.frequencyDomain}
-        </div>
+        {progress && (
+          <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-base-content/60">
+            <Loader2 size={13} className="animate-spin" />
+            {copy.parsing(progressPercent, progressRows)}
+          </span>
+        )}
 
-        <div className="ml-auto flex items-center gap-2">
+        {error && (
+          <div role="alert" className="inline-flex min-w-0 shrink items-center gap-1.5 text-xs font-medium text-error" title={error}>
+            <span className="truncate">{error}</span>
+            <button
+              type="button"
+              className="grid size-5 shrink-0 place-items-center rounded-full text-error/70 transition hover:bg-error/10 hover:text-error"
+              onClick={() => setError(null)}
+              aria-label="×"
+              title="×"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        )}
+
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           <a
             href={`/${routeLanguage}`}
-            className="inline-flex h-9 items-center rounded-[var(--radius-field)] px-3 text-sm font-medium text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+            className="hidden h-8 items-center rounded-[var(--radius-field)] px-2 text-xs font-medium text-base-content/60 transition hover:bg-base-200 hover:text-base-content sm:inline-flex"
           >
             {copy.back}
           </a>
@@ -125,7 +186,8 @@ export function SuperPlotApp({ language, routeLanguage }: Props) {
             <a
               key={lang}
               href={`/${lang}/super-plot`}
-              className={`inline-flex h-8 min-w-8 items-center justify-center rounded-[var(--radius-field)] px-2 text-xs font-semibold uppercase transition ${
+              aria-current={lang === routeLanguage ? 'true' : undefined}
+              className={`inline-flex h-7 min-w-7 items-center justify-center rounded-[var(--radius-field)] px-1.5 text-[11px] font-semibold uppercase transition ${
                 lang === routeLanguage ? 'bg-primary text-primary-content' : 'text-base-content/50 hover:bg-base-200'
               }`}
             >
@@ -135,71 +197,9 @@ export function SuperPlotApp({ language, routeLanguage }: Props) {
         </div>
       </header>
 
-      <div className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
-        <div className="flex flex-wrap items-center gap-3 border-b border-base-300 bg-base-100 px-4 py-2.5 sm:px-6">
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".csv,text/csv"
-            multiple
-            className="hidden"
-            onChange={(event) => {
-              handleFiles(event.target.files)
-              event.target.value = ''
-            }}
-          />
-          <button
-            type="button"
-            className="inline-flex h-9 items-center gap-2 rounded-[var(--radius-field)] bg-primary px-3 text-sm font-semibold text-primary-content transition hover:opacity-90"
-            onClick={() => inputRef.current?.click()}
-          >
-            <FileUp size={15} /> {copy.chooseFile}
-          </button>
+      <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
 
-          {datasets.length > 0 && (
-            <button
-              type="button"
-              className="inline-flex h-9 items-center gap-2 rounded-[var(--radius-field)] border border-base-300 px-3 text-sm font-medium text-base-content/75 transition hover:border-primary/40"
-              onClick={() => inputRef.current?.click()}
-            >
-              <UploadCloud size={15} /> {copy.replaceFile}
-            </button>
-          )}
-
-          {progress && (
-            <span className="inline-flex items-center gap-2 text-xs font-medium text-base-content/60">
-              <Loader2 size={14} className="animate-spin" />
-              {copy.parsing(progressPercent, progressRows)}
-            </span>
-          )}
-
-          {error && (
-            <span className="text-xs font-medium text-error">{error}</span>
-          )}
-        </div>
-
-        {datasets.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 border-b border-base-300 bg-base-100 px-4 py-2 sm:px-6">
-            {datasets.map((dataset) => (
-              <button
-                key={dataset.id}
-                type="button"
-                onClick={() => setActiveDatasetId(dataset.id)}
-                className={`inline-flex max-w-64 items-center gap-2 truncate rounded-full border px-3 py-1 text-xs font-medium transition ${
-                  dataset.id === activeDataset?.id
-                    ? 'border-primary/40 bg-primary/10 text-primary'
-                    : 'border-base-300 bg-base-200/50 text-base-content/65 hover:text-base-content'
-                }`}
-                title={`${dataset.fileName} · ${formatCount(dataset.rowCount, locale)} rows`}
-              >
-                <Database size={12} />
-                <span className="truncate">{dataset.fileName}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        <main className="min-h-0">
+        <main className="min-h-0 overflow-auto">
           {!activeDataset && (
             <div className="h-full p-4 sm:p-6">
               <div
@@ -237,7 +237,7 @@ export function SuperPlotApp({ language, routeLanguage }: Props) {
 
           {activeDataset && (
             <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-base-300 bg-base-100 px-4 py-2 text-xs text-base-content/65 sm:px-6">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 overflow-x-auto border-b border-base-300 bg-base-100 px-3 py-1.5 text-xs text-base-content/65 sm:px-4">
                 <span className="font-semibold text-base-content">{activeDataset.fileName}</span>
                 <span>{copy.rowsLabel}: <b className="font-semibold text-base-content">{formatCount(activeDataset.rowCount, locale)}</b></span>
                 <span>{copy.sizeLabel}: <b className="font-semibold text-base-content">{formatBytes(activeDataset.fileSize)}</b></span>
@@ -250,41 +250,14 @@ export function SuperPlotApp({ language, routeLanguage }: Props) {
                 )}
               </div>
 
-              <div className="grid min-h-0 grid-cols-1 divide-y divide-base-300 lg:grid-cols-2 lg:divide-x lg:divide-y-0">
-                <section className="min-h-0 overflow-auto" aria-label={copy.timeDomain}>
-                  <div className="flex h-full min-h-[600px] flex-col gap-3 p-4">
-                    <div className="flex items-center gap-2">
-                      <span className="size-2.5 rounded-full bg-primary" />
-                      <h2 className="text-sm font-semibold text-base-content">{copy.waveformTab}</h2>
-                      <span className="text-[11px] uppercase tracking-[0.12em] text-base-content/40">{copy.timeDomain}</span>
-                    </div>
-                    <WaveformPanel
-                      key={activeDataset.id}
-                      dataset={activeDataset}
-                      copy={copy}
-                      locale={locale}
-                      onOpenSpectrum={setSpectrumSignal}
-                    />
-                  </div>
-                </section>
-
-                <section className="min-h-0 overflow-auto" aria-label={copy.frequencyDomain}>
-                  <div className="flex h-full min-h-[600px] flex-col gap-3 p-4">
-                    <div className="flex items-center gap-2">
-                      <span className="size-2.5 rounded-full bg-secondary" />
-                      <h2 className="text-sm font-semibold text-base-content">{copy.spectrumTab}</h2>
-                      <span className="text-[11px] uppercase tracking-[0.12em] text-base-content/40">{copy.frequencyDomain}</span>
-                    </div>
-                    <SpectrumPanel
-                      key={activeDataset.id}
-                      dataset={activeDataset}
-                      copy={copy}
-                      locale={locale}
-                      initialSignal={spectrumSignal}
-                    />
-                  </div>
-                </section>
-              </div>
+              <SuperPlotWorkspace
+                key={activeDataset.id}
+                dataset={activeDataset}
+                copy={copy}
+                locale={locale}
+                spectrumSignal={spectrumSignal}
+                onOpenSpectrum={setSpectrumSignal}
+              />
             </div>
           )}
         </main>

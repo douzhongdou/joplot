@@ -11,7 +11,17 @@ const PALETTE = [
 ]
 
 export function getSuperPlotColor(index: number): string {
-  return PALETTE[index % PALETTE.length]
+  return PALETTE[((index % PALETTE.length) + PALETTE.length) % PALETTE.length]
+}
+
+/** 按列名哈希取色：删除中间信号后，其余信号颜色保持不变。 */
+export function getSuperPlotColorForSeries(name: string, datasetId = ''): string {
+  const key = `${datasetId}\x00${name}`
+  let hash = 0
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash * 31 + key.charCodeAt(i)) | 0
+  }
+  return getSuperPlotColor(hash)
 }
 
 export function withAlpha(hex: string, alpha: number): string {
