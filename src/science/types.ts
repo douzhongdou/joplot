@@ -1,0 +1,86 @@
+/**
+ * Joplot Science MVP 的数据模型（Contract v0.1 的最小落地）。
+ *
+ * 这里刻意保持"薄"：
+ * - DenseArray 只描述 shape/strides/offset/dtype 与后端数据，不实现算法世界。
+ * - Value 逻辑上不可变：每个算子产出新 Value，不原地改。
+ * - 每个 Value 带 provenance，可追溯来源。
+ */
+
+export type NumericDType = 'float64' | 'int32' | 'bool'
+
+/** 薄 descriptor：MVP 只有 JS Float64Array 后端。 */
+export interface DenseArray {
+  readonly dtype: NumericDType
+  readonly shape: readonly number[]
+  readonly strides: readonly number[]
+  readonly offset: number
+  readonly data: Float64Array
+}
+
+export interface Series {
+  id: string
+  name: string
+  kind: 'series'
+  x: DenseArray
+  y: DenseArray
+  sampleRate?: number
+  /** 原始采样点数（预览下沉后仍保留真实长度）。 */
+  pointCount?: number
+  provenance: string
+}
+
+export interface SpectrumPeak {
+  frequency: number
+  magnitude: number
+  relativeDb: number
+}
+
+export interface SpectrumValue {
+  id: string
+  name: string
+  kind: 'spectrum'
+  frequency: DenseArray
+  magnitude: DenseArray
+  peaks: SpectrumPeak[]
+  sampleRate: number
+  pointCount?: number
+  provenance: string
+}
+
+export interface FitParameter {
+  name: string
+  value: number
+  stderr: number
+}
+
+export interface FitValue {
+  id: string
+  name: string
+  kind: 'fit'
+  x: DenseArray
+  y: DenseArray
+  fitted: DenseArray
+  residual: DenseArray
+  modelId: string
+  modelName: string
+  modelExpr: string
+  params: FitParameter[]
+  rSquared: number
+  rmse: number
+  pointCount?: number
+  provenance: string
+}
+
+export interface StatsValue {
+  id: string
+  name: string
+  kind: 'stats'
+  sourceId: string
+  rows: Array<{ key: string; value: number }>
+  provenance: string
+}
+
+export type ScienceValue = Series | SpectrumValue | FitValue | StatsValue
+
+export type ScienceValueKind = ScienceValue['kind']
