@@ -10,9 +10,11 @@
     "test": "node --experimental-strip-types --test tests/*.test.ts"
   },
   "dependencies": {
+    "@duckdb/duckdb-wasm": "1.32.0",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.13.24",
     "@types/papaparse": "^5.5.2",
+    "apache-arrow": "17.0.0",
     "lucide-react": "^1.8.0",
     "next": "^16.3.1",
     "papaparse": "^5.5.3",

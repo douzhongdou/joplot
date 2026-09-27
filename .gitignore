@@ -13,3 +13,4 @@ __pycache__
 tsconfig.tsbuildinfo
 .mimosa
 .zcode-shots
+public/spike-duckdb/
