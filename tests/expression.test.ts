@@ -18,6 +18,7 @@ test('parseExpression respects operator precedence and associativity', () => {
   assert.equal(evaluate('1 + 2 * 3'), 7)
   assert.equal(evaluate('(1 + 2) * 3'), 9)
   assert.equal(evaluate('2 ^ 3 ^ 2'), 512)
+  assert.equal(evaluate('2 ** 3 ** 2'), 512)
   assert.equal(evaluate('-2 ^ 2'), -4)
   assert.equal(evaluate('2 ^ -1'), 0.5)
   assert.equal(evaluate('8 / 2 / 2'), 2)
@@ -39,13 +40,15 @@ test('parseExpression supports implicit multiplication', () => {
   assertClose(evaluate('2pi'), 2 * Math.PI)
 })
 
-test('parseExpression evaluates built-in functions and constants', () => {
+test('parseExpression evaluates built-in functions and MATLAB constants', () => {
   assertClose(evaluate('sin(pi / 2)'), 1)
   assertClose(evaluate('cos(0)'), 1)
   assertClose(evaluate('ln(e)'), 1)
-  assertClose(evaluate('log(1000)'), 3)
-  assertClose(evaluate('log(8, 2)'), 3)
+  // log 采用 MATLAB/Python 惯例：自然对数
+  assertClose(evaluate('log(e)'), 1)
+  assert.equal(evaluate('log10(1000)'), 3)
   assertClose(evaluate('log2(8)'), 3)
+  assertClose(evaluate('log(8, 2)'), 3)
   assert.equal(evaluate('sqrt(16)'), 4)
   assert.equal(evaluate('cbrt(27)'), 3)
   assert.equal(evaluate('abs(-3)'), 3)
@@ -53,12 +56,48 @@ test('parseExpression evaluates built-in functions and constants', () => {
   assert.equal(evaluate('min(4, 2)'), 2)
   assert.equal(evaluate('floor(2.7) + ceil(2.1)'), 5)
   assert.equal(evaluate('round(2.5)'), 3)
+  assert.equal(evaluate('fix(-2.7)'), -2)
   assert.equal(evaluate('sign(-8)'), -1)
   assert.equal(evaluate('exp(0)'), 1)
   assert.equal(evaluate('mod(-1, 3)'), 2)
-  assert.equal(evaluate('pow(2, 10)'), 1024)
+  assert.equal(evaluate('rem(-7, 3)'), -1)
+  assertClose(evaluate('hypot(3, 4)'), 5)
+  assertClose(evaluate('pow(2, 10)'), 1024)
   assertClose(evaluate('atan2(1, 1)'), Math.PI / 4)
   assertClose(evaluate('tau'), Math.PI * 2)
+})
+
+test('parseExpression supports MATLAB-style comparison, logic and ternary', () => {
+  assert.equal(evaluate('2 > 1'), 1)
+  assert.equal(evaluate('2 < 1'), 0)
+  assert.equal(evaluate('1 == 1'), 1)
+  assert.equal(evaluate('1 ~= 2'), 1)
+  assert.equal(evaluate('1 != 2'), 1)
+  assert.equal(evaluate('2 >= 2'), 1)
+  assert.equal(evaluate('1 & 0'), 0)
+  assert.equal(evaluate('1 | 0'), 1)
+  assert.equal(evaluate('1 && 0'), 0)
+  assert.equal(evaluate('1 || 0'), 1)
+  assert.equal(evaluate('~0'), 1)
+  assert.equal(evaluate('~5'), 0)
+  assert.equal(evaluate('x > 0 ? 1 : -1', { x: 5 }), 1)
+  assert.equal(evaluate('x > 0 ? 1 : -1', { x: -5 }), -1)
+  assert.equal(evaluate('x > 0 ? 1 : x < 0 ? -1 : 0', { x: 0 }), 0)
+})
+
+test('parseExpression supports special functions and constants', () => {
+  assert.equal(evaluate('factorial(5)'), 120)
+  assertClose(evaluate('gamma(5)'), 24)
+  assertClose(evaluate('erf(0)'), 0)
+  assertClose(evaluate('erfc(0)'), 1)
+  assertClose(evaluate('sinc(0)'), 1)
+  assert.equal(evaluate('clamp(5, 0, 3)'), 3)
+  assert.equal(evaluate('heaviside(0)'), 0.5)
+  assertClose(evaluate('deg2rad(180)'), Math.PI)
+  assertClose(evaluate('rad2deg(pi)'), 180)
+  assert.equal(evaluate('Inf'), Number.POSITIVE_INFINITY)
+  assert.ok(Number.isNaN(evaluate('NaN')))
+  assert.ok(evaluate('eps') > 0)
 })
 
 test('parseExpression disambiguates scientific notation from the e constant', () => {
@@ -82,8 +121,17 @@ test('parseExpression accepts unicode math symbols and full-width punctuation', 
 
 test('parseExpression lists free variables without constants', () => {
   assert.deepEqual(parseExpression('a * sin(b*x) + pi').variables, ['a', 'b', 'x'])
+  assert.deepEqual(parseExpression('a * sin(b*x) + pi').parameterNames, ['a', 'b'])
   assert.deepEqual(parseExpression('e^x').variables, ['x'])
   assert.deepEqual(parseExpression('42').variables, [])
+})
+
+test('evaluateInto batch evaluation avoids per-point allocation', () => {
+  const parsed = parseExpression('a*x + b')
+  const x = Float64Array.from([0, 1, 2, 3])
+  const out = new Float64Array(4)
+  parsed.evaluateInto(x, null, Float64Array.from([2, 1]), out)
+  assert.deepEqual([...out], [1, 3, 5, 7])
 })
 
 test('parseExpression returns non-finite values instead of throwing at runtime', () => {
@@ -105,6 +153,7 @@ test('parseExpression throws positioned errors with stable codes', () => {
     ['1.2.3', 'invalid-number', 3],
     ['x = 2', 'unexpected-character', 2],
     ['1 + * 2', 'unexpected-token', 4],
+    ['1 ? 2', 'unexpected-token', 5],
   ]
 
   for (const [source, code, position] of cases) {

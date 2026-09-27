@@ -1,3 +1,18 @@
+/**
+ * Joplot Expression Language (JEL) — 用户表达式引擎。
+ *
+ * 语法：MATLAB / Octave 标量表达式子集 + 少量文档化扩展。
+ *   - 幂 `^`（右结合），扩展 `**` 别名
+ *   - `log` = 自然对数（MATLAB/Python 惯例），另有 `log2`、`log10`、`log(x, base)`
+ *   - 常量 pi/π、e、tau/τ、phi/φ、Inf/inf、NaN/nan、eps
+ *   - 比较 `== ~= != < <= > >=`、逻辑 `& | ~` 与短路 `&& ||`、三元 `cond ? a : b`
+ *   - 扩展：隐式乘法（`2x`、`x(x+1)`）、`ln` 别名、希腊/中文标识符
+ *   - 标量运算符 `%` 保留为取模（与 MATLAB 注释含义不同，属文档化差异）
+ *
+ * 引擎：AST → 位置参数闭包 `(p, x, y) => number`，批量求值零每点分配。
+ * 接口刻意保持可替换：将来可换成 JIT / WASM 后端而不改语法。
+ */
+
 export type ExpressionErrorCode =
   | 'empty'
   | 'unexpected-character'
@@ -31,8 +46,12 @@ export class ExpressionError extends Error {
   }
 }
 
-type BinaryOperator = '+' | '-' | '*' | '/' | '%' | '^'
-type OperatorToken = BinaryOperator | '(' | ')' | ','
+type BinaryOperator =
+  | '+' | '-' | '*' | '/' | '%' | '^'
+  | '==' | '~=' | '<' | '<=' | '>' | '>='
+  | '&' | '|' | '&&' | '||'
+
+type OperatorToken = BinaryOperator | '~' | '?' | ':' | '(' | ')' | ','
 
 type Token =
   | { type: 'number'; value: number; start: number; end: number }
@@ -43,14 +62,67 @@ type Token =
 type AstNode =
   | { kind: 'number'; value: number }
   | { kind: 'variable'; name: string }
-  | { kind: 'unary'; operand: AstNode }
+  | { kind: 'unary'; op: '+' | '-' | '~'; operand: AstNode }
   | { kind: 'binary'; op: BinaryOperator; left: AstNode; right: AstNode }
+  | { kind: 'ternary'; condition: AstNode; consequent: AstNode; alternate: AstNode }
   | { kind: 'call'; name: string; args: AstNode[] }
 
 export interface BuiltinFunction {
   fn: (...args: number[]) => number
   minArgs: number
   maxArgs: number
+}
+
+function erf(value: number): number {
+  const sign = value < 0 ? -1 : 1
+  const x = Math.abs(value)
+  const t = 1 / (1 + 0.3275911 * x)
+  const poly = ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t
+  return sign * (1 - poly * Math.exp(-x * x))
+}
+
+const LANCZOS_G = 7
+const LANCZOS_C = [
+  0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313,
+  -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6,
+  1.5056327351493116e-7,
+]
+
+function gammaFn(z: number): number {
+  if (z < 0.5) {
+    return Math.PI / (Math.sin(Math.PI * z) * gammaFn(1 - z))
+  }
+  const x = z - 1
+  let sum = LANCZOS_C[0]
+  for (let i = 1; i < LANCZOS_G + 2; i += 1) {
+    sum += LANCZOS_C[i] / (x + i)
+  }
+  const t = x + LANCZOS_G + 0.5
+  return Math.sqrt(2 * Math.PI) * t ** (x + 0.5) * Math.exp(-t) * sum
+}
+
+function factorialFn(n: number): number {
+  if (Number.isInteger(n)) {
+    if (n < 0) return Number.NaN
+    let result = 1
+    for (let i = 2; i <= n; i += 1) result *= i
+    return result
+  }
+  return gammaFn(n + 1)
+}
+
+function positiveMod(left: number, right: number): number {
+  return ((left % right) + right) % right
+}
+
+function remainder(left: number, right: number): number {
+  return left - right * Math.trunc(left / right)
+}
+
+function sinc(value: number): number {
+  if (value === 0) return 1
+  const t = Math.PI * value
+  return Math.sin(t) / t
 }
 
 const BUILTIN_FUNCTIONS: Record<string, BuiltinFunction> = {
@@ -61,18 +133,19 @@ const BUILTIN_FUNCTIONS: Record<string, BuiltinFunction> = {
   acos: { fn: Math.acos, minArgs: 1, maxArgs: 1 },
   atan: { fn: Math.atan, minArgs: 1, maxArgs: 1 },
   atan2: { fn: Math.atan2, minArgs: 2, maxArgs: 2 },
+  hypot: { fn: Math.hypot, minArgs: 2, maxArgs: 2 },
   sinh: { fn: Math.sinh, minArgs: 1, maxArgs: 1 },
   cosh: { fn: Math.cosh, minArgs: 1, maxArgs: 1 },
   tanh: { fn: Math.tanh, minArgs: 1, maxArgs: 1 },
   ln: { fn: Math.log, minArgs: 1, maxArgs: 1 },
   log: {
-    fn: (value: number, base?: number) => (base === undefined
-      ? Math.log10(value)
-      : Math.log(value) / Math.log(base)),
+    fn: (value: number, base?: number) =>
+      base === undefined ? Math.log(value) : Math.log(value) / Math.log(base),
     minArgs: 1,
     maxArgs: 2,
   },
   log2: { fn: Math.log2, minArgs: 1, maxArgs: 1 },
+  log10: { fn: Math.log10, minArgs: 1, maxArgs: 1 },
   exp: { fn: Math.exp, minArgs: 1, maxArgs: 1 },
   sqrt: { fn: Math.sqrt, minArgs: 1, maxArgs: 1 },
   cbrt: { fn: Math.cbrt, minArgs: 1, maxArgs: 1 },
@@ -80,11 +153,23 @@ const BUILTIN_FUNCTIONS: Record<string, BuiltinFunction> = {
   floor: { fn: Math.floor, minArgs: 1, maxArgs: 1 },
   ceil: { fn: Math.ceil, minArgs: 1, maxArgs: 1 },
   round: { fn: Math.round, minArgs: 1, maxArgs: 1 },
+  fix: { fn: Math.trunc, minArgs: 1, maxArgs: 1 },
   sign: { fn: Math.sign, minArgs: 1, maxArgs: 1 },
+  mod: { fn: positiveMod, minArgs: 2, maxArgs: 2 },
+  rem: { fn: remainder, minArgs: 2, maxArgs: 2 },
+  pow: { fn: Math.pow, minArgs: 2, maxArgs: 2 },
   min: { fn: (...args: number[]) => Math.min(...args), minArgs: 2, maxArgs: 8 },
   max: { fn: (...args: number[]) => Math.max(...args), minArgs: 2, maxArgs: 8 },
-  mod: { fn: (left: number, right: number) => ((left % right) + right) % right, minArgs: 2, maxArgs: 2 },
-  pow: { fn: Math.pow, minArgs: 2, maxArgs: 2 },
+  factorial: { fn: factorialFn, minArgs: 1, maxArgs: 1 },
+  gamma: { fn: gammaFn, minArgs: 1, maxArgs: 1 },
+  gammaln: { fn: (value: number) => Math.log(Math.abs(gammaFn(value))), minArgs: 1, maxArgs: 1 },
+  erf: { fn: erf, minArgs: 1, maxArgs: 1 },
+  erfc: { fn: (value: number) => 1 - erf(value), minArgs: 1, maxArgs: 1 },
+  sinc: { fn: sinc, minArgs: 1, maxArgs: 1 },
+  clamp: { fn: (value: number, low: number, high: number) => Math.min(high, Math.max(low, value)), minArgs: 3, maxArgs: 3 },
+  heaviside: { fn: (value: number) => (value < 0 ? 0 : value > 0 ? 1 : 0.5), minArgs: 1, maxArgs: 1 },
+  deg2rad: { fn: (value: number) => (value * Math.PI) / 180, minArgs: 1, maxArgs: 1 },
+  rad2deg: { fn: (value: number) => (value * 180) / Math.PI, minArgs: 1, maxArgs: 1 },
 }
 
 export const FUNCTION_NAMES = Object.keys(BUILTIN_FUNCTIONS)
@@ -97,6 +182,12 @@ const CONSTANTS: Record<string, number> = {
   'τ': Math.PI * 2,
   phi: (1 + Math.sqrt(5)) / 2,
   'φ': (1 + Math.sqrt(5)) / 2,
+  Inf: Number.POSITIVE_INFINITY,
+  inf: Number.POSITIVE_INFINITY,
+  Infinity: Number.POSITIVE_INFINITY,
+  NaN: Number.NaN,
+  nan: Number.NaN,
+  eps: Number.EPSILON,
 }
 
 function isDigit(char: string) {
@@ -122,7 +213,6 @@ function scanNumber(source: string, start: number): { value: number; end: number
 
   if (source[index] === '.') {
     index += 1
-
     while (index < source.length && isDigit(source[index])) {
       index += 1
       sawDigit = true
@@ -133,19 +223,16 @@ function scanNumber(source: string, start: number): { value: number; end: number
     return null
   }
 
-  // An `e`/`E` only belongs to the number when digits (with optional sign) follow.
+  // `e`/`E` 只有在其后跟数字（可带符号）时才属于这个数。
   if (source[index] === 'e' || source[index] === 'E') {
     let exponentEnd = index + 1
-
     if (source[exponentEnd] === '+' || source[exponentEnd] === '-') {
       exponentEnd += 1
     }
-
     if (isDigit(source[exponentEnd] ?? '')) {
       while (exponentEnd < source.length && isDigit(source[exponentEnd])) {
         exponentEnd += 1
       }
-
       index = exponentEnd
     }
   }
@@ -155,14 +242,18 @@ function scanNumber(source: string, start: number): { value: number; end: number
 
 function scanIdentifier(source: string, start: number): { name: string; end: number } {
   let index = start + 1
-
   while (index < source.length && isIdentifierChar(source[index])) {
     index += 1
   }
-
   return { name: source.slice(start, index), end: index }
 }
 
+const MULTI_CHAR_OPERATORS = ['==', '~=', '!=', '<=', '>=', '&&', '||', '**']
+const SINGLE_OPERATORS: Record<string, OperatorToken> = {
+  '+': '+', '-': '-', '*': '*', '/': '/', '%': '%', '^': '^',
+  '<': '<', '>': '>', '&': '&', '|': '|', '~': '~',
+  '?': '?', ':': ':', '(': '(', ')': ')', ',': ',',
+}
 const MULTIPLY_ALIASES = new Set(['*', '·', '×'])
 const DIVIDE_ALIASES = new Set(['/', '÷'])
 const MINUS_ALIASES = new Set(['-', '−', '—'])
@@ -172,7 +263,7 @@ function tokenize(source: string): Token[] {
   const tokens: Token[] = []
   let index = 0
 
-  const pushOperator = (op: OperatorToken, at: number) => {
+  const push = (op: OperatorToken, at: number) => {
     tokens.push({ type: 'operator', op, start: at, end: at + 1 })
   }
 
@@ -184,62 +275,46 @@ function tokenize(source: string): Token[] {
       continue
     }
 
+    const twoChar = source.slice(index, index + 2)
+    if (MULTI_CHAR_OPERATORS.includes(twoChar)) {
+      const op = twoChar === '!=' ? '~=' : twoChar === '**' ? '^' : (twoChar as OperatorToken)
+      tokens.push({ type: 'operator', op, start: index, end: index + 2 })
+      index += 2
+      continue
+    }
+
     if (MULTIPLY_ALIASES.has(char)) {
-      pushOperator('*', index)
+      push('*', index)
       index += 1
       continue
     }
-
     if (DIVIDE_ALIASES.has(char)) {
-      pushOperator('/', index)
+      push('/', index)
       index += 1
       continue
     }
-
     if (MINUS_ALIASES.has(char)) {
-      pushOperator('-', index)
+      push('-', index)
       index += 1
       continue
     }
-
     if (COMMA_ALIASES.has(char)) {
-      pushOperator(',', index)
+      push(',', index)
       index += 1
       continue
     }
-
-    if (char === '+') {
-      pushOperator('+', index)
-      index += 1
-      continue
-    }
-
-    if (char === '%') {
-      pushOperator('%', index)
-      index += 1
-      continue
-    }
-
-    if (char === '^') {
-      pushOperator('^', index)
-      index += 1
-      continue
-    }
-
     if (char === '(' || char === '（') {
-      pushOperator('(', index)
+      push('(', index)
       index += 1
       continue
     }
-
     if (char === ')' || char === '）') {
-      pushOperator(')', index)
+      push(')', index)
       index += 1
       continue
     }
-
     if (char === '²' || char === '³') {
-      pushOperator('^', index)
+      push('^', index)
       tokens.push({ type: 'number', value: char === '²' ? 2 : 3, start: index, end: index + 1 })
       index += 1
       continue
@@ -247,15 +322,12 @@ function tokenize(source: string): Token[] {
 
     if (isDigit(char) || char === '.') {
       const scanned = scanNumber(source, index)
-
       if (!scanned || !Number.isFinite(scanned.value)) {
         throw new ExpressionError('invalid-number', index, { token: source.slice(index, index + 4) })
       }
-
       if (source[scanned.end] === '.') {
         throw new ExpressionError('invalid-number', scanned.end, { token: source.slice(scanned.end, scanned.end + 4) })
       }
-
       tokens.push({ type: 'number', value: scanned.value, start: index, end: scanned.end })
       index = scanned.end
       continue
@@ -268,6 +340,12 @@ function tokenize(source: string): Token[] {
       continue
     }
 
+    if (char in SINGLE_OPERATORS) {
+      push(SINGLE_OPERATORS[char], index)
+      index += 1
+      continue
+    }
+
     throw new ExpressionError('unexpected-character', index, { token: char })
   }
 
@@ -275,40 +353,39 @@ function tokenize(source: string): Token[] {
   return tokens
 }
 
-const BINDING_ADDITIVE = 1
-const BINDING_MULTIPLICATIVE = 2
-const BINDING_UNARY = 3
-const BINDING_POWER = 4
+const BINARY_BINDING: Record<BinaryOperator, number> = {
+  '||': 1,
+  '&&': 2,
+  '|': 3,
+  '&': 4,
+  '==': 5,
+  '~=': 5,
+  '<': 5,
+  '<=': 5,
+  '>': 5,
+  '>=': 5,
+  '+': 6,
+  '-': 6,
+  '*': 7,
+  '/': 7,
+  '%': 7,
+  '^': 9,
+}
+
+const MULTIPLICATIVE_BINDING = 7
+const UNARY_BINDING = 8
+const TERNARY_BINDING = 0
 
 function isBinaryOperator(op: OperatorToken): op is BinaryOperator {
-  return op === '+' || op === '-' || op === '*' || op === '/' || op === '%' || op === '^'
+  return op in BINARY_BINDING
 }
 
-function binaryBindingPower(op: BinaryOperator) {
-  if (op === '+' || op === '-') {
-    return BINDING_ADDITIVE
-  }
+const COMPARISON_OPERATORS = new Set<BinaryOperator>(['==', '~=', '<', '<=', '>', '>='])
 
-  if (op === '^') {
-    return BINDING_POWER
-  }
-
-  return BINDING_MULTIPLICATIVE
-}
-
-function describeToken(token: Token) {
-  if (token.type === 'number') {
-    return String(token.value)
-  }
-
-  if (token.type === 'identifier') {
-    return token.name
-  }
-
-  if (token.type === 'operator') {
-    return token.op
-  }
-
+function describeToken(token: Token): string {
+  if (token.type === 'number') return String(token.value)
+  if (token.type === 'identifier') return token.name
+  if (token.type === 'operator') return token.op
   return ''
 }
 
@@ -346,10 +423,7 @@ class Parser {
       if (this.isOperator(trailing, ')')) {
         throw new ExpressionError('unbalanced-parenthesis', trailing.start, { token: ')' })
       }
-
-      throw new ExpressionError('unexpected-token', trailing.start, {
-        token: describeToken(trailing),
-      })
+      throw new ExpressionError('unexpected-token', trailing.start, { token: describeToken(trailing) })
     }
 
     return node
@@ -362,25 +436,34 @@ class Parser {
       const token = this.peek()
 
       if (token.type === 'operator' && isBinaryOperator(token.op)) {
-        const bindingPower = binaryBindingPower(token.op)
-
+        const bindingPower = BINARY_BINDING[token.op]
         if (bindingPower < minBindingPower) {
           break
         }
-
         this.advance()
-        const isRightAssociative = token.op === '^'
-        const right = this.parseExpression(isRightAssociative ? bindingPower : bindingPower + 1)
+        const rightAssociative = token.op === '^'
+        const right = this.parseExpression(rightAssociative ? bindingPower : bindingPower + 1)
         left = { kind: 'binary', op: token.op, left, right }
         continue
       }
 
+      if (this.isOperator(token, '?') && minBindingPower <= TERNARY_BINDING) {
+        this.advance()
+        const consequent = this.parseExpression(0)
+        if (!this.isOperator(this.peek(), ':')) {
+          throw new ExpressionError('unexpected-token', this.peek().start, { token: describeToken(this.peek()) })
+        }
+        this.advance()
+        const alternate = this.parseExpression(TERNARY_BINDING)
+        left = { kind: 'ternary', condition: left, consequent, alternate }
+        continue
+      }
+
       if (this.startsPrimary(token)) {
-        if (BINDING_MULTIPLICATIVE < minBindingPower) {
+        if (MULTIPLICATIVE_BINDING < minBindingPower) {
           break
         }
-
-        const right = this.parseExpression(BINDING_MULTIPLICATIVE + 1)
+        const right = this.parseExpression(MULTIPLICATIVE_BINDING + 1)
         left = { kind: 'binary', op: '*', left, right }
         continue
       }
@@ -400,14 +483,10 @@ class Parser {
   private parsePrefix(): AstNode {
     const token = this.peek()
 
-    if (this.isOperator(token, '-')) {
+    if (this.isOperator(token, '-') || this.isOperator(token, '+') || this.isOperator(token, '~')) {
+      const op = (token as { op: '+' | '-' | '~' }).op
       this.advance()
-      return { kind: 'unary', operand: this.parseExpression(BINDING_UNARY) }
-    }
-
-    if (this.isOperator(token, '+')) {
-      this.advance()
-      return this.parseExpression(BINDING_UNARY)
+      return { kind: 'unary', op, operand: this.parseExpression(UNARY_BINDING) }
     }
 
     if (token.type === 'number') {
@@ -422,11 +501,9 @@ class Parser {
     if (this.isOperator(token, '(')) {
       this.advance()
       const inner = this.parseExpression(0)
-
       if (!this.isOperator(this.peek(), ')')) {
         throw new ExpressionError('unexpected-end', this.peek().start)
       }
-
       this.advance()
       return inner
     }
@@ -440,7 +517,6 @@ class Parser {
 
   private parseIdentifier(): AstNode {
     const token = this.advance()
-
     if (token.type !== 'identifier') {
       throw new ExpressionError('unexpected-token', token.start)
     }
@@ -452,35 +528,26 @@ class Parser {
       if (!this.isOperator(this.peek(), '(')) {
         throw new ExpressionError('function-needs-parentheses', token.start, { name })
       }
-
       this.advance()
       const args: AstNode[] = []
-
       if (!this.isOperator(this.peek(), ')')) {
         args.push(this.parseExpression(0))
-
         while (this.isOperator(this.peek(), ',')) {
           this.advance()
           args.push(this.parseExpression(0))
         }
       }
-
       if (!this.isOperator(this.peek(), ')')) {
         throw new ExpressionError('unexpected-end', this.peek().start)
       }
-
       this.advance()
-
       if (args.length < builtin.minArgs || args.length > builtin.maxArgs) {
         throw new ExpressionError('wrong-argument-count', token.start, {
           name,
-          expected: builtin.minArgs === builtin.maxArgs
-            ? String(builtin.minArgs)
-            : `${builtin.minArgs}-${builtin.maxArgs}`,
+          expected: builtin.minArgs === builtin.maxArgs ? String(builtin.minArgs) : `${builtin.minArgs}-${builtin.maxArgs}`,
           actual: String(args.length),
         })
       }
-
       return { kind: 'call', name, args }
     }
 
@@ -489,61 +556,111 @@ class Parser {
 }
 
 export type Scope = Record<string, number>
-export type CompiledExpression = (scope: Scope) => number
 
-function compileNode(node: AstNode): CompiledExpression {
-  switch (node.kind) {
-    case 'number': {
-      const value = node.value
-      return () => value
-    }
-    case 'variable': {
-      const constant = CONSTANTS[node.name]
+/** 快路径编译产物：位置参数闭包，批量求值零分配。 */
+type CompiledNode = (params: Float64Array, x: number, y: number) => number
 
-      if (constant !== undefined) {
-        return () => constant
+const RESERVED_VARIABLES = new Set(['x', 'y'])
+
+export interface ParsedExpression {
+  /** 表达式中出现的自由变量（含 x/y），已排序。 */
+  variables: string[]
+  /** 需要外部提供的参数名（variables 去掉 x/y），顺序与 evaluateInto 的 params 一致。 */
+  parameterNames: string[]
+  /** 慢路径：单点求值，允许按名传参。 */
+  evaluate(scope: Scope): number
+  /** 快路径：批量求值。x/y 可为 null，params 按 parameterNames 顺序。 */
+  evaluateInto(
+    x: Float64Array | null,
+    y: Float64Array | null,
+    params: Float64Array,
+    out: Float64Array,
+    length?: number,
+  ): void
+}
+
+class Compiler {
+  private readonly parameterIndex = new Map<string, number>()
+
+  constructor(parameterNames: string[]) {
+    parameterNames.forEach((name, index) => this.parameterIndex.set(name, index))
+  }
+
+  compile(node: AstNode): CompiledNode {
+    switch (node.kind) {
+      case 'number': {
+        const value = node.value
+        return () => value
       }
-
-      const name = node.name
-      return (scope) => scope[name] ?? Number.NaN
-    }
-    case 'unary': {
-      const operand = compileNode(node.operand)
-      return (scope) => -operand(scope)
-    }
-    case 'call': {
-      const fn = BUILTIN_FUNCTIONS[node.name]
-      const args = node.args.map(compileNode)
-
-      return (scope) => fn.fn(...args.map((arg) => arg(scope)))
-    }
-    case 'binary': {
-      const left = compileNode(node.left)
-      const right = compileNode(node.right)
-
-      switch (node.op) {
-        case '+':
-          return (scope) => left(scope) + right(scope)
-        case '-':
-          return (scope) => left(scope) - right(scope)
-        case '*':
-          return (scope) => left(scope) * right(scope)
-        case '/':
-          return (scope) => left(scope) / right(scope)
-        case '%': {
-          const modFn = BUILTIN_FUNCTIONS.mod.fn
-          return (scope) => modFn(left(scope), right(scope))
+      case 'variable': {
+        const constant = CONSTANTS[node.name]
+        if (constant !== undefined) {
+          return () => constant
         }
-        case '^':
-          return (scope) => left(scope) ** right(scope)
+        if (node.name === 'x') {
+          return (_params, x) => x
+        }
+        if (node.name === 'y') {
+          return (_params, _x, y) => y
+        }
+        const index = this.parameterIndex.get(node.name) ?? -1
+        return (params) => (index >= 0 ? params[index] : Number.NaN)
+      }
+      case 'unary': {
+        const operand = this.compile(node.operand)
+        if (node.op === '-') return (params, x, y) => -operand(params, x, y)
+        if (node.op === '+') return (params, x, y) => +operand(params, x, y)
+        return (params, x, y) => (operand(params, x, y) === 0 ? 1 : 0)
+      }
+      case 'binary':
+        return this.compileBinary(node)
+      case 'ternary': {
+        const condition = this.compile(node.condition)
+        const consequent = this.compile(node.consequent)
+        const alternate = this.compile(node.alternate)
+        return (params, x, y) => (condition(params, x, y) !== 0 ? consequent(params, x, y) : alternate(params, x, y))
+      }
+      case 'call': {
+        const fn = BUILTIN_FUNCTIONS[node.name].fn
+        const args = node.args.map((arg) => this.compile(arg))
+        // 常见的一元/二元调用走专用快路径，避免每次展开数组。
+        if (args.length === 1) {
+          const a0 = args[0]
+          return (params, x, y) => fn(a0(params, x, y))
+        }
+        if (args.length === 2) {
+          const a0 = args[0]
+          const a1 = args[1]
+          return (params, x, y) => fn(a0(params, x, y), a1(params, x, y))
+        }
+        return (params, x, y) => fn(...args.map((arg) => arg(params, x, y)))
       }
     }
   }
-}
 
-export interface ParsedExpression {
-  evaluate: CompiledExpression
-  variables: string[]
+  private compileBinary(node: Extract<AstNode, { kind: 'binary' }>): CompiledNode {
+    const left = this.compile(node.left)
+    const right = this.compile(node.right)
+
+    switch (node.op) {
+      case '+': return (p, x, y) => left(p, x, y) + right(p, x, y)
+      case '-': return (p, x, y) => left(p, x, y) - right(p, x, y)
+      case '*': return (p, x, y) => left(p, x, y) * right(p, x, y)
+      case '/': return (p, x, y) => left(p, x, y) / right(p, x, y)
+      case '%': return (p, x, y) => positiveMod(left(p, x, y), right(p, x, y))
+      case '^': return (p, x, y) => left(p, x, y) ** right(p, x, y)
+      case '==': return (p, x, y) => (left(p, x, y) === right(p, x, y) ? 1 : 0)
+      case '~=': return (p, x, y) => (left(p, x, y) !== right(p, x, y) ? 1 : 0)
+      case '<': return (p, x, y) => (left(p, x, y) < right(p, x, y) ? 1 : 0)
+      case '<=': return (p, x, y) => (left(p, x, y) <= right(p, x, y) ? 1 : 0)
+      case '>': return (p, x, y) => (left(p, x, y) > right(p, x, y) ? 1 : 0)
+      case '>=': return (p, x, y) => (left(p, x, y) >= right(p, x, y) ? 1 : 0)
+      case '&': return (p, x, y) => (left(p, x, y) !== 0 && right(p, x, y) !== 0 ? 1 : 0)
+      case '|': return (p, x, y) => (left(p, x, y) !== 0 || right(p, x, y) !== 0 ? 1 : 0)
+      case '&&': return (p, x, y) => (left(p, x, y) !== 0 && right(p, x, y) !== 0 ? 1 : 0)
+      case '||': return (p, x, y) => (left(p, x, y) !== 0 || right(p, x, y) !== 0 ? 1 : 0)
+    }
+  }
 }
 
 export function collectVariables(node: AstNode, names = new Set<string>()): Set<string> {
@@ -562,33 +679,54 @@ export function collectVariables(node: AstNode, names = new Set<string>()): Set<
       collectVariables(node.left, names)
       collectVariables(node.right, names)
       break
+    case 'ternary':
+      collectVariables(node.condition, names)
+      collectVariables(node.consequent, names)
+      collectVariables(node.alternate, names)
+      break
     case 'call':
       node.args.forEach((arg) => collectVariables(arg, names))
       break
   }
-
   return names
 }
 
 export function parseExpression(source: string): ParsedExpression {
   const trimmed = source.trim()
-
   if (!trimmed) {
     throw new ExpressionError('empty', 0)
   }
 
   const ast = new Parser(trimmed).parse()
   const variables = [...collectVariables(ast)].sort()
+  const parameterNames = variables.filter((name) => !RESERVED_VARIABLES.has(name))
+  const compiler = new Compiler(parameterNames)
+  const compiled = compiler.compile(ast)
 
-  return {
-    evaluate: compileNode(ast),
-    variables,
+  const scratch = new Float64Array(parameterNames.length)
+
+  const evaluate = (scope: Scope): number => {
+    for (let i = 0; i < parameterNames.length; i += 1) {
+      const value = scope[parameterNames[i]]
+      scratch[i] = value === undefined ? Number.NaN : value
+    }
+    return compiled(scratch, scope.x ?? Number.NaN, scope.y ?? Number.NaN)
   }
+
+  const evaluateInto: ParsedExpression['evaluateInto'] = (x, y, params, out, length) => {
+    const count = length ?? out.length
+    for (let i = 0; i < count; i += 1) {
+      out[i] = compiled(params, x ? x[i] : Number.NaN, y ? y[i] : Number.NaN)
+    }
+  }
+
+  return { variables, parameterNames, evaluate, evaluateInto }
 }
 
 export function formatCaretHint(source: string, position: number) {
   const leadingSpaces = source.length - source.trimStart().length
   const column = Math.min(Math.max(0, position) + leadingSpaces, 120)
-
   return `${' '.repeat(column)}^`
 }
+
+export { COMPARISON_OPERATORS, RESERVED_VARIABLES }
