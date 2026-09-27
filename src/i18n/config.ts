@@ -114,6 +114,12 @@ export function getFunctionStudioPath(language: SupportedLanguage): string {
   return `${LANGUAGE_PATHS[language]}/${FUNCTION_STUDIO_ROUTE_SEGMENT}`
 }
 
+export const SUPER_PLOT_ROUTE_SEGMENT = 'super-plot'
+
+export function getSuperPlotPath(language: SupportedLanguage): string {
+  return `${LANGUAGE_PATHS[language]}/${SUPER_PLOT_ROUTE_SEGMENT}`
+}
+
 export function resolveSupportedLanguageFromRouteLanguage(language: string): SupportedLanguage | null {
   return isRouteLanguage(language) ? ROUTE_LANGUAGE_TO_SUPPORTED_LANGUAGE[language] : null
 }

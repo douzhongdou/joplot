@@ -482,7 +482,7 @@ export function FunctionStudio() {
                       >
                         <div className="flex items-center gap-1.5 p-1.5 pl-2.5">
                           <label
-                            className="relative inline-grid size-7 shrink-0 place-items-center rounded-lg border border-base-300"
+                            className="relative inline-grid size-7 shrink-0 place-items-center overflow-hidden rounded-lg border border-base-300 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/30"
                             style={{ backgroundColor: curve.color }}
                             title={t('functionStudio.colorLabel')}
                           >
@@ -507,6 +507,8 @@ export function FunctionStudio() {
                             autoComplete="off"
                             autoCapitalize="off"
                             aria-label={t('functionStudio.expressionLabel')}
+                            aria-invalid={showError}
+                            aria-describedby={showError ? `curve-error-${curve.id}` : undefined}
                           />
                           <button
                             type="button"
@@ -530,7 +532,7 @@ export function FunctionStudio() {
                           </button>
                         </div>
                         {showError && error && (
-                          <p className="border-t border-error/20 bg-error/5 px-3 py-1.5 text-xs leading-relaxed text-error">
+                          <p id={`curve-error-${curve.id}`} role="alert" className="border-t border-error/20 bg-error/5 px-3 py-1.5 text-xs leading-relaxed text-error">
                             {describeError(error)}
                           </p>
                         )}
@@ -703,7 +705,7 @@ export function FunctionStudio() {
             </div>
           </aside>
 
-          <section className="order-1 flex h-[52vh] min-h-[320px] flex-col lg:order-2 lg:h-auto lg:min-h-0">
+          <section className="order-1 flex h-[42vh] min-h-[280px] flex-col lg:order-2 lg:h-auto lg:min-h-0">
             <div className="flex flex-wrap items-center gap-2 border-b border-base-300 bg-base-100 px-3 py-2 sm:px-4">
               <PlotToolbar
                 labeled

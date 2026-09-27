@@ -569,7 +569,11 @@ export function ChartCard({
               : 'border-base-300 hover:border-primary/20'
           }`}
       onMouseDown={onSelect}
-      onFocus={onSelect}
+      onFocus={(event) => {
+        if (event.target === event.currentTarget) {
+          onSelect()
+        }
+      }}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) {
           return
@@ -587,7 +591,7 @@ export function ChartCard({
         {allowLayoutEditing && (
           <button
             type="button"
-            className="inline-grid size-9 cursor-grab place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary active:cursor-grabbing"
+            className="inline-grid size-10 touch-none select-none place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary active:cursor-grabbing"
             onPointerDown={onDragStart}
             aria-label={t('chartCard.dragCard')}
             title={t('chartCard.dragCard')}
@@ -682,7 +686,7 @@ export function ChartCard({
           || aggregateResult.skippedRows > 0
           || aggregateResult.omittedSeriesCount > 0
         ) && (
-          <div className="mt-3 rounded-[var(--radius-box)] bg-warning/10 px-3 py-2 text-xs leading-5 text-warning">
+          <div className="mt-3 rounded-[var(--radius-box)] border border-warning/25 bg-warning/10 px-3 py-2 text-xs leading-5 text-amber-800 dark:text-amber-200">
             {t('chartCard.aggregateSkipped', {
               datasets: aggregateResult.skippedDatasets.length,
               rows: aggregateResult.skippedRows,
@@ -692,7 +696,7 @@ export function ChartCard({
         )}
 
         {((card.kind === 'stats' && !summary && !aggregateSummary) || (card.kind !== 'stats' && validSeries.length === 0 && !hasAggregateSeries && !(card.kind === 'heatmap' && !!card.heatmapConfig))) && (
-          <div className="flex flex-1 items-center justify-center rounded-[var(--radius-box)] border border-dashed border-base-300 bg-base-200/50 p-6 text-center text-sm leading-6 text-base-content/55">
+          <div role="status" className="flex flex-1 items-center justify-center rounded-[var(--radius-box)] border border-dashed border-base-300 bg-base-200/50 p-6 text-center text-sm leading-6 text-base-content/55">
             <div>{t('chartCard.noValidSeries')}</div>
           </div>
         )}
@@ -701,7 +705,7 @@ export function ChartCard({
       {allowLayoutEditing && (
         <button
           type="button"
-          className="absolute bottom-3 right-3 inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary"
+          className="absolute bottom-3 right-3 inline-grid size-10 touch-none select-none place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary"
           onPointerDown={onResizeStart}
           aria-label={t('chartCard.resizeCard')}
           title={t('chartCard.resizeCard')}

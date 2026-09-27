@@ -208,6 +208,7 @@ export const jaJP = {
     sectionsLabel: '機能セクション',
     workbench: 'データ',
     function: '関数',
+    superplot: 'super-plot',
   },
   functionStudio: {
     heading: '関数プロッター',

@@ -241,7 +241,7 @@ export function CardInspector({
     <section ref={shellRef} className="grid min-h-full grid-cols-[minmax(0,1fr)] content-start bg-base-100">
       <div className="flex items-start justify-between gap-3 border-base-300 px-5 py-4 sm:px-6 sm:py-5">
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1">
-          <h2 className="text-3xl font-semibold tracking-tight text-base-content sm:text-4xl">{currentKindLabel}</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-base-content sm:text-2xl">{currentKindLabel}</h2>
         </div>
 
         <div className="flex items-center gap-2">
@@ -254,11 +254,23 @@ export function CardInspector({
         </div>
       </div>
 
-      <div role="tablist" className="flex items-center gap-5 border-b border-base-300 px-5 sm:px-6">
+      <div
+        role="tablist"
+        aria-label={currentKindLabel}
+        className="flex items-center gap-5 border-b border-base-300 px-5 sm:px-6"
+        onKeyDown={(event) => {
+          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+            return
+          }
+          event.preventDefault()
+          setActiveTab((current) => (current === 'base' ? 'display' : 'base'))
+        }}
+      >
         <button
           type="button"
           role="tab"
           id="inspector-tab-basic"
+          tabIndex={activeTab === 'base' ? 0 : -1}
           aria-selected={activeTab === 'base'}
           aria-controls="inspector-panel-basic"
           className={`inline-flex h-14 items-center border-b-2 text-base font-semibold transition ${
@@ -274,6 +286,7 @@ export function CardInspector({
           type="button"
           role="tab"
           id="inspector-tab-display"
+          tabIndex={activeTab === 'display' ? 0 : -1}
           aria-selected={activeTab === 'display'}
           aria-controls="inspector-panel-display"
           className={`inline-flex h-14 items-center border-b-2 text-base font-semibold transition ${
@@ -660,7 +673,7 @@ export function CardInspector({
 
                       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                         <span className={fieldLabelClass}>{t('inspector.seriesColor')}</span>
-                        <label className="relative flex h-12 items-center gap-3 rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-4 text-sm text-base-content">
+                        <label className="relative flex h-12 items-center gap-3 rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-4 text-sm text-base-content focus-within:border-primary/35 focus-within:ring-2 focus-within:ring-primary/20">
                           <span className="size-5 rounded-md border border-base-300" style={{ background: series.color }} />
                           <span className="font-medium">{series.color.toUpperCase()}</span>
                           <span className="ml-auto text-base-content/55">

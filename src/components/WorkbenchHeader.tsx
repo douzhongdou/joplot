@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   BadgeInfo,
   ChartArea,
@@ -56,6 +56,33 @@ export function WorkbenchHeader({
   const { t } = useI18n()
   const [showAddMenu, setShowAddMenu] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
+  const addMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showAddMenu) {
+      return
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (addMenuRef.current && !addMenuRef.current.contains(event.target as Node)) {
+        setShowAddMenu(false)
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setShowAddMenu(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [showAddMenu])
 
   const activeDataset = useMemo(
     () => datasets.find((dataset) => dataset.id === activeDatasetId) ?? datasets[0] ?? null,
@@ -95,9 +122,11 @@ export function WorkbenchHeader({
             buttonClassName={`${actionButtonClass} ${mobileSheet ? 'w-full sm:w-auto' : 'max-sm:flex-1'}`}
           />
 
-          <div className={`relative ${mobileSheet ? 'w-full sm:w-auto' : ''}`}>
+          <div ref={addMenuRef} className={`relative ${mobileSheet ? 'w-full sm:w-auto' : ''}`}>
             <button
               type="button"
+              aria-haspopup="menu"
+              aria-expanded={showAddMenu}
               className={`${primaryActionButtonClass} ${mobileSheet ? 'w-full sm:w-auto' : 'max-sm:flex-1'}`}
               onClick={() => setShowAddMenu((value) => !value)}
             >
@@ -106,7 +135,7 @@ export function WorkbenchHeader({
             </button>
 
             {showAddMenu && (
-              <div className="absolute left-0 top-[calc(100%+0.625rem)] z-20 grid min-w-40 gap-1 rounded-[calc(var(--radius-box)+0.25rem)] border border-base-300 bg-base-100 p-2 sm:left-auto sm:right-0">
+              <div role="menu" className="absolute left-0 top-[calc(100%+0.625rem)] z-20 grid min-w-40 gap-1 rounded-[calc(var(--radius-box)+0.25rem)] border border-base-300 bg-base-100 p-2 sm:left-auto sm:right-0">
                 {componentOptions.map((option) => {
                   const Icon = option.icon
 
@@ -114,6 +143,7 @@ export function WorkbenchHeader({
                     <button
                       key={option.kind}
                       type="button"
+                      role="menuitem"
                       className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-field)] px-3 text-left text-sm text-base-content transition hover:bg-base-200"
                       onClick={() => {
                         onAddComponent(option.kind)
@@ -133,6 +163,7 @@ export function WorkbenchHeader({
 
           <button
             type="button"
+            aria-expanded={showFilters}
             className={`${showFilters ? primaryActionButtonClass : actionButtonClass} ${mobileSheet ? 'w-full sm:w-auto' : 'max-sm:flex-1'}`}
             onClick={() => setShowFilters((value) => !value)}
           >
@@ -160,9 +191,10 @@ export function WorkbenchHeader({
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <div className="inline-flex rounded-[var(--radius-box)] border border-base-300 bg-base-100 p-1">
+              <div role="group" aria-label={`${t('workbench.joinAnd')} / ${t('workbench.joinOr')}`} className="inline-flex rounded-[var(--radius-box)] border border-base-300 bg-base-100 p-1">
                 <button
                   type="button"
+                  aria-pressed={filterJoinOperator === 'and'}
                   className={`inline-flex h-9 items-center rounded-[calc(var(--radius-field)-2px)] px-3 text-sm font-medium transition ${
                     filterJoinOperator === 'and'
                       ? 'bg-primary text-primary-content'
@@ -174,6 +206,7 @@ export function WorkbenchHeader({
                 </button>
                 <button
                   type="button"
+                  aria-pressed={filterJoinOperator === 'or'}
                   className={`inline-flex h-9 items-center rounded-[calc(var(--radius-field)-2px)] px-3 text-sm font-medium transition ${
                     filterJoinOperator === 'or'
                       ? 'bg-primary text-primary-content'
@@ -233,6 +266,7 @@ export function WorkbenchHeader({
                       type="text"
                       value={filter.value}
                       placeholder={isBetween ? t('workbench.startValuePlaceholder') : t('workbench.valuePlaceholder')}
+                      aria-label={`${filter.column} ${isBetween ? t('workbench.startValuePlaceholder') : t('workbench.valuePlaceholder')}`}
                       onChange={(event) => onChangeFilter(filter.id, { value: event.target.value })}
                       className={inputClass}
                     />
@@ -242,6 +276,7 @@ export function WorkbenchHeader({
                         type="text"
                         value={filter.valueTo ?? ''}
                         placeholder={t('workbench.endValuePlaceholder')}
+                        aria-label={`${filter.column} ${t('workbench.endValuePlaceholder')}`}
                         onChange={(event) => onChangeFilter(filter.id, { valueTo: event.target.value })}
                         className={inputClass}
                       />

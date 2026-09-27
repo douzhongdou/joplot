@@ -208,6 +208,7 @@ export const en = {
     sectionsLabel: 'Sections',
     workbench: 'Data',
     function: 'Functions',
+    superplot: 'super-plot',
   },
   functionStudio: {
     heading: 'Function plotter',

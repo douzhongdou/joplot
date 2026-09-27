@@ -1,16 +1,17 @@
 import Link from 'next/link'
-import { FunctionSquare, Languages, TableProperties } from 'lucide-react'
+import { Activity, FunctionSquare, Languages, TableProperties } from 'lucide-react'
 import { HelpPopover } from './HelpPopover'
 import { SelectMenu } from './SelectMenu'
 import {
   SUPPORTED_LANGUAGES,
   getFunctionStudioPath,
   getLanguagePath,
+  getSuperPlotPath,
   useI18n,
   type SupportedLanguage,
 } from '../i18n'
 
-export type AppSection = 'workbench' | 'function'
+export type AppSection = 'workbench' | 'function' | 'superplot'
 
 interface Props {
   section?: AppSection
@@ -64,12 +65,21 @@ export function AppNavbar({
             <FunctionSquare size={15} strokeWidth={2.1} aria-hidden="true" />
             <span>{t('nav.function')}</span>
           </Link>
+          <Link
+            href={getSuperPlotPath(language)}
+            aria-current={section === 'superplot' ? 'page' : undefined}
+            className={`${sectionLinkClass} ${section === 'superplot' ? activeSectionClass : idleSectionClass}`}
+          >
+            <Activity size={15} strokeWidth={2.1} aria-hidden="true" />
+            <span>{t('nav.superplot')}</span>
+          </Link>
         </nav>
 
         {showViewToggle ? (
-          <div className="ml-1 flex items-center gap-1 border-l border-base-300 pl-2 sm:ml-2 sm:pl-3">
+          <div role="group" aria-label={`${t('dataView.chartLabel')} / ${t('dataView.tabLabel')}`} className="ml-1 flex items-center gap-1 border-l border-base-300 pl-2 sm:ml-2 sm:pl-3">
             <button
               type="button"
+              aria-pressed={viewMode === 'chart'}
               className={`inline-flex h-9 items-center rounded-lg px-3 text-sm font-semibold transition sm:px-4 ${
                 viewMode === 'chart'
                   ? 'bg-primary text-primary-content'
@@ -81,6 +91,7 @@ export function AppNavbar({
             </button>
             <button
               type="button"
+              aria-pressed={viewMode === 'data'}
               className={`inline-flex h-9 items-center rounded-lg px-3 text-sm font-semibold transition sm:px-4 ${
                 viewMode === 'data'
                   ? 'bg-primary text-primary-content'

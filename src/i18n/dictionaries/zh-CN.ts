@@ -208,6 +208,7 @@ export const zhCN = {
     sectionsLabel: '功能板块',
     workbench: '数据',
     function: '函数',
+    superplot: 'super-plot',
   },
   functionStudio: {
     heading: '函数画板',
