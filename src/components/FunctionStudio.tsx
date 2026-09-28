@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Eye, EyeOff, Plus, Send, Trash2 } from 'lucide-react'
 import type { Data, Layout } from 'plotly.js/dist/plotly.min.js'
 import { AppNavbar } from './AppNavbar'
+import { Button } from '@/components/ui/button'
 import { PlotCanvas, type PlotCanvasApi } from './PlotCanvas'
 import { PlotToolbar } from './PlotToolbar'
 import { DATASET_STORAGE_KEY } from '../hooks/useCsvData'
@@ -39,11 +40,8 @@ const WORKBENCH_REDIRECT_MS = 700
 const DEFAULT_PARAM: Omit<FunctionParamState, 'name'> = { value: 1, min: -5, max: 5, step: 0.1 }
 
 const sectionTitleClass = 'text-xs font-medium uppercase tracking-[0.12em] text-base-content/55'
-const inputClass = 'h-10 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition placeholder:text-base-content/40 focus:border-primary/35 focus:ring-2 focus:ring-primary/20'
-const compactInputClass = 'h-8 w-full min-w-0 rounded-lg border border-base-300 bg-base-100 px-2 text-xs text-base-content outline-none transition focus:border-primary/35 focus:ring-2 focus:ring-primary/20'
-const iconButtonClass = 'inline-grid size-8 shrink-0 place-items-center rounded-lg border-0 bg-transparent text-base-content/55 transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 disabled:pointer-events-none disabled:opacity-35'
-const primaryButtonClass = 'inline-flex h-9 items-center justify-center gap-1.5 rounded-[var(--radius-box)] bg-primary px-3.5 text-sm font-semibold text-primary-content transition hover:brightness-105 disabled:pointer-events-none disabled:opacity-50'
-const chipClass = 'inline-flex h-8 items-center rounded-full border border-base-300 bg-base-100 px-3 text-xs font-medium text-base-content/80 transition hover:border-primary/40 hover:text-primary'
+const inputClass = 'h-10 w-full rounded-[var(--radius-field)] border-0 bg-muted px-3 text-sm text-base-content outline-none transition placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30'
+const compactInputClass = 'h-8 w-full min-w-0 rounded-lg border-0 bg-muted px-2 text-xs text-base-content outline-none transition focus-visible:ring-2 focus-visible:ring-ring/30'
 
 interface Domain {
   xMin: number
@@ -462,7 +460,6 @@ export function FunctionStudio() {
             <div className="grid gap-6 p-4 sm:p-5">
               <header className="grid gap-1.5">
                 <h1 className="text-lg font-semibold text-base-content">{t('functionStudio.heading')}</h1>
-                <p className="text-sm leading-relaxed text-base-content/65">{t('functionStudio.description')}</p>
               </header>
 
               <section className="grid gap-3">
@@ -476,8 +473,8 @@ export function FunctionStudio() {
                     return (
                       <div
                         key={curve.id}
-                        className={`rounded-[var(--radius-box)] border bg-base-100 transition ${
-                          showError ? 'border-error/40' : 'border-base-300 focus-within:border-primary/35'
+                        className={`rounded-[var(--radius-box)] bg-muted transition ${
+                          showError ? 'ring-1 ring-destructive/40' : 'focus-within:ring-2 focus-within:ring-ring/30'
                         }`}
                       >
                         <div className="flex items-center gap-1.5 p-1.5 pl-2.5">
@@ -510,29 +507,33 @@ export function FunctionStudio() {
                             aria-invalid={showError}
                             aria-describedby={showError ? `curve-error-${curve.id}` : undefined}
                           />
-                          <button
+                          <Button
                             type="button"
-                            className={iconButtonClass}
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 shrink-0 text-base-content/55 hover:text-primary"
                             onClick={() => updateCurve(curve.id, { visible: !curve.visible })}
                             aria-label={t('functionStudio.toggleCurve')}
                             aria-pressed={curve.visible}
                             title={t('functionStudio.toggleCurve')}
                           >
                             {curve.visible ? <Eye size={15} strokeWidth={2.1} /> : <EyeOff size={15} strokeWidth={2.1} />}
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
-                            className={iconButtonClass.replace('hover:text-primary', 'hover:text-error')}
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 shrink-0 text-base-content/55 hover:text-error"
                             onClick={() => removeCurve(curve.id)}
                             disabled={curves.length <= 1}
                             aria-label={t('functionStudio.removeCurve')}
                             title={t('functionStudio.removeCurve')}
                           >
                             <Trash2 size={15} strokeWidth={2.1} />
-                          </button>
+                          </Button>
                         </div>
                         {showError && error && (
-                          <p id={`curve-error-${curve.id}`} role="alert" className="border-t border-error/20 bg-error/5 px-3 py-1.5 text-xs leading-relaxed text-error">
+                          <p id={`curve-error-${curve.id}`} role="alert" className="bg-error/5 px-3 py-1.5 text-xs leading-relaxed text-error">
                             {describeError(error)}
                           </p>
                         )}
@@ -542,14 +543,13 @@ export function FunctionStudio() {
                 </div>
                 <button
                   type="button"
-                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-[var(--radius-box)] border border-dashed border-base-300 bg-transparent px-3 text-sm font-semibold text-base-content/70 transition hover:border-primary/40 hover:text-primary disabled:pointer-events-none disabled:opacity-40"
+                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-[var(--radius-box)] bg-muted px-3 text-sm font-semibold text-base-content/70 transition hover:bg-accent hover:text-primary disabled:pointer-events-none disabled:opacity-40"
                   onClick={() => addCurve()}
                   disabled={curves.length >= MAX_CURVES}
                 >
                   <Plus size={15} strokeWidth={2.2} />
                   {t('functionStudio.addCurve')}
                 </button>
-                <p className="text-xs leading-relaxed text-base-content/50">{t('functionStudio.functionsHint')}</p>
               </section>
 
               <section className="grid gap-3">
@@ -616,14 +616,12 @@ export function FunctionStudio() {
                 </label>
               </section>
 
+              {params.length > 0 && (
               <section className="grid gap-3">
                 <h2 className={sectionTitleClass}>{t('functionStudio.paramsSectionTitle')}</h2>
-                {params.length === 0 ? (
-                  <p className="text-xs leading-relaxed text-base-content/50">{t('functionStudio.paramsEmptyHint')}</p>
-                ) : (
-                  <div className="grid gap-4">
+                <div className="grid gap-4">
                     {params.map((param) => (
-                      <div key={param.name} className="grid gap-2 rounded-[var(--radius-box)] border border-base-300 bg-base-100 p-3">
+                      <div key={param.name} className="grid gap-2 rounded-[var(--radius-box)] bg-muted p-3">
                         <div className="flex items-center justify-between gap-3">
                           <span className="font-mono text-sm font-semibold text-base-content">{param.name}</span>
                           <input
@@ -682,23 +680,24 @@ export function FunctionStudio() {
                         </div>
                       </div>
                     ))}
-                  </div>
-                )}
+                </div>
               </section>
+              )}
 
               <section className="grid gap-3">
                 <h2 className={sectionTitleClass}>{t('functionStudio.examplesSectionTitle')}</h2>
                 <div className="flex flex-wrap gap-2">
                   {FUNCTION_EXAMPLES.map((example) => (
-                    <button
+                    <Button
                       key={example.id}
                       type="button"
-                      className={chipClass}
+                      variant="ghost"
+                      className="h-8 rounded-full bg-muted px-3 text-xs font-medium text-base-content/80 hover:bg-accent hover:text-accent-foreground"
                       onClick={() => applyExample(example)}
                       title={example.expression}
                     >
                       {t(`functionStudio.examples.${example.id}`)}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </section>
@@ -726,16 +725,16 @@ export function FunctionStudio() {
                     {describeSendFeedback(sendFeedback)}
                   </span>
                 )}
-                <button
+                <Button
                   type="button"
-                  className={primaryButtonClass}
+                  className="gap-1.5 font-semibold"
                   onClick={handleSendToWorkbench}
                   disabled={sampledCurves.length === 0 || sendFeedback?.kind === 'success'}
                   title={t('functionStudio.sendHint')}
                 >
                   <Send size={15} strokeWidth={2.1} />
                   {t('functionStudio.sendToWorkbench')}
-                </button>
+                </Button>
               </div>
             </div>
 
@@ -750,9 +749,8 @@ export function FunctionStudio() {
               />
               {sampledCurves.length === 0 && (
                 <div className="pointer-events-none absolute inset-0 grid place-items-center p-6">
-                  <div className="grid max-w-sm gap-1.5 rounded-[var(--radius-box)] border border-base-300 bg-base-100/95 px-5 py-4 text-center backdrop-blur-sm">
+                  <div className="grid max-w-sm gap-1.5 rounded-[var(--radius-box)] bg-base-100/95 px-5 py-4 text-center shadow-lg backdrop-blur-sm">
                     <strong className="text-sm font-semibold text-base-content">{t('functionStudio.emptyPlotTitle')}</strong>
-                    <p className="text-xs leading-relaxed text-base-content/60">{t('functionStudio.emptyPlotDescription')}</p>
                   </div>
                 </div>
               )}

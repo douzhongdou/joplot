@@ -25,6 +25,8 @@ export interface Series {
   x: DenseArray
   y: DenseArray
   sampleRate?: number
+  /** X-axis unit used to label derived frequency (for example s or sample). */
+  xUnit?: string
   /** 原始采样点数（预览下沉后仍保留真实长度）。 */
   pointCount?: number
   provenance: string
@@ -44,6 +46,7 @@ export interface SpectrumValue {
   magnitude: DenseArray
   peaks: SpectrumPeak[]
   sampleRate: number
+  frequencyUnit?: string
   pointCount?: number
   provenance: string
 }

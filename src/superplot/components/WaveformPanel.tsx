@@ -121,7 +121,7 @@ export function WaveformPlot({ dataset, xColumn, series, mode, target, plotRef, 
   const config = useMemo(() => ({ scrollZoom: true, doubleClick: 'reset' }), [])
 
   return (
-    <div className={`rounded-[var(--radius-box)] border border-base-300 bg-base-100/60 p-1 ${className ?? 'min-h-[300px]'}`}>
+    <div className={`rounded-[var(--radius-box)] bg-base-100 p-1 shadow-sm ${className ?? 'min-h-[300px]'}`}>
       <PlotlyChart
         ref={plotRef}
         data={initialTraces}
@@ -215,7 +215,7 @@ export function WaveformControls({
         {series.map((name, index) => (
           <div
             key={`${name}-${index}`}
-            className="flex items-center gap-2 rounded-full border border-base-300 bg-base-200/60 pl-2 pr-1 py-1"
+            className="flex items-center gap-2 rounded-full bg-muted pl-2 pr-1 py-1"
           >
             <span className="size-2.5 rounded-full" style={{ background: getSuperPlotColorForSeries(name, dataset.id) }} />
             <SelectInput
@@ -291,7 +291,7 @@ export function WaveformStats({ dataset, copy, locale, series }: StatsProps) {
         [copy.stats.peakToPeak, formatAmplitude(primaryStats.peakToPeak)],
         [copy.stats.std, formatAmplitude(primaryStats.std)],
       ] as Array<[string, string]>).map(([label, value]) => (
-        <div key={label} className="rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-3 py-2">
+        <div key={label} className="rounded-[var(--radius-field)] bg-muted px-3 py-2">
           <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-base-content/45">{label}</div>
           <div className="truncate text-sm font-semibold text-base-content" title={value}>{value}</div>
         </div>

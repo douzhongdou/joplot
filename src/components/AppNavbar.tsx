@@ -1,17 +1,22 @@
+'use client'
+
 import Link from 'next/link'
-import { Activity, FunctionSquare, Languages, TableProperties } from 'lucide-react'
+import { Activity, FlaskConical, FunctionSquare, Languages, TableProperties } from 'lucide-react'
 import { HelpPopover } from './HelpPopover'
 import { SelectMenu } from './SelectMenu'
+import { buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import {
   SUPPORTED_LANGUAGES,
   getFunctionStudioPath,
   getLanguagePath,
   getSuperPlotPath,
+  getSciencePath,
   useI18n,
   type SupportedLanguage,
 } from '../i18n'
 
-export type AppSection = 'workbench' | 'function' | 'superplot'
+export type AppSection = 'workbench' | 'function' | 'superplot' | 'science'
 
 interface Props {
   section?: AppSection
@@ -20,10 +25,6 @@ interface Props {
   viewMode?: 'chart' | 'data'
   onChangeViewMode?: (mode: 'chart' | 'data') => void
 }
-
-const sectionLinkClass = 'inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold transition sm:h-9 sm:px-3'
-const activeSectionClass = 'bg-primary/10 text-primary'
-const idleSectionClass = 'text-base-content/60 hover:text-base-content'
 
 export function AppNavbar({
   section = 'workbench',
@@ -41,6 +42,13 @@ export function AppNavbar({
 
   const showViewToggle = section === 'workbench' && hasDatasets && !mobile && onChangeViewMode
 
+  function sectionLinkClass(active: boolean) {
+    return cn(
+      buttonVariants({ variant: active ? 'secondary' : 'ghost', size: 'sm' }),
+      'shrink-0 font-semibold',
+    )
+  }
+
   return (
     <header className="flex min-h-[var(--navbar-height)] items-center justify-between gap-2 border-b border-base-300 bg-base-100 px-3 py-1 sm:gap-3 sm:px-5 sm:py-2">
       <div className="flex min-w-0 items-center gap-2 sm:gap-3">
@@ -48,11 +56,11 @@ export function AppNavbar({
           <img src="/navbar-icon.webp" alt="joplot" className="block size-full object-contain" />
         </div>
 
-        <nav className="ml-1 flex items-center gap-0.5 sm:ml-3" aria-label={t('nav.sectionsLabel')}>
+        <nav className="ml-1 flex min-w-0 items-center gap-0.5 overflow-x-auto sm:ml-3" aria-label={t('nav.sectionsLabel')}>
           <Link
             href={getLanguagePath(language)}
             aria-current={section === 'workbench' ? 'page' : undefined}
-            className={`${sectionLinkClass} ${section === 'workbench' ? activeSectionClass : idleSectionClass}`}
+            className={sectionLinkClass(section === 'workbench')}
           >
             <TableProperties size={15} strokeWidth={2.1} aria-hidden="true" />
             <span>{t('nav.workbench')}</span>
@@ -60,7 +68,7 @@ export function AppNavbar({
           <Link
             href={getFunctionStudioPath(language)}
             aria-current={section === 'function' ? 'page' : undefined}
-            className={`${sectionLinkClass} ${section === 'function' ? activeSectionClass : idleSectionClass}`}
+            className={sectionLinkClass(section === 'function')}
           >
             <FunctionSquare size={15} strokeWidth={2.1} aria-hidden="true" />
             <span>{t('nav.function')}</span>
@@ -68,10 +76,18 @@ export function AppNavbar({
           <Link
             href={getSuperPlotPath(language)}
             aria-current={section === 'superplot' ? 'page' : undefined}
-            className={`${sectionLinkClass} ${section === 'superplot' ? activeSectionClass : idleSectionClass}`}
+            className={sectionLinkClass(section === 'superplot')}
           >
             <Activity size={15} strokeWidth={2.1} aria-hidden="true" />
             <span>{t('nav.superplot')}</span>
+          </Link>
+          <Link
+            href={getSciencePath(language)}
+            aria-current={section === 'science' ? 'page' : undefined}
+            className={sectionLinkClass(section === 'science')}
+          >
+            <FlaskConical size={15} strokeWidth={2.1} aria-hidden="true" />
+            <span>{t('nav.science')}</span>
           </Link>
         </nav>
 
@@ -108,23 +124,24 @@ export function AppNavbar({
       <div className="flex items-center gap-1">
         <div className="min-w-0">
           <SelectMenu<SupportedLanguage>
-          value={language}
-          options={languageOptions}
-          onChange={setLanguage}
-          placeholder={t('language.label')}
-          triggerAriaLabel={t('language.label')}
-          align="right"
-          buttonClassName="h-8 w-8 justify-center rounded-lg border-0 bg-transparent px-0 shadow-none hover:bg-transparent focus-visible:ring-2 focus-visible:ring-primary/20 sm:h-9 sm:w-9 sm:rounded-xl"
-          menuClassName="min-w-[9rem]"
-          renderTrigger={(_, open) => (
-            <Languages
-              size={mobile ? 16 : 17}
-              strokeWidth={2.1}
-              className={`shrink-0 transition ${open ? 'text-primary' : 'text-base-content/72'}`}
-              aria-hidden="true"
-            />
-          )}
-        />
+            value={language}
+            options={languageOptions}
+            onChange={setLanguage}
+            placeholder={t('language.label')}
+            triggerAriaLabel={t('language.label')}
+            align="right"
+            triggerSize="sm"
+            buttonClassName="size-8 border-0 bg-transparent px-0 shadow-none hover:bg-transparent focus-visible:ring-0"
+            menuClassName="min-w-[9rem]"
+            renderTrigger={(_, open) => (
+              <Languages
+                size={mobile ? 16 : 17}
+                strokeWidth={2.1}
+                className={`shrink-0 transition ${open ? 'text-primary' : 'text-base-content/72'}`}
+                aria-hidden="true"
+              />
+            )}
+          />
         </div>
         <HelpPopover />
       </div>

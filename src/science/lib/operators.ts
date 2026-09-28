@@ -115,6 +115,7 @@ function seriesResult(
     x: input.x,
     y: createDense(y),
     sampleRate: input.sampleRate,
+    xUnit: input.xUnit,
     provenance,
   }
 }
@@ -395,7 +396,10 @@ export const OPERATORS: OperatorDef[] = [
       { key: 'segments', type: 'number', labelKey: 'segments', default: 1, min: 1 },
     ],
     run(input, _input2, params, ctx): SpectrumValue {
-      const sampleRate = input.sampleRate ?? 1
+      const sampleRate = input.sampleRate
+      if (!sampleRate || !Number.isFinite(sampleRate) || sampleRate <= 0) {
+        throw new Error('FFT requires uniformly spaced X values; select row index or a regular time column')
+      }
       const computation = computeSpectrumFor(values1d(input.y), sampleRate, {
         window: stringParam(params, 'window', 'hann') as WindowKind,
         detrend: stringParam(params, 'detrend', 'mean') as DetrendMode,
@@ -409,6 +413,9 @@ export const OPERATORS: OperatorDef[] = [
         magnitude: createDense(computation.magnitude),
         peaks: computation.peaks,
         sampleRate,
+        frequencyUnit: input.xUnit === 's' ? 'Hz' : input.xUnit === 'sample'
+          ? 'cycles/sample'
+          : `1/${input.xUnit ?? 'x'}`,
         provenance: `fft on ${input.name}`,
       }
     },

@@ -5,9 +5,14 @@
 
 import type { ScienceValue } from '../types.ts'
 import { createDense, values1d } from '../lib/dense.ts'
-import { minMaxEnvelope } from '../../superplot/lib/downsample.ts'
+import { downsamplePoints, minMaxEnvelope } from '../../superplot/lib/downsample.ts'
 
 import { DEFAULT_PREVIEW_TARGET } from './protocol.ts'
+
+export interface PreviewRange {
+  min: number
+  max: number
+}
 
 function strideIndices(length: number, target: number): number[] {
   if (length <= target) {
@@ -57,6 +62,84 @@ export function toPreview(value: ScienceValue, target = DEFAULT_PREVIEW_TARGET):
     // 共享索引，保证数据/拟合线/残差在同一组 x 上对齐。
     const x = values1d(value.x)
     const indices = strideIndices(x.length, target)
+    return {
+      ...value,
+      x: createDense(take(x, indices)),
+      y: createDense(take(values1d(value.y), indices)),
+      fitted: createDense(take(values1d(value.fitted), indices)),
+      residual: createDense(take(values1d(value.residual), indices)),
+      pointCount: value.x.shape[0],
+    }
+  }
+
+  return value
+}
+
+/** 二分查找 x 落在 [min, max] 内的下标区间 [start, end)。 */
+function rangeIndices(x: Float64Array, min: number, max: number): { start: number; end: number } {
+  const n = x.length
+  if (n === 0 || !(max > min)) {
+    return { start: 0, end: n }
+  }
+
+  let low = 0
+  let high = n
+  while (low < high) {
+    const mid = (low + high) >> 1
+    if (x[mid] < min) {
+      low = mid + 1
+    } else {
+      high = mid
+    }
+  }
+  const start = low
+
+  low = start
+  high = n
+  while (low < high) {
+    const mid = (low + high) >> 1
+    if (x[mid] <= max) {
+      low = mid + 1
+    } else {
+      high = mid
+    }
+  }
+
+  return { start, end: low }
+}
+
+/**
+ * 视野联动预览：只对可见范围降采样。数据仍驻留 Worker，
+ * 主线程在用户缩放后拿这个更密的副本就地刷新 trace。
+ */
+export function toPreviewInRange(
+  value: ScienceValue,
+  range: PreviewRange | null,
+  target = DEFAULT_PREVIEW_TARGET,
+): ScienceValue {
+  if (!range) {
+    return toPreview(value, target)
+  }
+
+  if (value.kind === 'series') {
+    const sampled = downsamplePoints(values1d(value.x), values1d(value.y), 'envelope', target, range)
+    return { ...value, x: createDense(sampled.x), y: createDense(sampled.y), pointCount: value.y.shape[0] }
+  }
+
+  if (value.kind === 'spectrum') {
+    const sampled = downsamplePoints(values1d(value.frequency), values1d(value.magnitude), 'envelope', target, range)
+    return { ...value, frequency: createDense(sampled.x), magnitude: createDense(sampled.y), pointCount: value.frequency.shape[0] }
+  }
+
+  if (value.kind === 'fit') {
+    const x = values1d(value.x)
+    const { start, end } = rangeIndices(x, range.min, range.max)
+    const windowLength = end - start
+    if (windowLength <= 0) {
+      return toPreview(value, target)
+    }
+    // 共享索引，保证数据/拟合线/残差在同一组 x 上对齐。
+    const indices = strideIndices(windowLength, target).map((index) => index + start)
     return {
       ...value,
       x: createDense(take(x, indices)),

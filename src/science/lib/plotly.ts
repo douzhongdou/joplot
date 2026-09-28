@@ -6,6 +6,14 @@ export interface SciencePlotlyRuntime {
     config?: Record<string, unknown>,
   ) => Promise<void>
   purge: (element: HTMLDivElement) => void
+  restyle: (
+    element: HTMLDivElement,
+    update: Record<string, unknown>,
+    traceIndices?: number[],
+  ) => Promise<void>
+  relayout: (element: HTMLDivElement, update: Record<string, unknown>) => Promise<void>
+  toImage: (element: HTMLDivElement, options?: Record<string, unknown>) => Promise<string>
+  downloadImage: (element: HTMLDivElement, options?: Record<string, unknown>) => Promise<void>
 }
 
 type PlotlyModule = { default: SciencePlotlyRuntime }

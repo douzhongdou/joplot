@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { loadPlotly } from '../lib/plotly.ts'
 import { resolveAxisColor, resolveFontFamily, resolveGridColor } from '../lib/plotTheme.ts'
+import { buildChartExportOptions } from '../../lib/chartExport.ts'
+import { copyPngDataUrlToClipboard, type ClipboardPort } from '../../lib/clipboard.ts'
 
 export interface ScienceTrace {
   x: ArrayLike<number>
@@ -17,6 +19,27 @@ export interface ScienceTrace {
   yAxis?: 'y' | 'y2'
 }
 
+export interface AxisRange {
+  min: number
+  max: number
+}
+
+export interface TraceUpdate {
+  index: number
+  x: ArrayLike<number>
+  y: ArrayLike<number>
+}
+
+export type CopyImageResult = 'binary' | 'html' | 'text' | 'downloaded' | null
+
+export interface PlotApi {
+  autorange: () => Promise<void>
+  copyImage: () => Promise<CopyImageResult>
+  downloadImage: () => Promise<void>
+  restyleTraces: (updates: TraceUpdate[]) => void
+  getAxisRange: () => AxisRange | null
+}
+
 export interface PlotProps {
   traces: ScienceTrace[]
   xTitle: string
@@ -24,10 +47,126 @@ export interface PlotProps {
   y2Title?: string
   logY?: boolean
   height?: number
+  exportTitle?: string
+  onRangeChange?: (range: AxisRange | null) => void
 }
 
-export function Plot({ traces, xTitle, yTitle, y2Title, logY = false, height = 260 }: PlotProps) {
+export const Plot = forwardRef<PlotApi, PlotProps>(function Plot(
+  { traces, xTitle, yTitle, y2Title, logY = false, height = 260, exportTitle, onRangeChange },
+  ref,
+) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const rangeHandlerRef = useRef(onRangeChange)
+  const tracesRef = useRef(traces)
+
+  rangeHandlerRef.current = onRangeChange
+  tracesRef.current = traces
+
+  function readAxisRange(): AxisRange | null {
+    const element = containerRef.current
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fullLayout = (element as any)?._fullLayout
+    const range = fullLayout?.xaxis?.range as [number, number] | undefined
+
+    if (!range || !Number.isFinite(range[0]) || !Number.isFinite(range[1])) {
+      return null
+    }
+
+    return { min: Math.min(range[0], range[1]), max: Math.max(range[0], range[1]) }
+  }
+
+  /** 把 trace 数据恢复为 props 里的全量预览（refine 后图上只有窗口切片），再 autorange。 */
+  async function restoreFullAndAutorange() {
+    const element = containerRef.current
+    if (!element) {
+      return
+    }
+
+    const plotly = await loadPlotly()
+    const full = tracesRef.current
+    if (full.length > 0) {
+      await plotly.restyle(
+        element,
+        { x: full.map((trace) => trace.x), y: full.map((trace) => trace.y) },
+        full.map((_, index) => index),
+      )
+    }
+    await plotly.relayout(element, {
+      'xaxis.autorange': true,
+      'yaxis.autorange': true,
+      'yaxis2.autorange': true,
+    })
+  }
+
+  useImperativeHandle(ref, () => ({
+    autorange: restoreFullAndAutorange,
+    async copyImage() {
+      const element = containerRef.current
+      if (!element) {
+        return null
+      }
+
+      const title = exportTitle ?? yTitle
+      try {
+        const exportOptions = buildChartExportOptions({
+          kind: 'line',
+          title,
+          width: element.clientWidth || undefined,
+          height: element.clientHeight || undefined,
+        })
+        const plotly = await loadPlotly()
+        const dataUrl = await plotly.toImage(element, exportOptions.image)
+        const response = await fetch(dataUrl)
+        const blob = await response.blob()
+
+        return await copyPngDataUrlToClipboard({
+          blob,
+          dataUrl,
+          clipboard: typeof navigator !== 'undefined'
+            ? navigator.clipboard as unknown as ClipboardPort
+            : undefined,
+          ClipboardItemCtor: typeof ClipboardItem !== 'undefined' ? ClipboardItem : null,
+          allowTextFallback: false,
+        })
+      } catch (error) {
+        console.error('Copy chart failed, falling back to download.', error)
+        const exportOptions = buildChartExportOptions({ kind: 'line', title })
+        const plotly = await loadPlotly()
+        await plotly.downloadImage(element, { ...exportOptions.download })
+        return 'downloaded'
+      }
+    },
+    async downloadImage() {
+      const element = containerRef.current
+      if (!element) {
+        return
+      }
+
+      const exportOptions = buildChartExportOptions({ kind: 'line', title: exportTitle ?? yTitle })
+      const plotly = await loadPlotly()
+      await plotly.downloadImage(element, { ...exportOptions.download })
+    },
+    restyleTraces(updates) {
+      const element = containerRef.current
+      if (!element || updates.length === 0) {
+        return
+      }
+
+      void loadPlotly().then((plotly) => {
+        void plotly.restyle(
+          element,
+          {
+            x: updates.map((update) => update.x),
+            y: updates.map((update) => update.y),
+          },
+          updates.map((update) => update.index),
+        )
+      })
+    },
+    getAxisRange() {
+      return readAxisRange()
+    },
+  }), [exportTitle, yTitle])
 
   useEffect(() => {
     const element = containerRef.current
@@ -78,6 +217,8 @@ export function Plot({ traces, xTitle, yTitle, y2Title, logY = false, height = 2
         showlegend: traces.length > 1,
         legend: { orientation: 'h', y: 1.12, x: 0, font: { size: 10 } },
         hovermode: 'x unified',
+        // Keep the user's viewport across data updates (restyle/refine).
+        uirevision: 'science-plot',
         xaxis: {
           title: { text: xTitle, font: { size: 11 } },
           gridcolor: grid,
@@ -114,5 +255,39 @@ export function Plot({ traces, xTitle, yTitle, y2Title, logY = false, height = 2
     }
   }, [traces, xTitle, yTitle, y2Title, logY, height])
 
+  useEffect(() => {
+    const element = containerRef.current
+    if (!element) {
+      return
+    }
+
+    function handleRelayout() {
+      rangeHandlerRef.current?.(readAxisRange())
+    }
+
+    function handleDoubleClick() {
+      // Plotly 自带的双击复位只会对「当前窗口切片数据」取范围；先恢复全量预览再复位。
+      setTimeout(() => {
+        void restoreFullAndAutorange()
+      }, 0)
+    }
+
+    // 有些 plotly 构建在滚轮缩放时不派发 `plotly_relayout`，所以同时监听原生交互事件，
+    // 保证视野变化后一定能触发按窗口重新抽稀。
+    element.addEventListener('plotly_relayout', handleRelayout)
+    element.addEventListener('plotly_relayouting', handleRelayout)
+    element.addEventListener('wheel', handleRelayout, { passive: true })
+    element.addEventListener('dblclick', handleDoubleClick)
+    document.addEventListener('mouseup', handleRelayout)
+
+    return () => {
+      element.removeEventListener('plotly_relayout', handleRelayout)
+      element.removeEventListener('plotly_relayouting', handleRelayout)
+      element.removeEventListener('wheel', handleRelayout)
+      element.removeEventListener('dblclick', handleDoubleClick)
+      document.removeEventListener('mouseup', handleRelayout)
+    }
+  }, [])
+
   return <div ref={containerRef} className="w-full" />
-}
+})

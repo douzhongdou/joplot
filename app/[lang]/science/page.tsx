@@ -2,6 +2,9 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { resolveSupportedLanguageFromRouteLanguage } from '../../../src/i18n/config'
 import { ScienceApp } from '../../../src/science/components/ScienceApp'
+import { AppNavbar } from '../../../src/components/AppNavbar'
+import { ErrorBoundary } from '../../../src/components/ErrorBoundary'
+import { I18nProvider } from '../../../src/i18n'
 import { resolveScienceLanguage } from '../../../src/science/lib/i18n'
 
 export function generateStaticParams() {
@@ -46,5 +49,12 @@ export default async function SciencePage({ params }: { params: Promise<{ lang: 
     notFound()
   }
 
-  return <ScienceApp language={resolveScienceLanguage(lang)} />
+  return (
+    <I18nProvider initialLanguage={supported}>
+      <AppNavbar section="science" />
+      <ErrorBoundary>
+        <ScienceApp language={resolveScienceLanguage(lang)} />
+      </ErrorBoundary>
+    </I18nProvider>
+  )
 }

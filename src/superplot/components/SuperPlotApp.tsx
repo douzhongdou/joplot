@@ -124,7 +124,7 @@ export function SuperPlotApp({ language, routeLanguage }: Props) {
         {datasets.length > 0 && (
           <button
             type="button"
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-field)] border border-base-300 px-2.5 text-xs font-medium text-base-content/75 transition hover:border-primary/40"
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-field)] bg-muted px-2.5 text-xs font-medium text-base-content/75 transition hover:bg-accent"
             onClick={() => inputRef.current?.click()}
           >
             <UploadCloud size={13} /> {copy.replaceFile}
@@ -139,10 +139,10 @@ export function SuperPlotApp({ language, routeLanguage }: Props) {
                 type="button"
                 aria-current={dataset.id === activeDataset?.id ? 'true' : undefined}
                 onClick={() => setActiveDatasetId(dataset.id)}
-                className={`inline-flex h-7 max-w-48 shrink-0 items-center gap-1.5 truncate rounded-full border px-2.5 text-xs font-medium transition ${
+                className={`inline-flex h-7 max-w-48 shrink-0 items-center gap-1.5 truncate rounded-full px-2.5 text-xs font-medium transition ${
                   dataset.id === activeDataset?.id
-                    ? 'border-primary/40 bg-primary/10 text-primary'
-                    : 'border-base-300 bg-base-200/50 text-base-content/65 hover:text-base-content'
+                    ? 'bg-accent text-accent-foreground'
+                    : 'bg-muted text-base-content/65 hover:bg-accent hover:text-base-content'
                 }`}
                 title={`${dataset.fileName} · ${formatCount(dataset.rowCount, locale)} rows`}
               >
@@ -203,8 +203,8 @@ export function SuperPlotApp({ language, routeLanguage }: Props) {
           {!activeDataset && (
             <div className="h-full p-4 sm:p-6">
               <div
-                className={`grid h-full min-h-[320px] place-items-center rounded-[calc(var(--radius-box)+0.25rem)] border-2 border-dashed transition ${
-                  dragging ? 'border-primary/60 bg-primary/5' : 'border-base-300 bg-base-100'
+                className={`grid h-full min-h-[320px] place-items-center rounded-[calc(var(--radius-box)+0.25rem)] transition ${
+                  dragging ? 'border-2 border-dashed border-primary/60 bg-primary/5' : 'bg-muted/50'
                 }`}
                 onDragEnter={(event) => {
                   event.preventDefault()
@@ -225,11 +225,7 @@ export function SuperPlotApp({ language, routeLanguage }: Props) {
                   <span className="mx-auto grid size-14 place-items-center rounded-full bg-primary/10 text-primary">
                     <UploadCloud size={26} />
                   </span>
-                  <div className="grid gap-1">
-                    <strong className="text-base font-semibold text-base-content">{copy.dropTitle}</strong>
-                    <span className="text-xs text-base-content/50">{copy.dropHint}</span>
-                  </div>
-                  <span className="text-[11px] text-base-content/40">{copy.noDatasets}</span>
+                  <strong className="text-base font-semibold text-base-content">{copy.dropTitle}</strong>
                 </div>
               </div>
             </div>

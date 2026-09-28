@@ -173,7 +173,7 @@ export function SpectrumPlot({ copy, model, plotRef, className }: PlotProps) {
   const revision = `${model.signal}|${model.resolvedWindow}|${model.resolvedDetrend}|${model.fftSize}|${model.resolvedSegments}|${model.overlap}|${model.normalize}|${model.amplitudeMode}|${model.logFrequency}|${model.resolvedSampleRate}`
 
   return (
-    <div className={`rounded-[var(--radius-box)] border border-base-300 bg-base-100/60 p-1 ${className ?? 'min-h-[300px]'}`}>
+    <div className={`rounded-[var(--radius-box)] bg-base-100 p-1 shadow-sm ${className ?? 'min-h-[300px]'}`}>
       <PlotlyChart
         ref={plotRef}
         data={trace}
@@ -239,7 +239,7 @@ export function SpectrumControls({ dataset, copy, locale, model }: ControlsProps
 
       <div className="grid gap-2">
         <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-base-content/55">{copy.spectrum.advanced}</span>
-        <div className="grid gap-3 rounded-[var(--radius-box)] border border-base-300 bg-base-200/40 p-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 rounded-[var(--radius-box)] bg-muted/50 p-3 sm:grid-cols-2 xl:grid-cols-3">
         <Field
           label={copy.spectrum.sampleRate}
           hint={sampleRateAuto ? `${copy.spectrum.auto} · ${formatFrequency(datasetRate ?? 1)}` : undefined}
@@ -264,7 +264,7 @@ export function SpectrumControls({ dataset, copy, locale, model }: ControlsProps
               <input
                 type="text"
                 inputMode="decimal"
-                className={`h-8 min-w-0 flex-1 rounded-[var(--radius-field)] border bg-base-100 px-2 text-xs text-base-content outline-none transition focus:border-primary/50 ${manualRateInvalid ? 'border-error/60' : 'border-base-300'}`}
+                className={`h-8 min-w-0 flex-1 rounded-[var(--radius-field)] border-0 bg-muted px-2 text-xs text-base-content outline-none transition focus-visible:ring-2 focus-visible:ring-ring/30 ${manualRateInvalid ? 'ring-1 ring-destructive/40' : ''}`}
                 value={sampleRateText}
                 onChange={(event) => setSampleRateText(event.target.value)}
                 aria-label={copy.spectrum.sampleRate}
@@ -348,7 +348,7 @@ export function SpectrumResults({ copy, locale, model }: ResultsProps) {
 
   return (
     <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-      <div className="overflow-hidden rounded-[var(--radius-box)] border border-base-300">
+      <div className="overflow-hidden rounded-[var(--radius-box)] shadow-sm">
         <div className="border-b border-base-300 bg-base-200/50 px-3 py-2 text-xs font-semibold text-base-content/70">
           {copy.spectrum.peakTable}
         </div>
@@ -379,7 +379,7 @@ export function SpectrumResults({ copy, locale, model }: ResultsProps) {
       </div>
 
       {spectrum && (
-        <div className="flex flex-col justify-center gap-2 rounded-[var(--radius-box)] border border-base-300 bg-base-100 px-4 py-3 text-xs text-base-content/65">
+        <div className="flex flex-col justify-center gap-2 rounded-[var(--radius-box)] bg-muted/50 px-4 py-3 text-xs text-base-content/65">
           <div>{copy.spectrum.summary(formatCount(spectrum.fftSize, locale), formatFrequency(spectrum.binWidth), spectrum.segmentCount)}</div>
           <div className="font-mono text-[11px] text-base-content/45">
             {copy.spectrum.removed(formatAmplitude(spectrum.removedMean), spectrum.removedSlope.toExponential(2))}

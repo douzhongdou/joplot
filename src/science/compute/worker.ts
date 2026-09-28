@@ -10,7 +10,8 @@
 import type { ScienceValue } from '../types.ts'
 import { createSampleWorkspace } from '../lib/workspace.ts'
 import { runStep } from '../lib/pipeline.ts'
-import { toPreview } from './preview.ts'
+import { valueToCsv } from '../lib/export.ts'
+import { toPreview, toPreviewInRange } from './preview.ts'
 import type { WorkerRequest, WorkerResponse } from './protocol.ts'
 
 interface WorkerScope {
@@ -29,6 +30,29 @@ function post(message: WorkerResponse): void {
 
 scope.addEventListener('message', (event: MessageEvent) => {
   const request = event.data as WorkerRequest
+  if (request.type === 'export') {
+    try {
+      const value = base?.find((candidate) => candidate.id === request.valueId) ?? cache.get(request.valueId)
+      if (!value) throw new Error(`Value "${request.valueId}" is unavailable`)
+      post({ type: 'export-result', requestId: request.requestId, blob: valueToCsv(value) })
+    } catch (error) {
+      post({ type: 'error', requestId: request.requestId, message: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+  if (request.type === 'preview') {
+    try {
+      const values = request.valueIds.map((valueId) => {
+        const value = base?.find((candidate) => candidate.id === valueId) ?? cache.get(valueId)
+        if (!value) throw new Error(`Value "${valueId}" is unavailable`)
+        return toPreviewInRange(value, request.xRange, request.target)
+      })
+      post({ type: 'preview-result', requestId: request.requestId, values })
+    } catch (error) {
+      post({ type: 'error', requestId: request.requestId, message: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
   if (request.type !== 'run') {
     return
   }
@@ -36,7 +60,7 @@ scope.addEventListener('message', (event: MessageEvent) => {
   const started = performance.now()
   try {
     if (request.reset || !base) {
-      base = createSampleWorkspace().base
+      base = request.base ?? createSampleWorkspace().base
       cache.clear()
     }
 
@@ -70,6 +94,7 @@ scope.addEventListener('message', (event: MessageEvent) => {
         cache.set(step.outputId, value)
         values.push(value)
       } catch (error) {
+        cache.delete(step.outputId)
         errors[step.id] = error instanceof Error ? error.message : String(error)
       }
       timings[step.id] = performance.now() - stepStarted

@@ -80,7 +80,7 @@ export function SuperPlotWorkspace({ dataset, copy, locale, spectrumSignal, onOp
               className={PLOT_HEIGHT_CLASS}
             />
           ) : (
-            <div className={`grid place-items-center rounded-[var(--radius-box)] border border-dashed border-base-300 text-sm text-base-content/50 ${PLOT_HEIGHT_CLASS}`}>
+            <div className={`grid place-items-center rounded-[var(--radius-box)] bg-muted/50 text-sm text-base-content/50 ${PLOT_HEIGHT_CLASS}`}>
               {copy.spectrum.noSignal}
             </div>
           )}
@@ -89,7 +89,7 @@ export function SuperPlotWorkspace({ dataset, copy, locale, spectrumSignal, onOp
 
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
         <section
-          className="grid min-w-0 gap-4 rounded-[calc(var(--radius-box)+0.25rem)] border border-base-300 bg-base-100 p-4"
+          className="grid min-w-0 gap-4 rounded-[calc(var(--radius-box)+0.25rem)] bg-base-100 p-4 shadow-sm"
           aria-label={`${copy.timeDomain}${copy.settings}`}
         >
           <div className="flex flex-wrap items-center gap-2">
@@ -123,7 +123,7 @@ export function SuperPlotWorkspace({ dataset, copy, locale, spectrumSignal, onOp
 
         {hasNumeric && (
           <section
-            className="grid min-w-0 gap-4 rounded-[calc(var(--radius-box)+0.25rem)] border border-base-300 bg-base-100 p-4"
+            className="grid min-w-0 gap-4 rounded-[calc(var(--radius-box)+0.25rem)] bg-base-100 p-4 shadow-sm"
             aria-label={`${copy.frequencyDomain}${copy.settings}`}
           >
             <div className="flex flex-wrap items-center gap-2">

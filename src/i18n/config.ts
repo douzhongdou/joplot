@@ -120,6 +120,12 @@ export function getSuperPlotPath(language: SupportedLanguage): string {
   return `${LANGUAGE_PATHS[language]}/${SUPER_PLOT_ROUTE_SEGMENT}`
 }
 
+export const SCIENCE_ROUTE_SEGMENT = 'science'
+
+export function getSciencePath(language: SupportedLanguage): string {
+  return `${LANGUAGE_PATHS[language]}/${SCIENCE_ROUTE_SEGMENT}`
+}
+
 export function resolveSupportedLanguageFromRouteLanguage(language: string): SupportedLanguage | null {
   return isRouteLanguage(language) ? ROUTE_LANGUAGE_TO_SUPPORTED_LANGUAGE[language] : null
 }

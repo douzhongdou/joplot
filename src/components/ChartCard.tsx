@@ -563,10 +563,10 @@ export function ChartCard({
     <article
       className={mobileChrome
         ? 'relative flex h-full min-h-0 flex-col bg-base-100 px-1 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25'
-        : `relative flex h-full min-h-0 flex-col rounded-[calc(var(--radius-box)+0.25rem)] border bg-base-100 p-3 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 ${
+        : `relative flex h-full min-h-0 flex-col rounded-[calc(var(--radius-box)+0.25rem)] bg-base-100 p-3 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 ${
             selected
-              ? 'border-primary/40 ring-1 ring-primary/15'
-              : 'border-base-300 hover:border-primary/20'
+              ? 'ring-2 ring-ring/40'
+              : ''
           }`}
       onMouseDown={onSelect}
       onFocus={(event) => {
@@ -603,10 +603,10 @@ export function ChartCard({
         <div className="grid min-w-0 gap-2">
           <h3 className="break-words text-lg font-semibold leading-tight text-base-content sm:text-xl sm:leading-none">{card.title}</h3>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex h-7 items-center rounded-full border border-base-300 bg-base-200 px-3 text-xs font-medium text-base-content/70">
+            <span className="inline-flex h-7 items-center rounded-full bg-muted px-3 text-xs font-medium text-base-content/70">
               {kindLabels[card.kind]}
             </span>
-            <span className="inline-flex h-7 items-center rounded-full border border-base-300 bg-base-200 px-3 text-xs font-medium text-base-content/70">
+            <span className="inline-flex h-7 items-center rounded-full bg-muted px-3 text-xs font-medium text-base-content/70">
               {t('chartCard.seriesCount', { count: formatNumber(renderedSeriesCount) })}
             </span>
           </div>
@@ -624,7 +624,7 @@ export function ChartCard({
               [t('chartCard.stats.max'), formatValue(aggregateSummary.max)],
               [t('chartCard.stats.mean'), formatValue(aggregateSummary.mean)],
             ].map(([label, value]) => (
-              <div key={label} className="rounded-[var(--radius-box)] border border-base-300 bg-base-200/50 p-4">
+              <div key={label} className="rounded-[var(--radius-box)] bg-muted p-4">
                 <div className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{label}</div>
                 <div className="mt-2 break-words text-2xl font-semibold text-base-content">{value}</div>
               </div>
@@ -642,7 +642,7 @@ export function ChartCard({
               [t('chartCard.stats.max'), formatValue(summary.max)],
               [t('chartCard.stats.mean'), formatValue(summary.mean)],
             ].map(([label, value]) => (
-              <div key={label} className="rounded-[var(--radius-box)] border border-base-300 bg-base-200/50 p-4">
+              <div key={label} className="rounded-[var(--radius-box)] bg-muted p-4">
                 <div className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{label}</div>
                 <div className="mt-2 break-words text-2xl font-semibold text-base-content">{value}</div>
               </div>
@@ -696,7 +696,7 @@ export function ChartCard({
         )}
 
         {((card.kind === 'stats' && !summary && !aggregateSummary) || (card.kind !== 'stats' && validSeries.length === 0 && !hasAggregateSeries && !(card.kind === 'heatmap' && !!card.heatmapConfig))) && (
-          <div role="status" className="flex flex-1 items-center justify-center rounded-[var(--radius-box)] border border-dashed border-base-300 bg-base-200/50 p-6 text-center text-sm leading-6 text-base-content/55">
+          <div role="status" className="flex flex-1 items-center justify-center rounded-[var(--radius-box)] bg-muted/50 p-6 text-center text-sm leading-6 text-base-content/55">
             <div>{t('chartCard.noValidSeries')}</div>
           </div>
         )}

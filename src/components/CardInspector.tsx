@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Copy,
   MoreHorizontal,
@@ -11,6 +11,13 @@ import type { ChartCard, ChartSeries, CsvData, HeatmapConfig } from '../types'
 import { listAvailableSeriesYColumns, updateAggregationConfig } from '../lib/workbench'
 import { SelectMenu } from './SelectMenu'
 import { Switch } from './Switch'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useI18n } from '../i18n'
 import type {
   AggregationConfig,
@@ -36,8 +43,7 @@ interface Props {
 type InspectorTab = 'base' | 'display'
 
 const fieldLabelClass = 'text-xs font-medium uppercase tracking-[0.12em] text-base-content/55'
-const inputClass = 'h-12 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-4 text-sm text-base-content outline-none transition placeholder:text-base-content/40 focus:border-primary/35 focus:ring-2 focus:ring-primary/20'
-const iconButtonClass = 'inline-grid size-10 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20'
+const inputClass = 'h-12 w-full rounded-[var(--radius-field)] border-0 bg-muted px-4 text-sm text-base-content outline-none transition placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30'
 
 const aggregationOptions: AggregationKind[] = [
   'sum',
@@ -67,9 +73,7 @@ export function CardInspector({
   onRemove,
 }: Props) {
   const { t, formatNumber } = useI18n()
-  const shellRef = useRef<HTMLElement>(null)
   const [activeTab, setActiveTab] = useState<InspectorTab>('base')
-  const [openMenuSeriesId, setOpenMenuSeriesId] = useState<string | null>(null)
 
   const kindOptions: Array<{ value: ChartCard['kind']; label: string }> = [
     { value: 'line', label: t('chartKinds.line') },
@@ -186,41 +190,6 @@ export function CardInspector({
     changeAggregation({ datasetIds: datasetIds.length > 0 ? datasetIds : current.datasetIds })
   }
 
-  useEffect(() => {
-    if (!openMenuSeriesId) {
-      return
-    }
-
-    function handlePointerDown(event: PointerEvent) {
-      const target = event.target as HTMLElement | null
-      if (!target) {
-        return
-      }
-
-      if (target.closest('.inspector-series-actions')) {
-        return
-      }
-
-      if (shellRef.current?.contains(target)) {
-        setOpenMenuSeriesId(null)
-      }
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        setOpenMenuSeriesId(null)
-      }
-    }
-
-    document.addEventListener('pointerdown', handlePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [openMenuSeriesId])
-
   if (!card) {
     return (
       <section className="grid min-h-full place-items-center bg-base-100 px-5 py-14 text-center sm:px-6 sm:py-16">
@@ -229,7 +198,6 @@ export function CardInspector({
             <Sparkles size={22} strokeWidth={2.2} />
           </div>
           <strong className="text-lg font-semibold text-base-content">{t('inspector.emptyTitle')}</strong>
-          <p className="text-sm leading-6 text-base-content/60">{t('inspector.emptyDescription')}</p>
         </div>
       </section>
     )
@@ -238,19 +206,19 @@ export function CardInspector({
   const currentKindLabel = kindOptions.find((option) => option.value === card.kind)?.label ?? t('chartKinds.fallback')
 
   return (
-    <section ref={shellRef} className="grid min-h-full grid-cols-[minmax(0,1fr)] content-start bg-base-100">
+    <section className="grid min-h-full grid-cols-[minmax(0,1fr)] content-start bg-base-100">
       <div className="flex items-start justify-between gap-3 border-base-300 px-5 py-4 sm:px-6 sm:py-5">
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1">
           <h2 className="text-xl font-semibold tracking-tight text-base-content sm:text-2xl">{currentKindLabel}</h2>
         </div>
 
         <div className="flex items-center gap-2">
-          <button type="button" className={iconButtonClass} onClick={onDuplicate} aria-label={t('inspector.duplicateCard')} title={t('inspector.duplicateCard')}>
+          <Button variant="ghost" size="icon" onClick={onDuplicate} aria-label={t('inspector.duplicateCard')} title={t('inspector.duplicateCard')}>
             <Copy size={16} strokeWidth={2.1} />
-          </button>
-          <button type="button" className={`${iconButtonClass} hover:text-error`} onClick={onRemove} aria-label={t('inspector.deleteCard')} title={t('inspector.deleteCard')}>
+          </Button>
+          <Button variant="ghost" size="icon" className="hover:text-destructive" onClick={onRemove} aria-label={t('inspector.deleteCard')} title={t('inspector.deleteCard')}>
             <Trash2 size={16} strokeWidth={2.1} />
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -303,7 +271,7 @@ export function CardInspector({
       <div className="px-5 pb-8 sm:px-6">
         {activeTab === 'base' && (
           <div role="tabpanel" id="inspector-panel-basic" aria-labelledby="inspector-tab-basic">
-            <section className="border-b border-base-300 py-6">
+            <section className="py-6">
               <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.baseSectionTitle')}</div>
               <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
                 <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2 sm:col-span-2">
@@ -405,10 +373,10 @@ export function CardInspector({
                               key={dataset.id}
                               type="button"
                               aria-pressed={selected}
-                              className={`flex min-h-12 items-center justify-between rounded-[var(--radius-field)] border px-4 text-left text-sm transition ${
+                              className={`flex min-h-12 items-center justify-between rounded-[var(--radius-field)] px-4 text-left text-sm transition ${
                                 selected
-                                  ? 'border-primary/20 bg-primary/10 text-primary'
-                                  : 'border-base-300 bg-base-100 text-base-content/70 hover:border-primary/20 hover:text-base-content'
+                                  ? 'bg-accent text-accent-foreground'
+                                  : 'bg-muted text-base-content/70 hover:bg-accent hover:text-base-content'
                               }`}
                               onClick={() => toggleAggregationDataset(dataset.id)}
                             >
@@ -563,53 +531,36 @@ export function CardInspector({
                     }))
 
                   return (
-                    <div key={series.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 border-b border-base-300 py-4 last:border-b-0">
+                    <div key={series.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 py-4">
                       <div className="flex items-center justify-between gap-3">
                         <strong className="min-w-0 flex-1 break-words text-sm font-semibold text-base-content">
                           {series.label || dataset?.fileName || t('cards.unnamedSeries')}
                         </strong>
-                        <div className="relative inspector-series-actions">
-                          <button
-                            type="button"
-                            className={iconButtonClass}
-                            onClick={() => setOpenMenuSeriesId((value) => value === series.id ? null : series.id)}
-                            aria-label={t('inspector.seriesMenu')}
-                            title={t('inspector.seriesMenu')}
-                            aria-haspopup="menu"
-                            aria-expanded={openMenuSeriesId === series.id}
-                          >
-                            <MoreHorizontal size={16} strokeWidth={2.1} />
-                          </button>
-
-                          {openMenuSeriesId === series.id && (
-                            <div role="menu" className="absolute right-0 top-[calc(100%+0.5rem)] z-20 grid min-w-36 gap-1 rounded-[calc(var(--radius-box)+0.25rem)] border border-base-300 bg-base-100 p-2">
-                              <button
-                                type="button"
-                                role="menuitem"
-                                className="inline-flex h-10 items-center rounded-[var(--radius-field)] px-3 text-left text-sm text-base-content transition hover:bg-base-200"
-                                onClick={() => {
-                                  setActiveTab('display')
-                                  setOpenMenuSeriesId(null)
-                                }}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={t('inspector.seriesMenu')}
+                              title={t('inspector.seriesMenu')}
+                            >
+                              <MoreHorizontal size={16} strokeWidth={2.1} />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onSelect={() => setActiveTab('display')}>
+                              {t('inspector.openDisplaySettings')}
+                            </DropdownMenuItem>
+                            {card.series.length > 1 && (
+                              <DropdownMenuItem
+                                variant="destructive"
+                                onSelect={() => onRemoveSeries(series.id)}
                               >
-                                {t('inspector.openDisplaySettings')}
-                              </button>
-                              {card.series.length > 1 && (
-                                <button
-                                  type="button"
-                                  role="menuitem"
-                                  className="inline-flex h-10 items-center rounded-[var(--radius-field)] px-3 text-left text-sm text-error transition hover:bg-error/10"
-                                  onClick={() => {
-                                    onRemoveSeries(series.id)
-                                    setOpenMenuSeriesId(null)
-                                  }}
-                                >
-                                  {t('inspector.removeSeries')}
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                                {t('inspector.removeSeries')}
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
 
                     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
@@ -648,11 +599,11 @@ export function CardInspector({
 
         {activeTab === 'display' && (
           <div role="tabpanel" id="inspector-panel-display" aria-labelledby="inspector-tab-display">
-            <section className="border-b border-base-300 py-6">
+            <section className="py-6">
               <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.seriesDisplaySectionTitle')}</div>
               <div className="grid grid-cols-[minmax(0,1fr)]">
                 {card.series.map((series) => (
-                  <div key={series.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 border-b border-base-300 py-4 last:border-b-0">
+                  <div key={series.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 py-4">
                     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1">
                       <span className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{t('inspector.dataSource')}</span>
                       <strong className="min-w-0 break-words text-sm font-semibold text-base-content">
@@ -673,7 +624,7 @@ export function CardInspector({
 
                       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
                         <span className={fieldLabelClass}>{t('inspector.seriesColor')}</span>
-                        <label className="relative flex h-12 items-center gap-3 rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-4 text-sm text-base-content focus-within:border-primary/35 focus-within:ring-2 focus-within:ring-primary/20">
+                        <label className="relative flex h-12 items-center gap-3 rounded-[var(--radius-field)] bg-muted px-4 text-sm text-base-content focus-within:ring-2 focus-within:ring-ring/30">
                           <span className="size-5 rounded-md border border-base-300" style={{ background: series.color }} />
                           <span className="font-medium">{series.color.toUpperCase()}</span>
                           <span className="ml-auto text-base-content/55">

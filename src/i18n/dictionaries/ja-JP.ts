@@ -57,7 +57,6 @@ export const jaJP = {
     currentGroup: '現在のグループ',
     range: '範囲',
     filtersTitle: 'フィルター条件',
-    filtersDescription: '現在のワークスペース内のすべての CSV で、このフィルター条件を共通利用します。',
     joinAnd: 'すべて満たす',
     joinOr: 'いずれかを満たす',
     addCondition: '条件を追加',
@@ -77,7 +76,6 @@ export const jaJP = {
   },
   inspector: {
     emptyTitle: '先にチャートカードを選択してください',
-    emptyDescription: '基本設定と表示設定がここに表示されます。',
     duplicateCard: 'カードを複製',
     deleteCard: 'カードを削除',
     mobileOpenButton: '編集',
@@ -209,11 +207,10 @@ export const jaJP = {
     workbench: 'データ',
     function: '関数',
     superplot: 'super-plot',
+    science: '科学処理',
   },
   functionStudio: {
     heading: '関数プロッター',
-    description: 'y = f(x) の形で数式を入力するとすぐに曲線が描かれます。複数曲線の重ね合わせ、スライダーでのパラメータ調整、漸近線の自動分割に対応しています。',
-    functionsHint: 'sin、cos、tan、exp、ln、log、sqrt、abs、floor、min、max などの関数と定数 pi、e に対応。2x や x(x+1) のように乗算記号を省略した書き方も使えます。',
     curvesSectionTitle: '曲線',
     addCurve: '曲線を追加',
     expressionLabel: '数式',
@@ -231,7 +228,6 @@ export const jaJP = {
     samplesLabel: 'サンプリング密度',
     samplesValue: ({ count }: { count: string | number }) => `${count} 点`,
     paramsSectionTitle: 'パラメータスライダー',
-    paramsEmptyHint: '数式に x 以外の文字（a、b、k など）を使うと、ここに対応するスライダーが自動で表示されます。',
     paramMin: '最小',
     paramMax: '最大',
     examplesSectionTitle: 'サンプル',
@@ -251,7 +247,6 @@ export const jaJP = {
     sendFailed: '送信できませんでした。ブラウザのストレージが利用できないか容量不足です。',
     sendEmpty: '送信できる有効な曲線がありません。',
     emptyPlotTitle: '描画できる曲線がまだありません',
-    emptyPlotDescription: '左側に有効な数式を入力するか、サンプルから選んでください。',
     errors: {
       empty: '数式が空です。',
       'unexpected-character': ({ token, position }: { token?: string | number; position?: string | number }) =>

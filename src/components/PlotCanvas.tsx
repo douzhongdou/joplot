@@ -310,7 +310,7 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
       ref={containerRef}
       className={frameless
         ? 'min-h-0 flex-1 overflow-hidden bg-white'
-        : 'min-h-0 flex-1 overflow-hidden rounded-[var(--radius-box)] border border-base-300 bg-white'}
+        : 'min-h-0 flex-1 overflow-hidden rounded-[var(--radius-box)] bg-white shadow-sm'}
     />
   )
 })

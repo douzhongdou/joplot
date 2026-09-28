@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   BadgeInfo,
   ChartArea,
@@ -16,6 +16,13 @@ import type { TrackingInputMethod } from '../lib/analytics'
 import type { ChartKind, CsvData, FilterJoinOperator, FilterOperator, FilterRule } from '../types'
 import { FileUploader } from './FileUploader'
 import { SelectMenu } from './SelectMenu'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useI18n } from '../i18n'
 
 interface Props {
@@ -33,11 +40,9 @@ interface Props {
   onRemoveFilter: (filterId: string) => void
 }
 
-const actionButtonClass = 'inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius-box)] border-0 bg-transparent px-3 text-sm font-semibold text-base-content transition hover:bg-primary/8 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 disabled:pointer-events-none disabled:text-base-content/40 sm:px-4'
-const primaryActionButtonClass = 'inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius-box)] border-0 bg-transparent px-3 text-sm font-semibold text-primary transition hover:bg-primary/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 sm:px-4'
-const shellClass = 'flex h-12 min-w-0 items-center rounded-[var(--radius-box)] border border-base-300 bg-base-100 px-4 text-sm text-base-content'
-const inputClass = 'h-12 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-4 text-sm text-base-content outline-none transition placeholder:text-base-content/40 focus:border-primary/35 focus:ring-2 focus:ring-primary/20'
-const ghostSelectTriggerClass = 'h-auto border-0 bg-transparent px-0 py-0 shadow-none hover:bg-transparent focus-visible:ring-0'
+const shellClass = 'flex h-12 min-w-0 items-center rounded-[var(--radius-box)] bg-muted px-3 text-sm text-base-content'
+const inputClass = 'h-12 w-full rounded-[var(--radius-field)] border-0 bg-muted px-4 text-sm text-base-content outline-none transition placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30'
+const ghostSelectTriggerClass = 'border-0 bg-transparent px-0 py-0 shadow-none hover:bg-transparent focus-visible:ring-0'
 
 export function WorkbenchHeader({
   datasets,
@@ -54,35 +59,7 @@ export function WorkbenchHeader({
   onRemoveFilter,
 }: Props) {
   const { t } = useI18n()
-  const [showAddMenu, setShowAddMenu] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
-  const addMenuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!showAddMenu) {
-      return
-    }
-
-    function handlePointerDown(event: PointerEvent) {
-      if (addMenuRef.current && !addMenuRef.current.contains(event.target as Node)) {
-        setShowAddMenu(false)
-      }
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        setShowAddMenu(false)
-      }
-    }
-
-    document.addEventListener('pointerdown', handlePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [showAddMenu])
 
   const activeDataset = useMemo(
     () => datasets.find((dataset) => dataset.id === activeDatasetId) ?? datasets[0] ?? null,
@@ -119,79 +96,62 @@ export function WorkbenchHeader({
             hasDatasets
             onFiles={onUploadFiles}
             containerClassName={mobileSheet ? 'w-full sm:w-auto' : ''}
-            buttonClassName={`${actionButtonClass} ${mobileSheet ? 'w-full sm:w-auto' : 'max-sm:flex-1'}`}
+            buttonClassName={mobileSheet ? 'w-full sm:w-auto' : 'max-sm:flex-1'}
           />
 
-          <div ref={addMenuRef} className={`relative ${mobileSheet ? 'w-full sm:w-auto' : ''}`}>
-            <button
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded={showAddMenu}
-              className={`${primaryActionButtonClass} ${mobileSheet ? 'w-full sm:w-auto' : 'max-sm:flex-1'}`}
-              onClick={() => setShowAddMenu((value) => !value)}
-            >
-              <Plus size={16} strokeWidth={2.2} />
-              {t('workbench.addComponent')}
-            </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                className={`h-11 rounded-[var(--radius-box)] font-semibold ${mobileSheet ? 'w-full sm:w-auto' : 'max-sm:flex-1'}`}
+              >
+                <Plus size={16} strokeWidth={2.2} />
+                {t('workbench.addComponent')}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align={mobileSheet ? 'start' : 'end'} className="min-w-44">
+              {componentOptions.map((option) => {
+                const Icon = option.icon
 
-            {showAddMenu && (
-              <div role="menu" className="absolute left-0 top-[calc(100%+0.625rem)] z-20 grid min-w-40 gap-1 rounded-[calc(var(--radius-box)+0.25rem)] border border-base-300 bg-base-100 p-2 sm:left-auto sm:right-0">
-                {componentOptions.map((option) => {
-                  const Icon = option.icon
+                return (
+                  <DropdownMenuItem key={option.kind} onSelect={() => onAddComponent(option.kind)}>
+                    <Icon size={15} strokeWidth={2.1} />
+                    {option.label}
+                  </DropdownMenuItem>
+                )
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-                  return (
-                    <button
-                      key={option.kind}
-                      type="button"
-                      role="menuitem"
-                      className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-field)] px-3 text-left text-sm text-base-content transition hover:bg-base-200"
-                      onClick={() => {
-                        onAddComponent(option.kind)
-                        setShowAddMenu(false)
-                      }}
-                    >
-                      <span className="inline-grid size-7 place-items-center rounded-[var(--radius-field)] bg-base-200 text-base-content/65">
-                        <Icon size={15} strokeWidth={2.1} />
-                      </span>
-                      {option.label}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-          <button
-            type="button"
+          <Button
+            variant={showFilters ? 'secondary' : 'ghost'}
             aria-expanded={showFilters}
-            className={`${showFilters ? primaryActionButtonClass : actionButtonClass} ${mobileSheet ? 'w-full sm:w-auto' : 'max-sm:flex-1'}`}
+            className={`h-11 rounded-[var(--radius-box)] font-semibold ${mobileSheet ? 'w-full sm:w-auto' : 'max-sm:flex-1'}`}
             onClick={() => setShowFilters((value) => !value)}
           >
             <Filter size={16} strokeWidth={2.1} />
             {t('workbench.filters')}
-          </button>
+          </Button>
 
-          <button
-            type="button"
-            className={`${actionButtonClass} ${mobileSheet ? 'w-full sm:w-auto' : 'max-sm:flex-1'}`}
+          <Button
+            variant="ghost"
+            className={`h-11 rounded-[var(--radius-box)] font-semibold ${mobileSheet ? 'w-full sm:w-auto' : 'max-sm:flex-1'}`}
             onClick={onResetDatasets}
           >
             <RotateCcw size={16} strokeWidth={2.1} />
             {t('workbench.resetData')}
-          </button>
+          </Button>
         </div>
       </div>
 
       {showFilters && activeDataset && (
-        <div className="grid gap-4 rounded-[calc(var(--radius-box)+0.25rem)] border border-base-300 bg-base-200/65 p-4">
+        <div className="grid gap-4 rounded-[calc(var(--radius-box)+0.25rem)] bg-muted/50 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="grid gap-1">
               <strong className="text-lg font-semibold text-base-content">{t('workbench.filtersTitle')}</strong>
-              <span className="text-sm text-base-content/60">{t('workbench.filtersDescription')}</span>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <div role="group" aria-label={`${t('workbench.joinAnd')} / ${t('workbench.joinOr')}`} className="inline-flex rounded-[var(--radius-box)] border border-base-300 bg-base-100 p-1">
+              <div role="group" aria-label={`${t('workbench.joinAnd')} / ${t('workbench.joinOr')}`} className="inline-flex rounded-[var(--radius-box)] bg-muted p-1">
                 <button
                   type="button"
                   aria-pressed={filterJoinOperator === 'and'}
@@ -218,15 +178,15 @@ export function WorkbenchHeader({
                 </button>
               </div>
 
-              <button type="button" className={primaryActionButtonClass} onClick={onAddFilter}>
+              <Button className="h-11 rounded-[var(--radius-box)] font-semibold" onClick={onAddFilter}>
                 <Plus size={16} strokeWidth={2.2} />
                 {t('workbench.addCondition')}
-              </button>
+              </Button>
             </div>
           </div>
 
           {filters.length === 0 && (
-            <div className="rounded-[var(--radius-box)] border border-dashed border-base-300 bg-base-100/80 px-4 py-5 text-sm text-base-content/55">
+            <div className="rounded-[var(--radius-box)] bg-muted/50 px-4 py-5 text-sm text-base-content/55">
               {t('workbench.noFilters')}
             </div>
           )}
@@ -239,7 +199,7 @@ export function WorkbenchHeader({
                 return (
                   <div
                     key={filter.id}
-                    className="grid gap-3 rounded-[var(--radius-box)] border border-base-300 bg-base-100 p-3 lg:grid-cols-[minmax(180px,1fr)_150px_minmax(200px,1fr)_minmax(200px,1fr)_92px]"
+                    className="grid gap-3 rounded-[var(--radius-box)] bg-background p-3 lg:grid-cols-[minmax(180px,1fr)_150px_minmax(200px,1fr)_minmax(200px,1fr)_92px]"
                   >
                     <div className={shellClass}>
                       <SelectMenu
@@ -284,13 +244,13 @@ export function WorkbenchHeader({
                       <div className="hidden lg:block" />
                     )}
 
-                    <button
-                      type="button"
-                      className="inline-flex h-12 items-center justify-center rounded-[var(--radius-box)] border border-error/20 bg-error/10 px-4 text-sm font-medium text-error transition hover:bg-error/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error/20"
+                    <Button
+                      variant="ghost"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive h-12 rounded-[var(--radius-box)]"
                       onClick={() => onRemoveFilter(filter.id)}
                     >
                       {t('workbench.removeFilter')}
-                    </button>
+                    </Button>
                   </div>
                 )
               })}

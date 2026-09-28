@@ -5,20 +5,17 @@ export type SuperPlotLanguage = 'zh-CN' | 'en' | 'ja-JP'
 export interface SuperPlotCopy {
   branding: string
   title: string
-  subtitle: string
   back: string
   waveformTab: string
   spectrumTab: string
   timeDomain: string
   frequencyDomain: string
   dropTitle: string
-  dropHint: string
   chooseFile: string
   replaceFile: string
   parsing: (percent: string, rows: string) => string
   parseFailed: string
   onlyCsv: string
-  noDatasets: string
   rowsLabel: string
   sizeLabel: string
   rateLabel: string
@@ -85,20 +82,17 @@ export interface SuperPlotCopy {
 const zhCN: SuperPlotCopy = {
   branding: 'super-plot',
   title: 'super-plot 大数波形与频谱实验台',
-  subtitle: '列式类型化数组 + 流式解析，百万行级别波形也能流畅缩放；内置独立 FFT 频谱面板。',
   back: '返回工作台',
   waveformTab: '波形',
   spectrumTab: '频谱',
   timeDomain: '时域',
   frequencyDomain: '频域',
   dropTitle: '把 CSV 拖到这里，或点击选择文件',
-  dropHint: '支持百万行级别的数值 CSV，本地解析，不上传。',
   chooseFile: '选择文件',
   replaceFile: '追加文件',
   parsing: (percent, rows) => `解析中 ${percent} · ${rows} 行`,
   parseFailed: '解析失败，请确认文件是带表头的 CSV。',
   onlyCsv: '仅支持 CSV 文件，其他格式已跳过。',
-  noDatasets: '还没有数据，先导入一个 CSV。',
   rowsLabel: '行数',
   sizeLabel: '大小',
   rateLabel: '采样率',
@@ -175,20 +169,17 @@ const zhCN: SuperPlotCopy = {
 const en: SuperPlotCopy = {
   branding: 'super-plot',
   title: 'super-plot large-data waveform & spectrum lab',
-  subtitle: 'Columnar typed arrays plus streaming parse make million-row waveforms smooth; includes a standalone FFT spectrum panel.',
   back: 'Back to workbench',
   waveformTab: 'Waveform',
   spectrumTab: 'Spectrum',
   timeDomain: 'Time domain',
   frequencyDomain: 'Frequency domain',
   dropTitle: 'Drop a CSV here, or click to choose a file',
-  dropHint: 'Handles million-row numeric CSVs. Parsed locally, never uploaded.',
   chooseFile: 'Choose file',
   replaceFile: 'Add file',
   parsing: (percent, rows) => `Parsing ${percent} · ${rows} rows`,
   parseFailed: 'Parse failed. Make sure the file is a CSV with a header row.',
   onlyCsv: 'Only CSV files are supported — other files were skipped.',
-  noDatasets: 'No data yet — import a CSV to begin.',
   rowsLabel: 'Rows',
   sizeLabel: 'Size',
   rateLabel: 'Sample rate',

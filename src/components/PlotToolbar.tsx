@@ -1,4 +1,5 @@
 import { Copy, CopyCheck, Download, ScanSearch } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { useI18n } from '../i18n'
 
 export type PlotCopyState = 'idle' | 'copied' | 'downloaded'
@@ -14,9 +15,6 @@ interface Props {
   onDownloadImage: () => void
 }
 
-const iconButtonClass = 'inline-grid size-9 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/65 transition hover:bg-transparent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 disabled:pointer-events-none disabled:opacity-50'
-const labeledButtonClass = 'inline-flex h-9 items-center justify-center gap-1.5 rounded-[var(--radius-box)] border border-base-300 bg-base-100 px-3 text-sm font-semibold text-base-content transition hover:border-primary/35 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 disabled:pointer-events-none disabled:opacity-50'
-
 export function PlotToolbar({
   busy = false,
   copyState = 'idle',
@@ -28,7 +26,9 @@ export function PlotToolbar({
   onDownloadImage,
 }: Props) {
   const { t } = useI18n()
-  const buttonClass = labeled ? labeledButtonClass : iconButtonClass
+  const variant = 'ghost'
+  const size = labeled ? 'default' : 'icon'
+  const extraClass = labeled ? 'gap-1.5 font-semibold hover:text-primary' : 'text-base-content/65 hover:text-primary'
   const copyLabel = copyState === 'copied'
     ? t('chartCard.copySuccess')
     : copyState === 'downloaded'
@@ -37,9 +37,11 @@ export function PlotToolbar({
 
   return (
     <>
-      <button
+      <Button
         type="button"
-        className={buttonClass}
+        variant={variant}
+        size={size}
+        className={extraClass}
         onClick={onAutorange}
         disabled={disabled}
         aria-label={t('chartCard.autorange')}
@@ -47,11 +49,13 @@ export function PlotToolbar({
       >
         <ScanSearch size={15} strokeWidth={2.1} />
         {labeled && <span className="hidden sm:inline">{t('chartCard.autorange')}</span>}
-      </button>
+      </Button>
       {showCopy && (
-        <button
+        <Button
           type="button"
-          className={buttonClass}
+          variant={variant}
+          size={size}
+          className={extraClass}
           onClick={onCopyImage}
           disabled={disabled || busy}
           aria-label={t('chartCard.copyImage')}
@@ -61,11 +65,13 @@ export function PlotToolbar({
             ? <Copy size={15} strokeWidth={2.1} />
             : <CopyCheck size={15} strokeWidth={2.1} />}
           {labeled && <span className="hidden sm:inline">{copyLabel}</span>}
-        </button>
+        </Button>
       )}
-      <button
+      <Button
         type="button"
-        className={buttonClass}
+        variant={variant}
+        size={size}
+        className={extraClass}
         onClick={onDownloadImage}
         disabled={disabled || busy}
         aria-label={t('chartCard.downloadImage')}
@@ -73,7 +79,7 @@ export function PlotToolbar({
       >
         <Download size={15} strokeWidth={2.1} />
         {labeled && <span className="hidden sm:inline">{t('chartCard.downloadImage')}</span>}
-      </button>
+      </Button>
     </>
   )
 }

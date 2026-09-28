@@ -57,7 +57,6 @@ export const en = {
     currentGroup: 'Current group',
     range: 'Range',
     filtersTitle: 'Filter rules',
-    filtersDescription: 'All imported datasets in the current workbench share the same filter logic.',
     joinAnd: 'All must match',
     joinOr: 'Any can match',
     addCondition: 'Add condition',
@@ -77,7 +76,6 @@ export const en = {
   },
   inspector: {
     emptyTitle: 'Select a chart card first',
-    emptyDescription: 'Base settings and display settings will appear here.',
     duplicateCard: 'Duplicate card',
     deleteCard: 'Delete card',
     mobileOpenButton: 'Edit',
@@ -209,11 +207,10 @@ export const en = {
     workbench: 'Data',
     function: 'Functions',
     superplot: 'super-plot',
+    science: 'Science',
   },
   functionStudio: {
     heading: 'Function plotter',
-    description: 'Type a formula in the form y = f(x) and the curve appears instantly. Overlay several curves, tune parameters with sliders, and asymptotes are split automatically.',
-    functionsHint: 'Supports sin, cos, tan, exp, ln, log, sqrt, abs, floor, min, max and more, plus the constants pi and e. Implicit multiplication such as 2x or x(x+1) works too.',
     curvesSectionTitle: 'Curves',
     addCurve: 'Add curve',
     expressionLabel: 'Formula',
@@ -231,7 +228,6 @@ export const en = {
     samplesLabel: 'Sampling density',
     samplesValue: ({ count }: { count: string | number }) => `${count} points`,
     paramsSectionTitle: 'Parameter sliders',
-    paramsEmptyHint: 'Use any letter other than x in a formula (such as a, b or k) and a slider for it shows up here.',
     paramMin: 'Min',
     paramMax: 'Max',
     examplesSectionTitle: 'Examples',
@@ -251,7 +247,6 @@ export const en = {
     sendFailed: 'Could not send: browser storage is unavailable or full.',
     sendEmpty: 'There is no valid curve to send yet.',
     emptyPlotTitle: 'Nothing to plot yet',
-    emptyPlotDescription: 'Enter a valid formula on the left or pick one of the examples.',
     errors: {
       empty: 'The formula is empty.',
       'unexpected-character': ({ token, position }: { token?: string | number; position?: string | number }) =>

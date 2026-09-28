@@ -1,6 +1,15 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import { Button as UIButton } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
   return (
@@ -17,6 +26,9 @@ export interface SelectOption {
   label: string
 }
 
+// Radix Select forbids empty-string item values; map them to a sentinel.
+const EMPTY_VALUE = '__selectinput_empty__'
+
 export function SelectInput({
   value,
   options,
@@ -28,16 +40,26 @@ export function SelectInput({
   onChange: (value: string) => void
   compact?: boolean
 }) {
+  const hasEmptyOption = options.some((option) => option.value === '')
+  // An external '' with no matching empty option means "nothing selected".
+  const radixValue = value === '' ? (hasEmptyOption ? EMPTY_VALUE : undefined) : value
+
   return (
-    <select
-      className={`min-w-0 rounded-[var(--radius-field)] border border-base-300 bg-base-100 text-base-content outline-none transition focus:border-primary/50 ${compact ? 'h-8 px-2 text-xs' : 'h-9 px-3 text-sm'}`}
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
+    <Select
+      value={radixValue}
+      onValueChange={(nextValue) => onChange(nextValue === EMPTY_VALUE ? '' : nextValue)}
     >
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>{option.label}</option>
-      ))}
-    </select>
+      <SelectTrigger size={compact ? 'sm' : 'default'} className={`w-full min-w-0 ${compact ? 'text-xs' : ''}`}>
+        <SelectValue placeholder="—" />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value === '' ? EMPTY_VALUE : option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 
@@ -57,7 +79,7 @@ export function NumberInput({
   return (
     <input
       type="number"
-      className="h-9 min-w-0 rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary/50"
+      className="h-9 min-w-0 rounded-[var(--radius-field)] border-0 bg-muted px-3 text-sm text-base-content outline-none transition focus-visible:ring-2 focus-visible:ring-ring/30"
       value={Number.isFinite(value) ? value : ''}
       min={min}
       max={max}
@@ -83,12 +105,7 @@ export function Toggle({
 }) {
   return (
     <label className="flex cursor-pointer select-none items-center gap-2 text-xs font-medium text-base-content/75">
-      <input
-        type="checkbox"
-        className="size-4 accent-[var(--color-primary)]"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-      />
+      <Switch checked={checked} onCheckedChange={onChange} />
       {label}
     </label>
   )
@@ -104,7 +121,7 @@ export function SegmentedControl<T extends string>({
   onChange: (value: T) => void
 }) {
   return (
-    <div className="inline-flex rounded-[var(--radius-field)] border border-base-300 bg-base-200 p-0.5">
+    <div className="inline-flex rounded-[var(--radius-field)] bg-muted p-0.5">
       {options.map((option) => (
         <button
           key={option.value}
@@ -138,22 +155,18 @@ export function Button({
   expanded?: boolean
   label?: string
 }) {
-  const styles = variant === 'primary'
-    ? 'bg-primary text-primary-content hover:opacity-90'
-    : variant === 'ghost'
-      ? 'bg-transparent text-base-content/70 hover:bg-base-200'
-      : 'border border-base-300 bg-base-100 text-base-content hover:border-primary/40'
+  const uiVariant = variant === 'primary' ? 'default' : variant === 'ghost' ? 'ghost' : 'outline'
 
   return (
-    <button
+    <UIButton
       type="button"
+      variant={uiVariant}
       disabled={disabled}
       aria-expanded={expanded}
       aria-label={label}
-      className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-[var(--radius-field)] px-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${styles}`}
       onClick={onClick}
     >
       {children}
-    </button>
+    </UIButton>
   )
 }

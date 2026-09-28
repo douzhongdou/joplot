@@ -57,7 +57,6 @@ export const zhCN = {
     currentGroup: '当前组',
     range: '范围',
     filtersTitle: '筛选条件',
-    filtersDescription: '当前工作台中的所有 CSV 共用这一组筛选逻辑。',
     joinAnd: '全部满足',
     joinOr: '满足任一',
     addCondition: '新增条件',
@@ -77,7 +76,6 @@ export const zhCN = {
   },
   inspector: {
     emptyTitle: '先选中一张图卡',
-    emptyDescription: '基础设置和显示设置会显示在这里。',
     duplicateCard: '复制图卡',
     deleteCard: '删除图卡',
     mobileOpenButton: '编辑',
@@ -209,11 +207,10 @@ export const zhCN = {
     workbench: '数据',
     function: '函数',
     superplot: 'super-plot',
+    science: '科学处理',
   },
   functionStudio: {
     heading: '函数画板',
-    description: '输入 y = f(x) 形式的公式即可出图，支持多条曲线叠加、参数滑块和渐近线自动断线。',
-    functionsHint: '支持 sin、cos、tan、exp、ln、log、sqrt、abs、floor、min、max 等函数和 pi、e 常量，也支持 2x、x(x+1) 这类省略乘号的写法。',
     curvesSectionTitle: '曲线',
     addCurve: '添加曲线',
     expressionLabel: '公式',
@@ -231,7 +228,6 @@ export const zhCN = {
     samplesLabel: '采样密度',
     samplesValue: ({ count }: { count: string | number }) => `${count} 点`,
     paramsSectionTitle: '参数滑块',
-    paramsEmptyHint: '公式里出现 x 以外的字母（如 a、b、k），这里会自动生成对应的滑块。',
     paramMin: '最小值',
     paramMax: '最大值',
     examplesSectionTitle: '示例',
@@ -251,7 +247,6 @@ export const zhCN = {
     sendFailed: '发送失败：浏览器本地存储不可用或已满。',
     sendEmpty: '当前没有可发送的有效曲线。',
     emptyPlotTitle: '还没有可绘制的曲线',
-    emptyPlotDescription: '在左侧输入一条有效公式，或者从示例里挑一个开始。',
     errors: {
       empty: '公式为空。',
       'unexpected-character': ({ token, position }: { token?: string | number; position?: string | number }) =>

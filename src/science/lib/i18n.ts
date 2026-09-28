@@ -1,12 +1,28 @@
 export type ScienceLanguage = 'zh-CN' | 'en' | 'ja-JP'
 
 export interface ScienceCopy {
-  brand: string
-  title: string
-  subtitle: string
   workspace: string
   loadSample: string
+  derived: string
+  importData: string
+  dropFiles: string
+  dropFilesHint: string
+  openFile: string
+  orDivider: string
+  importing: string
+  restoring: string
+  xColumn: string
+  yColumn: string
+  yColumns: string
+  removeDataset: string
+  rowIndex: string
+  exportCsv: string
+  noNumeric: string
+  storageError: string
   variables: string
+  waveModeLine: string
+  waveModeMarkers: string
+  waveModeBoth: string
   empty: string
   analysis: string
   addStep: string
@@ -29,6 +45,7 @@ export interface ScienceCopy {
   kinds: Record<string, string>
   plot: {
     timeDomain: string
+    dataDomain: string
     frequencyDomain: string
     residual: string
     fit: string
@@ -164,12 +181,28 @@ const EN_LABELS: Record<string, string> = {
 }
 
 const ZH: ScienceCopy = {
-  brand: 'joplot science',
-  title: '科学处理工作台',
-  subtitle: '导入或生成数据 · 组合分析步骤 · 实时出图',
   workspace: '工作区',
-  loadSample: '重载示例信号',
+  loadSample: '示例信号',
+  derived: '派生',
+  importData: '导入数据',
+  dropFiles: '将文件拖拽到这里',
+  dropFilesHint: '或点击选择文件，支持 CSV / Excel，可多选',
+  openFile: '打开文件',
+  orDivider: '或',
+  importing: '正在导入…',
+  restoring: '正在恢复工作区…',
+  xColumn: 'X 列',
+  yColumn: 'Y 列',
+  yColumns: 'Y 列（可多选）',
+  removeDataset: '移除数据集',
+  rowIndex: '行号',
+  exportCsv: '导出所选结果 CSV',
+  noNumeric: '文件中至少需要一列可用的数值数据',
+  storageError: '本地自动保存不可用，请先导出重要结果',
   variables: '变量',
+  waveModeLine: '折线',
+  waveModeMarkers: '散点',
+  waveModeBoth: '线+点',
   empty: '还没有变量',
   analysis: '分析栈',
   addStep: '添加步骤',
@@ -208,6 +241,7 @@ const ZH: ScienceCopy = {
   kinds: { series: '序列', spectrum: '频谱', fit: '拟合', stats: '统计' },
   plot: {
     timeDomain: '时域',
+    dataDomain: '数据曲线',
     frequencyDomain: '频域',
     residual: '残差',
     fit: '拟合',
@@ -231,12 +265,28 @@ const ZH: ScienceCopy = {
 }
 
 const EN: ScienceCopy = {
-  brand: 'joplot science',
-  title: 'Scientific workspace',
-  subtitle: 'Load or generate data · compose analysis steps · plot live',
   workspace: 'Workspace',
-  loadSample: 'Reload sample',
+  loadSample: 'Sample',
+  derived: 'Derived',
+  importData: 'Import data',
+  dropFiles: 'Drop files here',
+  dropFilesHint: 'or click to browse — CSV / Excel, multiple allowed',
+  openFile: 'Open file',
+  orDivider: 'or',
+  importing: 'Importing…',
+  restoring: 'Restoring workspace…',
+  xColumn: 'X column',
+  yColumn: 'Y column',
+  yColumns: 'Y columns (multiple)',
+  removeDataset: 'Remove dataset',
+  rowIndex: 'Row index',
+  exportCsv: 'Export selected result CSV',
+  noNumeric: 'The file needs at least one usable numeric column',
+  storageError: 'Local autosave is unavailable. Export important results first.',
   variables: 'Variables',
+  waveModeLine: 'Line',
+  waveModeMarkers: 'Markers',
+  waveModeBoth: 'Line+markers',
   empty: 'No variables yet',
   analysis: 'Analysis stack',
   addStep: 'Add step',
@@ -275,6 +325,7 @@ const EN: ScienceCopy = {
   kinds: { series: 'Series', spectrum: 'Spectrum', fit: 'Fit', stats: 'Stats' },
   plot: {
     timeDomain: 'Time domain',
+    dataDomain: 'Data plot',
     frequencyDomain: 'Frequency domain',
     residual: 'Residual',
     fit: 'Fit',
@@ -297,6 +348,73 @@ const EN: ScienceCopy = {
   },
 }
 
+const JA: ScienceCopy = {
+  ...EN,
+  workspace: 'ワークスペース',
+  loadSample: 'サンプル',
+  derived: '派生',
+  importData: 'データを読み込む',
+  dropFiles: 'ここにファイルをドラッグ',
+  dropFilesHint: 'またはクリックして選択（CSV / Excel、複数可）',
+  openFile: 'ファイルを開く',
+  orDivider: 'または',
+  importing: '読み込み中…',
+  restoring: 'ワークスペースを復元中…',
+  xColumn: 'X 列',
+  yColumn: 'Y 列',
+  yColumns: 'Y 列（複数選択可）',
+  removeDataset: 'データセットを削除',
+  rowIndex: '行番号',
+  exportCsv: '選択結果を CSV で出力',
+  noNumeric: '使用できる数値列が少なくとも 1 つ必要です',
+  storageError: '自動保存できません。重要な結果は先に出力してください。',
+  variables: '変数',
+  waveModeLine: '折れ線',
+  waveModeMarkers: 'マーカー',
+  waveModeBoth: '線+点',
+  empty: '変数がありません',
+  analysis: '解析手順',
+  addStep: '手順を追加',
+  run: '実行',
+  running: '実行中…',
+  cancel: 'キャンセル',
+  dirty: '未実行',
+  runAll: 'すべて実行',
+  runToHere: 'ここまで実行',
+  auto: '自動',
+  input: '入力',
+  secondInput: '第 2 入力',
+  remove: '削除',
+  results: '結果',
+  noResult: '結果の変数を選択してください',
+  error: 'エラー',
+  operators: {
+    smooth: '平滑化', gaussian: 'ガウス平滑化', detrend: 'トレンド除去', window: '窓関数',
+    movingStat: '移動統計', differentiate: '微分', integrate: '積分', map: '単項関数',
+    linear: '線形変換', normalize: '正規化', clip: 'クリップ', expr: '数式',
+    fft: 'FFT スペクトル', fit: '曲線フィット', stats: '記述統計',
+  },
+  categories: { signal: '信号', math: '数学', spectral: 'スペクトル', fit: 'フィット', stats: '統計' },
+  labels: {
+    ...EN_LABELS,
+    method: '方法', window: '窓幅', order: '次数', mode: '方法', windowFn: '窓関数',
+    detrend: 'トレンド除去', segments: 'Welch 分割数', model: 'モデル',
+    expr: '式 y(x, パラメータ)', initial: '初期値（カンマ区切り、省略可）',
+    formula: '式 f(x, y, パラメータ)',
+    exprHint: 'x、y、pi/e と sin、exp などを使用できます。その他の変数はパラメータになります。',
+    function: '関数', min: '最小', max: '最大', stat: '統計量', sigma: 'σ（標準偏差）',
+    savgol: 'Savitzky-Golay', moving: '移動平均', none: 'なし', mean: '平均値を除去',
+    zscore: 'Z スコア', std: '標準偏差', rms: 'RMS', median: '中央値',
+  },
+  kinds: { series: '系列', spectrum: 'スペクトル', fit: 'フィット', stats: '統計' },
+  plot: { timeDomain: '時間領域', dataDomain: 'データ曲線', frequencyDomain: '周波数領域', residual: '残差', fit: 'フィット', data: 'データ', peak: 'ピーク' },
+  fit: { rSquared: 'R²', rmse: 'RMSE', iterations: '反復回数', converged: '収束', yes: 'はい', no: 'いいえ', params: 'パラメータ' },
+  stats: {
+    count: '標本数', mean: '平均', std: '標準偏差', min: '最小', max: '最大', median: '中央値',
+    q1: '第 1 四分位', q3: '第 3 四分位', rms: 'RMS', skew: '歪度', kurtosis: '超過尖度',
+  },
+}
+
 export function resolveScienceLanguage(routeLanguage: string | undefined): ScienceLanguage {
   if (routeLanguage === 'zh') return 'zh-CN'
   if (routeLanguage === 'ja') return 'ja-JP'
@@ -305,6 +423,6 @@ export function resolveScienceLanguage(routeLanguage: string | undefined): Scien
 
 export function createScienceCopy(language: ScienceLanguage): ScienceCopy {
   if (language === 'zh-CN') return ZH
-  // ja 暂回退英文
+  if (language === 'ja-JP') return JA
   return EN
 }

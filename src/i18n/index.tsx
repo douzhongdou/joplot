@@ -125,6 +125,7 @@ export function useI18n() {
 export {
   getFunctionStudioPath,
   getSuperPlotPath,
+  getSciencePath,
   getLanguagePath,
   getRouteLanguage,
   getHtmlLang,

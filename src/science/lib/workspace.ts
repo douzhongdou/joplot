@@ -19,6 +19,7 @@ export function createSampleWorkspace(): ScienceWorkspaceSeed {
     x: createDense(t),
     y: createDense(y),
     sampleRate,
+    xUnit: 's',
     provenance: 'generated sample signal',
   }
 

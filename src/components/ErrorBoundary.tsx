@@ -16,7 +16,7 @@ function ErrorBoundaryFallback() {
 
   return (
     <div className="grid h-full place-items-center bg-base-200 px-6 text-base-content">
-      <div className="flex max-w-md flex-col items-center gap-4 rounded-[var(--radius-box)] border border-base-300 bg-base-100 p-8 text-center shadow-sm">
+      <div className="flex max-w-md flex-col items-center gap-4 rounded-[var(--radius-box)] bg-base-100 p-8 text-center shadow-sm">
         <div className="text-lg font-semibold">{t('errorBoundary.title')}</div>
         <p className="text-sm text-base-content/70">{t('errorBoundary.description')}</p>
         <button

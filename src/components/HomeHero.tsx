@@ -23,22 +23,18 @@ export function HomeHero({ busy = false, onLoadSample, onUploadFiles }: Props) {
           {copy.heroTitle}
         </h1>
 
-        <p className="max-w-xl text-base leading-7 text-base-content/62 sm:text-lg">
-          {copy.heroSubtitle}
-        </p>
-
         <div className="grid w-full gap-3 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
           <FileUploader
             hasDatasets={false}
             onFiles={onUploadFiles}
             disabled={busy}
             containerClassName="w-full sm:w-auto"
-            buttonClassName="h-12 w-full rounded-2xl border border-primary/15 bg-primary px-5 text-sm font-semibold text-primary-content shadow-none hover:border-primary hover:bg-primary sm:w-auto"
+            buttonClassName="h-12 w-full rounded-2xl bg-primary px-5 text-sm font-semibold text-primary-content shadow-none hover:bg-primary sm:w-auto"
           />
 
           <button
             type="button"
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-base-300 bg-base-100 px-5 text-sm font-semibold text-base-content transition hover:border-primary/25 hover:bg-primary/8 hover:text-primary disabled:pointer-events-none disabled:text-base-content/45 sm:w-auto"
+            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-muted px-5 text-sm font-semibold text-base-content transition hover:bg-accent disabled:pointer-events-none disabled:text-base-content/45 sm:w-auto"
             onClick={() => void onLoadSample(sample.id)}
             disabled={busy}
             aria-busy={busy}
@@ -50,7 +46,7 @@ export function HomeHero({ busy = false, onLoadSample, onUploadFiles }: Props) {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-5 shadow-[0_24px_80px_rgba(17,24,39,0.08)]">
+      <div className="overflow-hidden rounded-[2rem] bg-base-100 p-5 shadow-[0_24px_80px_rgba(17,24,39,0.08)]">
         <div className="overflow-hidden rounded-[calc(var(--radius-box)+0.25rem)]">
           <svg viewBox="0 0 380 220" className="block h-auto w-full" aria-hidden="true" focusable="false">
             <defs>

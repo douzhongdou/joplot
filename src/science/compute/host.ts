@@ -20,15 +20,20 @@ export interface ComputeResult {
 export interface ComputeHost {
   run(
     steps: AnalysisStep[],
-    options?: { reset?: boolean; dirtyIds?: Iterable<string>; previewTarget?: number },
+    options?: { reset?: boolean; base?: ScienceValue[]; dirtyIds?: Iterable<string>; previewTarget?: number },
   ): Promise<ComputeResult>
+  exportValue(valueId: string): Promise<Blob>
+  preview(valueIds: string[], xRange: { min: number; max: number } | null, target?: number): Promise<ScienceValue[]>
   terminate(): void
 }
 
 export function createComputeHost(): ComputeHost {
   let worker: Worker | null = null
   let sequence = 0
-  const pending = new Map<number, { resolve: (result: ComputeResult) => void; reject: (error: unknown) => void }>()
+  const pending = new Map<number, {
+    resolve: (result: ComputeResult | Blob | ScienceValue[]) => void
+    reject: (error: unknown) => void
+  }>()
 
   const rejectAll = (error: Error) => {
     for (const entry of pending.values()) {
@@ -60,12 +65,18 @@ export function createComputeHost(): ComputeHost {
           timings: message.timings,
           elapsedMs: message.elapsedMs,
         })
+      } else if (message.type === 'export-result') {
+        entry.resolve(message.blob)
+      } else if (message.type === 'preview-result') {
+        entry.resolve(message.values)
       } else {
         entry.reject(new Error(message.message))
       }
     })
     worker.addEventListener('error', () => {
       rejectAll(new Error('compute worker crashed'))
+      worker?.terminate()
+      worker = null
     })
 
     return worker
@@ -76,16 +87,33 @@ export function createComputeHost(): ComputeHost {
       const instance = ensureWorker()
       const requestId = (sequence += 1)
       return new Promise<ComputeResult>((resolve, reject) => {
-        pending.set(requestId, { resolve, reject })
+        pending.set(requestId, { resolve: (result) => resolve(result as ComputeResult), reject })
         const request: WorkerRequest = {
           type: 'run',
           requestId,
           reset: Boolean(options.reset),
+          base: options.base,
           dirtyIds: options.dirtyIds ? [...options.dirtyIds] : [],
           steps,
           previewTarget: options.previewTarget ?? DEFAULT_PREVIEW_TARGET,
         }
         instance.postMessage(request)
+      })
+    },
+    exportValue(valueId) {
+      const instance = ensureWorker()
+      const requestId = (sequence += 1)
+      return new Promise<Blob>((resolve, reject) => {
+        pending.set(requestId, { resolve: (result) => resolve(result as Blob), reject })
+        instance.postMessage({ type: 'export', requestId, valueId } satisfies WorkerRequest)
+      })
+    },
+    preview(valueIds, xRange, target = DEFAULT_PREVIEW_TARGET) {
+      const instance = ensureWorker()
+      const requestId = (sequence += 1)
+      return new Promise<ScienceValue[]>((resolve, reject) => {
+        pending.set(requestId, { resolve: (result) => resolve(result as ScienceValue[]), reject })
+        instance.postMessage({ type: 'preview', requestId, valueIds, xRange, target } satisfies WorkerRequest)
       })
     },
     terminate() {

@@ -1,9 +1,16 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 const INPUT_CLASS =
-  'h-8 min-w-0 rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs text-base-content outline-none transition focus:border-primary/50'
+  'h-8 min-w-0 rounded-[var(--radius-field)] border-0 bg-muted px-2 text-xs text-base-content outline-none transition focus-visible:ring-2 focus-visible:ring-ring/30'
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -14,6 +21,9 @@ export function Field({ label, children }: { label: string; children: ReactNode 
   )
 }
 
+// Radix Select forbids empty-string item values; map them to a sentinel.
+const EMPTY_VALUE = '__selectinput_empty__'
+
 export function SelectInput({
   value,
   options,
@@ -23,14 +33,26 @@ export function SelectInput({
   options: Array<{ value: string; label: string }>
   onChange: (value: string) => void
 }) {
+  const hasEmptyOption = options.some((option) => option.value === '')
+  // An external '' with no matching empty option means "nothing selected".
+  const radixValue = value === '' ? (hasEmptyOption ? EMPTY_VALUE : undefined) : value
+
   return (
-    <select className={INPUT_CLASS} value={value} onChange={(event) => onChange(event.target.value)}>
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
+    <Select
+      value={radixValue}
+      onValueChange={(nextValue) => onChange(nextValue === EMPTY_VALUE ? '' : nextValue)}
+    >
+      <SelectTrigger size="sm" className="h-8 w-full min-w-0 text-xs">
+        <SelectValue placeholder="—" />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value === '' ? EMPTY_VALUE : option.value} className="text-xs">
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 

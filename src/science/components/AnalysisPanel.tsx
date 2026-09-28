@@ -6,6 +6,16 @@ import type { ScienceCopy } from '../lib/i18n.ts'
 import type { AnalysisStep, OpKind } from '../lib/pipeline.ts'
 import { getOperator, OPERATORS, OPERATOR_CATEGORIES, type OperatorParams, type ParamSpec } from '../lib/operators.ts'
 import { parseExpression } from '../../lib/expression.ts'
+import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Field, NumberInput, SelectInput, TextInput } from './Controls.tsx'
 
 function label(copy: ScienceCopy, key: string, fallback?: string): string {
@@ -139,6 +149,7 @@ export function AnalysisPanel({
   copy,
   running,
   stepStatus,
+  sourceNames = {},
   onAdd,
   onUpdate,
   onRemove,
@@ -151,6 +162,8 @@ export function AnalysisPanel({
   copy: ScienceCopy
   running: boolean
   stepStatus: (index: number) => StepStatus
+  /** valueId → 来源文件名，用于给数据集列的选项加 `文件名 · 列名` 前缀。 */
+  sourceNames?: Record<string, string>
   onAdd: (op: OpKind) => void
   onUpdate: (step: AnalysisStep) => void
   onRemove: (id: string) => void
@@ -161,6 +174,11 @@ export function AnalysisPanel({
   const producedIds = new Set(steps.map((step) => step.outputId))
   const baseSeries = values.filter((value) => value.kind === 'series' && !producedIds.has(value.id))
 
+  const optionLabel = (value: ScienceValue): string => {
+    const source = sourceNames[value.id]
+    return source ? `${source} · ${value.name}` : value.name
+  }
+
   const seriesOptionsFor = (index: number): Option[] => {
     const priorSeriesIds = steps
       .slice(0, index)
@@ -168,7 +186,7 @@ export function AnalysisPanel({
       .map((candidate) => candidate.outputId)
 
     return [
-      ...baseSeries.map((value) => ({ value: value.id, label: value.name })),
+      ...baseSeries.map((value) => ({ value: value.id, label: optionLabel(value) })),
       ...values
         .filter((value) => value.kind === 'series' && priorSeriesIds.includes(value.id))
         .map((value) => ({ value: value.id, label: value.name })),
@@ -191,28 +209,31 @@ export function AnalysisPanel({
       <h2 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-base-content/45">{copy.analysis}</h2>
 
       <div className="flex items-center gap-2">
-        <select
-          className="h-8 min-w-0 flex-1 rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs text-base-content outline-none transition focus:border-primary/50"
-          value={pendingOp}
-          onChange={(event) => setPendingOp(event.target.value)}
-        >
-          {OPERATOR_CATEGORIES.map((category) => (
-            <optgroup key={category} label={copy.categories[category]}>
-              {OPERATORS.filter((operator) => operator.category === category).map((operator) => (
-                <option key={operator.kind} value={operator.kind}>
-                  {copy.operators[operator.kind] ?? operator.kind}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-        <button
+        <Select value={pendingOp} onValueChange={(value) => setPendingOp(value as OpKind)}>
+          <SelectTrigger size="sm" className="h-8 min-w-0 flex-1 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {OPERATOR_CATEGORIES.map((category) => (
+              <SelectGroup key={category}>
+                <SelectLabel>{copy.categories[category]}</SelectLabel>
+                {OPERATORS.filter((operator) => operator.category === category).map((operator) => (
+                  <SelectItem key={operator.kind} value={operator.kind} className="text-xs">
+                    {copy.operators[operator.kind] ?? operator.kind}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
           type="button"
+          size="sm"
           onClick={() => onAdd(pendingOp)}
-          className="h-8 shrink-0 rounded-[var(--radius-field)] bg-primary px-3 text-xs font-semibold text-primary-content transition hover:opacity-90"
+          className="shrink-0 rounded-[var(--radius-field)] text-xs font-semibold"
         >
           {copy.addStep}
-        </button>
+        </Button>
       </div>
 
       <ul className="flex flex-col gap-2">
@@ -223,7 +244,7 @@ export function AnalysisPanel({
           return (
             <li
               key={step.id}
-              className="flex flex-col gap-2 rounded-[calc(var(--radius-field)+0.1rem)] border border-base-300 bg-base-200/60 p-2.5"
+              className="flex flex-col gap-2 rounded-[calc(var(--radius-field)+0.1rem)] bg-muted/50 p-2.5"
             >
               <div className="flex items-center gap-2">
                 <span className={`size-1.5 shrink-0 rounded-full ${statusDot(stepStatus(index))}`} />
@@ -363,7 +384,7 @@ export function ResultsPanel({ value, copy }: { value: ScienceValue | undefined;
             <tbody>
               {value.peaks.map((peak) => (
                 <tr key={peak.frequency} className="border-b border-base-200">
-                  <td className="py-1 font-mono text-base-content/70">{`${formatNumber(peak.frequency, 3)} Hz`}</td>
+                  <td className="py-1 font-mono text-base-content/70">{`${formatNumber(peak.frequency, 3)} ${value.frequencyUnit ?? 'Hz'}`}</td>
                   <td className="py-1 text-right font-mono text-base-content">{formatNumber(peak.magnitude)}</td>
                   <td className="py-1 text-right font-mono text-base-content/45">{`${formatNumber(peak.relativeDb, 1)} dB`}</td>
                 </tr>
