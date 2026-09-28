@@ -87,3 +87,26 @@ export interface StatsValue {
 export type ScienceValue = Series | SpectrumValue | FitValue | StatsValue
 
 export type ScienceValueKind = ScienceValue['kind']
+
+/** 列映射：X 列(空串=行号)与若干 Y 列。 */
+export interface DatasetMapping {
+  xColumn: string
+  yColumns: string[]
+}
+
+/**
+ * 数据集的「元信息」。主线程只持有它，完整列数组驻留 Worker。
+ * 字段取自 SuperDataset 中 UI/映射/持久化所需的部分。
+ */
+export interface DatasetSummary {
+  id: string
+  fileName: string
+  headers: string[]
+  numericColumns: string[]
+  rowCount: number
+  timeColumn: string | null
+  createdAt: number
+  fileSize: number
+}
+
+export type WorkspaceSource = 'sample' | 'dataset'

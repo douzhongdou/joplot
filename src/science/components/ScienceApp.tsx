@@ -1,18 +1,16 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ScienceValue } from '../types.ts'
-import type { SuperDataset } from '../../superplot/types.ts'
+import type { DatasetMapping, DatasetSummary, ScienceValue, WorkspaceSource } from '../types.ts'
 import { values1d } from '../lib/dense.ts'
-import { seriesListFromDataset } from '../lib/import.ts'
-import { readScienceDataset } from '../lib/readDataset.ts'
-import { datasetKey, loadScienceWorkspace, saveScienceDatasets, saveScienceRecipe, type ScienceRecipe } from '../lib/persistence.ts'
+import { sanitizeMapping } from '../lib/base.ts'
+import { datasetKey, loadScienceWorkspace, saveScienceRecipe, type ScienceRecipe } from '../lib/persistence.ts'
 import { SCIENCE_COLORS } from '../lib/colors.ts'
 import { createScienceCopy, type ScienceLanguage } from '../lib/i18n.ts'
 import { defaultParams, getOperator, nextStepId, type AnalysisStep, type OpKind } from '../lib/pipeline.ts'
 import { computeDirtySteps } from '../lib/dirty.ts'
 import { createSampleWorkspace } from '../lib/workspace.ts'
-import { useComputeHost, type ComputeResult } from '../compute/host.ts'
+import { useComputeHost, type ComputeResult, type MutateOptions, type MutateResult } from '../compute/host.ts'
 import { AnalysisPanel, ResultsPanel, type StepStatus } from './AnalysisPanel.tsx'
 import { Button } from '@/components/ui/button'
 import { Plot, type AxisRange, type PlotApi, type ScienceTrace, type TraceUpdate } from './Plot.tsx'
@@ -42,37 +40,10 @@ interface WaveBundle {
   hasResidual: boolean
 }
 
-interface DatasetMapping {
-  xColumn: string
-  yColumns: string[]
-}
-
 /** 数据集 id 前缀，例如 `ds:scope-ch1:voltage_V` → `ds:scope-ch1:`。 */
 function datasetPrefix(id: string): string {
   const secondColon = id.indexOf(':', 3)
   return secondColon < 0 ? id : id.slice(0, secondColon + 1)
-}
-
-function sanitizeMapping(dataset: SuperDataset, nextX: string, nextYs: string[]): DatasetMapping {
-  let yColumns = [...new Set(nextYs)].filter((name) => name !== nextX)
-  if (yColumns.length === 0) {
-    yColumns = dataset.numericColumns.filter((name) => name !== nextX).slice(0, 1)
-  }
-  const xColumn = yColumns.length === 0 ? '' : nextX
-  if (yColumns.length === 0) yColumns = dataset.numericColumns.slice(0, 1)
-  return { xColumn, yColumns }
-}
-
-function buildBase(nextDatasets: SuperDataset[], nextMappings: Record<string, DatasetMapping>): ScienceValue[] {
-  return nextDatasets.flatMap((dataset) => {
-    const mapping = nextMappings[dataset.id]
-    if (!mapping) return []
-    try {
-      return seriesListFromDataset(dataset, mapping.xColumn, mapping.yColumns)
-    } catch {
-      return []
-    }
-  })
 }
 
 function seriesTrace(name: string, x: ArrayLike<number>, y: ArrayLike<number>, color: string, width: number): ScienceTrace {
@@ -172,11 +143,10 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set())
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
   const [autoRun, setAutoRun] = useState(true)
-  const [datasets, setDatasets] = useState<SuperDataset[]>([])
+  const [datasets, setDatasets] = useState<DatasetSummary[]>([])
   const [mappings, setMappings] = useState<Record<string, DatasetMapping>>({})
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState('')
-  const [baseRevision, setBaseRevision] = useState(0)
   const [hydrated, setHydrated] = useState(false)
   const [persistenceError, setPersistenceError] = useState(false)
   const [waveCopyState, setWaveCopyState] = useState<PlotCopyState>('idle')
@@ -191,9 +161,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   const lastRangeKeyRef = useRef('')
   const previewSeqRef = useRef(0)
 
-  const savedDatasetKeysRef = useRef<string | undefined>(undefined)
   const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve())
-  const baseRef = useRef<ScienceValue[]>(initialSeed.base)
   const needsResetRef = useRef(true)
   const stepsRef = useRef(steps)
   stepsRef.current = steps
@@ -203,9 +171,22 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   const timingsRef = useRef<Record<string, number>>({})
   const sequence = useRef(0)
 
-  const run = useCallback(async (ids: Iterable<string>, reset = false, throughIndex?: number) => {
+  const source: WorkspaceSource = datasets.length > 0 ? 'dataset' : 'sample'
+  const sourceRef = useRef<WorkspaceSource>(source)
+  sourceRef.current = source
+
+  const mergeTimings = (next: Record<string, number>) => {
+    timingsRef.current = { ...timingsRef.current, ...next }
+    setTimings(timingsRef.current)
+  }
+
+  /** 运行/增量重算；reset 会重建 base（映射变化、取消后、重载后）。 */
+  const run = useCallback(async (
+    ids: Iterable<string>,
+    options: { reset?: boolean; mappings?: Record<string, DatasetMapping>; throughIndex?: number } = {},
+  ) => {
     const list = [...ids]
-    const shouldReset = reset || needsResetRef.current
+    const shouldReset = Boolean(options.reset) || needsResetRef.current
     if (list.length === 0 && !shouldReset) {
       return
     }
@@ -217,20 +198,25 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
 
     try {
       needsResetRef.current = false
-      const submittedSteps = throughIndex === undefined ? stepsRef.current : stepsRef.current.slice(0, throughIndex + 1)
-      const next = await host.run(submittedSteps, {
+      const submitted = options.throughIndex === undefined
+        ? stepsRef.current
+        : stepsRef.current.slice(0, options.throughIndex + 1)
+      const next = await host.run(submitted, {
         reset: shouldReset,
-        base: shouldReset ? baseRef.current : undefined,
+        source: sourceRef.current,
+        mappings: options.mappings,
         dirtyIds: list,
       })
       if (id !== sequence.current) {
         return
       }
       setResult(next)
-      timingsRef.current = { ...timingsRef.current, ...next.timings }
-      setTimings(timingsRef.current)
-      lastStepsRef.current = submittedSteps
-      const remaining = computeDirtySteps(stepsRef.current, submittedSteps)
+      // 对齐 Worker 的运行时真相：取消/崩溃后靠下一次运行收敛（不会读到旧数据集）。
+      setDatasets(next.datasets)
+      setMappings(next.mappings)
+      mergeTimings(next.timings)
+      lastStepsRef.current = submitted
+      const remaining = computeDirtySteps(stepsRef.current, submitted)
       dirtyIdsRef.current = remaining
       setDirtyIds(remaining)
       setStatus('ready')
@@ -243,6 +229,52 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
       setErrorText(error instanceof Error ? error.message : String(error))
     }
   }, [host])
+
+  /** 采纳 import / hydrate / remove-dataset 的结果：Worker 已更新数据集与步骤。 */
+  const applyMutate = useCallback((next: MutateResult) => {
+    needsResetRef.current = false
+    lastStepsRef.current = next.steps
+    dirtyIdsRef.current = new Set()
+    setDatasets(next.datasets)
+    setMappings(next.mappings)
+    setSteps(next.steps)
+    setResult(next)
+    mergeTimings(next.timings)
+    setDirtyIds(new Set())
+    setStatus('ready')
+    setSelectedId((current) => (next.values.some((value) => value.id === current) ? current : (next.values[0]?.id ?? 'signal')))
+  }, [])
+
+  /** 带 epoch 守卫地执行 mutate：过期结果（被取消/被更晚的请求取代）不覆盖状态。 */
+  const runMutate = useCallback(async (
+    options: MutateOptions,
+    onError?: (message: string) => void,
+  ): Promise<boolean> => {
+    const id = (sequence.current += 1)
+    setStatus('running')
+    setErrorText('')
+    try {
+      const next = await host.mutate(options)
+      if (id !== sequence.current) {
+        return false
+      }
+      applyMutate(next)
+      return true
+    } catch (error) {
+      if (id !== sequence.current) {
+        return false
+      }
+      const message = error instanceof Error ? error.message : String(error)
+      if (onError) {
+        onError(message)
+        setStatus('idle')
+      } else {
+        setStatus('error')
+        setErrorText(message)
+      }
+      return false
+    }
+  }, [host, applyMutate])
 
   // 步骤变化 → 依赖级脏传播；自动模式则防抖运行「变脏的那些步骤」。
   useEffect(() => {
@@ -258,10 +290,10 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
       return
     }
     const timer = setTimeout(() => {
-      void run(new Set([...dirtyIdsRef.current, ...dirty]), needsResetRef.current)
+      void run(new Set([...dirtyIdsRef.current, ...dirty]), { reset: needsResetRef.current })
     }, 180)
     return () => clearTimeout(timer)
-  }, [steps, baseRevision, hydrated, autoRun, run])
+  }, [steps, hydrated, autoRun, run])
 
   const cancel = () => {
     sequence.current += 1
@@ -276,7 +308,6 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   const reload = () => {
     sequence.current += 1
     host.terminate()
-    baseRef.current = createSampleWorkspace().base
     needsResetRef.current = true
     lastStepsRef.current = []
     dirtyIdsRef.current = new Set()
@@ -288,45 +319,10 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
     setMappings({})
     setImportError('')
     setStatus('idle')
-    setSteps(createSampleWorkspace().steps)
     setSelectedId('fit1')
-    setBaseRevision((previous) => previous + 1)
-  }
-
-  /** 以「数据集列表 + 各自映射」重建 base 并触发全量重算；失效的 ds: 输入重指向首个可用变量。 */
-  const replaceBase = (
-    nextDatasets: SuperDataset[],
-    nextMappings: Record<string, DatasetMapping>,
-    options?: { resetStepsToStats?: boolean },
-  ) => {
-    const series = buildBase(nextDatasets, nextMappings)
-    const fallbackId = series[0]?.id ?? 'signal'
-    const availableIds = new Set(series.map((value) => value.id))
-    sequence.current += 1
-    host.terminate()
-    baseRef.current = nextDatasets.length > 0 ? series : createSampleWorkspace().base
-    needsResetRef.current = true
-    lastStepsRef.current = []
-    timingsRef.current = {}
-    setTimings({})
-    setDirtyIds(new Set())
-    setResult(null)
-    setStatus('idle')
-    setDatasets(nextDatasets)
-    setMappings(nextMappings)
-    setSelectedId(fallbackId)
-    if (options?.resetStepsToStats) {
-      setSteps([{ id: 'step-stats', op: 'stats', inputId: fallbackId, params: {}, outputId: 'stats1' }])
-    } else {
-      setSteps((previous) => previous.map((step) => ({
-        ...step,
-        inputId: step.inputId.startsWith('ds:') && !availableIds.has(step.inputId) ? fallbackId : step.inputId,
-        secondInputId: step.secondInputId?.startsWith('ds:') && !availableIds.has(step.secondInputId)
-          ? fallbackId
-          : step.secondInputId,
-      })))
-    }
-    setBaseRevision((previous) => previous + 1)
+    const sample = createSampleWorkspace()
+    setSteps(sample.steps)
+    void runMutate({ kind: 'reset-sample', source: 'sample', mappings: {}, steps: sample.steps })
   }
 
   const importFiles = async (files: File[]) => {
@@ -334,66 +330,63 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
     setImporting(true)
     setImportError('')
     try {
-      let nextDatasets = datasets
-      let nextMappings = mappings
-      for (const file of files) {
-        const parsed = await readScienceDataset(file)
-        if (parsed.numericColumns.length === 0) throw new Error(copy.noNumeric)
-        // 同名文件重复导入时给 dataset.id 去重，保证变量 id 全局唯一。
-        let dataset = parsed
-        let suffix = 2
-        while (nextDatasets.some((existing) => existing.id === dataset.id)) {
-          dataset = { ...parsed, id: `${parsed.id}-${suffix}` }
-          suffix += 1
-        }
-        nextDatasets = [...nextDatasets, dataset]
-        nextMappings = {
-          ...nextMappings,
-          [dataset.id]: sanitizeMapping(dataset, dataset.timeColumn ?? '', dataset.numericColumns),
-        }
-      }
-      // 首个数据集替换示例信号时重置分析栈；追加数据集则保留现有步骤。
-      replaceBase(nextDatasets, nextMappings, { resetStepsToStats: datasets.length === 0 })
-    } catch (error) {
-      setImportError(error instanceof Error ? error.message : String(error))
+      await runMutate({
+        kind: 'import',
+        source: 'dataset',
+        mappings,
+        steps: stepsRef.current,
+        files,
+        resetStepsToStats: datasets.length === 0,
+      }, setImportError)
     } finally {
       setImporting(false)
     }
   }
 
   const updateMapping = (datasetId: string, nextX: string, nextYs: string[]) => {
-    const dataset = datasets.find((candidate) => candidate.id === datasetId)
-    if (!dataset) return
-    try {
-      replaceBase(datasets, { ...mappings, [datasetId]: sanitizeMapping(dataset, nextX, nextYs) })
-      setImportError('')
-    } catch (error) {
-      setImportError(error instanceof Error ? error.message : String(error))
-    }
+    const summary = datasets.find((candidate) => candidate.id === datasetId)
+    if (!summary) return
+    const next = { ...mappings, [datasetId]: sanitizeMapping(summary, nextX, nextYs) }
+    setMappings(next)
+    setImportError('')
+    // 映射变化不终止 Worker：把 mappings 发过去重建 base。
+    void run(new Set(stepsRef.current.map((step) => step.id)), { reset: true, mappings: next })
   }
 
   const removeDataset = (datasetId: string) => {
-    const nextMappings = { ...mappings }
-    delete nextMappings[datasetId]
-    replaceBase(datasets.filter((candidate) => candidate.id !== datasetId), nextMappings)
+    const remaining = datasets.filter((candidate) => candidate.id !== datasetId)
+    void runMutate({
+      kind: 'remove-dataset',
+      source: remaining.length > 0 ? 'dataset' : 'sample',
+      mappings,
+      steps: stepsRef.current,
+      datasetId,
+    })
   }
 
+  // 挂载时从 IndexedDB 恢复配方；数据集由 Worker 从 IndexedDB 水合。
   useEffect(() => {
     let active = true
     void loadScienceWorkspace().then((restored) => {
       if (!active) return
-      if (restored) {
-        const nextMappings = Object.fromEntries(
-          restored.recipe.datasets.map((entry) => [entry.datasetId, { xColumn: entry.xColumn, yColumns: entry.yColumns }]),
-        )
-        replaceBase(restored.datasets, nextMappings)
-        setSteps(restored.recipe.steps)
-        setSelectedId(restored.recipe.selectedId)
-        savedDatasetKeysRef.current = restored.datasets.map(datasetKey).join('|')
-      } else {
-        savedDatasetKeysRef.current = ''
+      if (!restored) {
+        setHydrated(true)
+        return
       }
-      setHydrated(true)
+      const nextMappings = Object.fromEntries(
+        restored.recipe.datasets.map((entry) => [entry.datasetId, { xColumn: entry.xColumn, yColumns: entry.yColumns }]),
+      )
+      setSelectedId(restored.recipe.selectedId)
+      void runMutate({
+        kind: 'hydrate',
+        source: restored.recipe.source,
+        mappings: nextMappings,
+        steps: restored.recipe.steps,
+      }).then((ok) => {
+        if (!active) return
+        if (!ok) setPersistenceError(true)
+        setHydrated(true)
+      })
     }).catch(() => {
       if (active) {
         setPersistenceError(true)
@@ -401,20 +394,11 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
       }
     })
     return () => { active = false }
-    // Restore once per mounted workspace; subsequent edits are saved by the effects below.
+    // 仅挂载时恢复一次；后续编辑由下面的保存 effect 处理。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    if (!hydrated) return
-    const keys = datasets.map(datasetKey).join('|')
-    if (savedDatasetKeysRef.current === keys) return
-    savedDatasetKeysRef.current = keys
-    const next = saveQueueRef.current.catch(() => undefined).then(() => saveScienceDatasets(datasets))
-    saveQueueRef.current = next
-    void next.catch(() => setPersistenceError(true))
-  }, [datasets, hydrated])
-
+  // 只保存配方（步骤/映射/选中）；数据集由 Worker 持久化。
   useEffect(() => {
     if (!hydrated) return
     const recipe: ScienceRecipe = {
@@ -553,7 +537,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   const addStep = (op: OpKind) => {
     const seriesValues = values.filter((value) => value.kind === 'series')
     const selectedSeries = selected && selected.kind === 'series' ? selected.id : undefined
-    const inputId = selectedSeries ?? seriesValues[seriesValues.length - 1]?.id ?? baseRef.current[0]?.id ?? 'signal'
+    const inputId = selectedSeries ?? seriesValues[seriesValues.length - 1]?.id ?? 'signal'
     const outputId = nextStepId(steps, op)
     setSteps((previous) => [
       ...previous,
@@ -581,7 +565,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   const runToStep = (index: number) => {
     const upto = steps.slice(0, index + 1)
     const dirtyUpTo = upto.filter((step) => dirtyIdsRef.current.has(step.id)).map((step) => step.id)
-    void run(dirtyUpTo.length > 0 ? dirtyUpTo : [steps[index].id], false, index)
+    void run(dirtyUpTo.length > 0 ? dirtyUpTo : [steps[index].id], { throughIndex: index })
   }
 
   const stepStatus = (index: number): StepStatus => {
@@ -751,7 +735,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
                 type="button"
                 size="sm"
                 disabled={!isDirty}
-                onClick={() => void run(dirtyIdsRef.current, false)}
+                onClick={() => void run(dirtyIdsRef.current, {})}
                 className="h-7 shrink-0 rounded-[var(--radius-field)] px-2.5 text-[11px] font-semibold"
               >
                 {copy.runAll}

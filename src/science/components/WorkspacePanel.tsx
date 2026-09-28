@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, X } from 'lucide-react'
-import type { ScienceValue } from '../types.ts'
-import type { SuperDataset } from '../../superplot/types.ts'
+import type { DatasetSummary, ScienceValue } from '../types.ts'
 import type { ScienceCopy } from '../lib/i18n.ts'
 import { SelectMenu } from '@/components/SelectMenu'
 import { ImportDialog } from './ImportDialog.tsx'
@@ -49,7 +48,7 @@ export function WorkspacePanel({
   copy: ScienceCopy
   onSelect: (id: string) => void
   onReload: () => void
-  datasets: SuperDataset[]
+  datasets: DatasetSummary[]
   mappings: Record<string, DatasetMapping>
   importing: boolean
   restoring: boolean

@@ -2,26 +2,58 @@
 
 /**
  * 主线程侧的 Worker 宿主：请求/响应封装 + React hook。
- * Worker 延迟创建（首次 run），因此 SSR 阶段不会触碰浏览器 API。
+ * Worker 延迟创建（首次请求），因此 SSR 阶段不会触碰浏览器 API。
+ *
+ * Worker 会被终止（取消/重载/崩溃）；数据集由 Worker 从 IndexedDB 水合，
+ * 主线程只保留元信息与配方。
  */
 
 import { useEffect, useRef } from 'react'
-import type { ScienceValue } from '../types.ts'
+import type { DatasetMapping, DatasetSummary, ScienceValue, WorkspaceSource } from '../types.ts'
 import type { AnalysisStep } from '../lib/pipeline.ts'
-import { DEFAULT_PREVIEW_TARGET, type WorkerRequest, type WorkerResponse } from './protocol.ts'
+import {
+  DEFAULT_PREVIEW_TARGET,
+  type MutateKind,
+  type MutateRequest,
+  type WorkerRequest,
+  type WorkerResponse,
+} from './protocol.ts'
 
 export interface ComputeResult {
+  datasets: DatasetSummary[]
+  mappings: Record<string, DatasetMapping>
   values: ScienceValue[]
   errors: Record<string, string>
   timings: Record<string, number>
   elapsedMs: number
 }
 
+export interface MutateResult extends ComputeResult {
+  steps: AnalysisStep[]
+}
+
+export interface RunOptions {
+  reset?: boolean
+  source: WorkspaceSource
+  mappings?: Record<string, DatasetMapping>
+  dirtyIds?: Iterable<string>
+  previewTarget?: number
+}
+
+export interface MutateOptions {
+  kind: MutateKind
+  source: WorkspaceSource
+  mappings: Record<string, DatasetMapping>
+  steps: AnalysisStep[]
+  files?: File[]
+  datasetId?: string
+  resetStepsToStats?: boolean
+  previewTarget?: number
+}
+
 export interface ComputeHost {
-  run(
-    steps: AnalysisStep[],
-    options?: { reset?: boolean; base?: ScienceValue[]; dirtyIds?: Iterable<string>; previewTarget?: number },
-  ): Promise<ComputeResult>
+  run(steps: AnalysisStep[], options: RunOptions): Promise<ComputeResult>
+  mutate(options: MutateOptions): Promise<MutateResult>
   exportValue(valueId: string): Promise<Blob>
   preview(valueIds: string[], xRange: { min: number; max: number } | null, target?: number): Promise<ScienceValue[]>
   terminate(): void
@@ -31,7 +63,7 @@ export function createComputeHost(): ComputeHost {
   let worker: Worker | null = null
   let sequence = 0
   const pending = new Map<number, {
-    resolve: (result: ComputeResult | Blob | ScienceValue[]) => void
+    resolve: (result: ComputeResult | MutateResult | Blob | ScienceValue[]) => void
     reject: (error: unknown) => void
   }>()
 
@@ -60,6 +92,18 @@ export function createComputeHost(): ComputeHost {
       pending.delete(message.requestId)
       if (message.type === 'result') {
         entry.resolve({
+          datasets: message.datasets,
+          mappings: message.mappings,
+          values: message.values,
+          errors: message.errors,
+          timings: message.timings,
+          elapsedMs: message.elapsedMs,
+        })
+      } else if (message.type === 'mutate-result') {
+        entry.resolve({
+          datasets: message.datasets,
+          mappings: message.mappings,
+          steps: message.steps,
           values: message.values,
           errors: message.errors,
           timings: message.timings,
@@ -83,7 +127,7 @@ export function createComputeHost(): ComputeHost {
   }
 
   return {
-    run(steps, options = {}) {
+    run(steps, options) {
       const instance = ensureWorker()
       const requestId = (sequence += 1)
       return new Promise<ComputeResult>((resolve, reject) => {
@@ -92,9 +136,30 @@ export function createComputeHost(): ComputeHost {
           type: 'run',
           requestId,
           reset: Boolean(options.reset),
-          base: options.base,
+          source: options.source,
+          mappings: options.mappings,
           dirtyIds: options.dirtyIds ? [...options.dirtyIds] : [],
           steps,
+          previewTarget: options.previewTarget ?? DEFAULT_PREVIEW_TARGET,
+        }
+        instance.postMessage(request)
+      })
+    },
+    mutate(options) {
+      const instance = ensureWorker()
+      const requestId = (sequence += 1)
+      return new Promise<MutateResult>((resolve, reject) => {
+        pending.set(requestId, { resolve: (result) => resolve(result as MutateResult), reject })
+        const request: MutateRequest = {
+          type: 'mutate',
+          kind: options.kind,
+          requestId,
+          source: options.source,
+          mappings: options.mappings,
+          steps: options.steps,
+          files: options.files,
+          datasetId: options.datasetId,
+          resetStepsToStats: options.resetStepsToStats,
           previewTarget: options.previewTarget ?? DEFAULT_PREVIEW_TARGET,
         }
         instance.postMessage(request)

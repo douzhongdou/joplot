@@ -28,7 +28,7 @@ export interface RestoredScienceWorkspace {
   recipe: ScienceRecipe
 }
 
-export function datasetKey(dataset: SuperDataset): string {
+export function datasetKey(dataset: Pick<SuperDataset, 'id' | 'createdAt' | 'fileSize'>): string {
   return `${dataset.id}:${dataset.createdAt}:${dataset.fileSize}`
 }
 
@@ -183,6 +183,12 @@ export async function saveScienceDatasets(datasets: SuperDataset[]): Promise<voi
   await transact('readwrite', (store) => store.put(datasets, DATASETS_KEY))
   // 清掉 v1 的单数据集槽位，避免残留旧档被误读。
   await transact('readwrite', (store) => store.delete(LEGACY_DATASET_KEY))
+}
+
+/** Worker 侧水合用：只读取数据集，不读配方。 */
+export async function loadScienceDatasets(): Promise<SuperDataset[]> {
+  const stored = await transact('readonly', (store) => store.get(DATASETS_KEY))
+  return Array.isArray(stored) ? stored.filter(isDataset) : []
 }
 
 export async function saveScienceRecipe(recipe: ScienceRecipe): Promise<void> {
