@@ -5,7 +5,7 @@
  * 用户自定义模型走同一条路径：变量含 `x`，其余变量即待拟合参数。
  */
 
-import { parseExpression } from '../../lib/expression.ts'
+import { parseExpression, parseExpressionWithGradient } from '../../lib/expression.ts'
 import { invertMatrix, solveLinearSystem } from './linalg.ts'
 import { computeSpectrumFor } from './spectrum.ts'
 
@@ -231,7 +231,7 @@ export function collectFitParameters(expr: string): string[] {
 
 export function fitModel(options: FitOptions): FitOutcome {
   const { x, y } = options
-  const parsed = parseExpression(options.expr)
+  const parsed = parseExpressionWithGradient(options.expr)
   const parameterNames = parsed.parameterNames
 
   if (!parsed.variables.includes('x')) {
@@ -262,8 +262,6 @@ export function fitModel(options: FitOptions): FitOutcome {
 
   const parameterBuffer = new Float64Array(dimension)
   const predictions = new Float64Array(fitCount)
-  const highBuffer = new Float64Array(fitCount)
-  const lowBuffer = new Float64Array(fitCount)
 
   const fillParameters = (values: number[]): void => {
     for (let i = 0; i < dimension; i += 1) parameterBuffer[i] = values[i]
@@ -296,18 +294,12 @@ export function fitModel(options: FitOptions): FitOutcome {
 
   const jacobian = (values: number[]): number[][] => {
     const jac: number[][] = Array.from({ length: fitCount }, () => new Array<number>(dimension).fill(0))
+    fillParameters(values)
     for (let j = 0; j < dimension; j += 1) {
-      const step = 1e-6 * Math.max(1, Math.abs(values[j]))
-      const forward = values.slice()
-      const backward = values.slice()
-      forward[j] += step
-      backward[j] -= step
-      fillParameters(forward)
-      parsed.evaluateInto(fitX, null, parameterBuffer, highBuffer, fitCount)
-      fillParameters(backward)
-      parsed.evaluateInto(fitX, null, parameterBuffer, lowBuffer, fitCount)
+      // 解析偏导（不支持时内部回退有限差分）；无步长误差、无需 2× 求值。
+      parsed.gradientInto(j, fitX, null, parameterBuffer, predictions, fitCount)
       for (let i = 0; i < fitCount; i += 1) {
-        jac[i][j] = (highBuffer[i] - lowBuffer[i]) / (2 * step)
+        jac[i][j] = predictions[i]
       }
     }
     return jac

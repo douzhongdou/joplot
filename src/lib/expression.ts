@@ -730,3 +730,223 @@ export function formatCaretHint(source: string, position: number) {
 }
 
 export { COMPARISON_OPERATORS, RESERVED_VARIABLES }
+
+// ---------------------------------------------------------------------------
+// 符号微分：为拟合提供解析雅可比（不支持导数的函数回退有限差分）。
+// ---------------------------------------------------------------------------
+
+const numNode = (value: number): AstNode => ({ kind: 'number', value })
+const unaryNode = (op: '+' | '-' | '~', operand: AstNode): AstNode => ({ kind: 'unary', op, operand })
+const binaryNode = (op: BinaryOperator, left: AstNode, right: AstNode): AstNode => ({ kind: 'binary', op, left, right })
+const callNode = (name: string, args: AstNode[]): AstNode => ({ kind: 'call', name, args })
+const ternaryNode = (condition: AstNode, consequent: AstNode, alternate: AstNode): AstNode => ({ kind: 'ternary', condition, consequent, alternate })
+
+const ZERO = numNode(0)
+const ONE = numNode(1)
+const add = (a: AstNode, b: AstNode) => binaryNode('+', a, b)
+const sub = (a: AstNode, b: AstNode) => binaryNode('-', a, b)
+const mul = (a: AstNode, b: AstNode) => binaryNode('*', a, b)
+const div = (a: AstNode, b: AstNode) => binaryNode('/', a, b)
+const pow = (a: AstNode, b: AstNode) => binaryNode('^', a, b)
+
+/** 对单个参数做符号微分；无法求导时返回 null（调用方回退有限差分）。 */
+function derivativeOf(node: AstNode, target: string): AstNode | null {
+  switch (node.kind) {
+    case 'number':
+      return ZERO
+    case 'variable':
+      if (CONSTANTS[node.name] !== undefined) return ZERO
+      return node.name === target ? ONE : ZERO
+    case 'unary': {
+      if (node.op === '~') return ZERO
+      const inner = derivativeOf(node.operand, target)
+      if (!inner) return null
+      return node.op === '-' ? unaryNode('-', inner) : inner
+    }
+    case 'ternary': {
+      const consequent = derivativeOf(node.consequent, target)
+      const alternate = derivativeOf(node.alternate, target)
+      if (!consequent || !alternate) return null
+      return ternaryNode(node.condition, consequent, alternate)
+    }
+    case 'binary':
+      return derivativeBinary(node, target)
+    case 'call':
+      return derivativeCall(node, target)
+  }
+}
+
+function derivativeBinary(node: Extract<AstNode, { kind: 'binary' }>, target: string): AstNode | null {
+  const { left, right } = node
+  switch (node.op) {
+    case '+': {
+      const a = derivativeOf(left, target); const b = derivativeOf(right, target)
+      return a && b ? add(a, b) : null
+    }
+    case '-': {
+      const a = derivativeOf(left, target); const b = derivativeOf(right, target)
+      return a && b ? sub(a, b) : null
+    }
+    case '*': {
+      const a = derivativeOf(left, target); const b = derivativeOf(right, target)
+      return a && b ? add(mul(a, right), mul(left, b)) : null
+    }
+    case '/': {
+      const a = derivativeOf(left, target); const b = derivativeOf(right, target)
+      return a && b ? div(sub(mul(a, right), mul(left, b)), pow(right, numNode(2))) : null
+    }
+    case '%': {
+      const a = derivativeOf(left, target); const b = derivativeOf(right, target)
+      // mod(a, b) = a - b·floor(a/b)，忽略不连续点
+      return a && b ? sub(a, mul(callNode('floor', [div(left, right)]), b)) : null
+    }
+    case '^': {
+      const a = derivativeOf(left, target); const b = derivativeOf(right, target)
+      if (right.kind === 'number') {
+        return a ? mul(mul(numNode(right.value), pow(left, numNode(right.value - 1))), a) : null
+      }
+      if (left.kind === 'number') {
+        return b ? mul(mul(pow(left, right), callNode('ln', [left])), b) : null
+      }
+      if (!a || !b) return null
+      return mul(node, add(mul(b, callNode('ln', [left])), mul(right, div(a, left))))
+    }
+    default:
+      // 比较 / 逻辑：几乎处处为常数
+      return ZERO
+  }
+}
+
+function chain(outerDerivative: (u: AstNode, du: AstNode) => AstNode, node: Extract<AstNode, { kind: 'call' }>, target: string): AstNode | null {
+  const inner = node.args[0]
+  const dInner = derivativeOf(inner, target)
+  return dInner ? outerDerivative(inner, dInner) : null
+}
+
+function derivativeCall(node: Extract<AstNode, { kind: 'call' }>, target: string): AstNode | null {
+  const name = node.name
+
+  if (name === 'atan2' || name === 'hypot' || name === 'pow' || name === 'mod' || name === 'rem') {
+    const [arg0, arg1] = node.args
+    const d0 = derivativeOf(arg0, target)
+    const d1 = derivativeOf(arg1, target)
+    if (!d0 || !d1) return null
+    if (name === 'atan2') {
+      // atan2(y, x): (x·dy − y·dx) / (x² + y²)
+      return div(sub(mul(arg1, d0), mul(arg0, d1)), add(pow(arg0, numNode(2)), pow(arg1, numNode(2))))
+    }
+    if (name === 'hypot') {
+      return div(add(mul(arg0, d0), mul(arg1, d1)), node)
+    }
+    if (name === 'pow') {
+      if (arg1.kind === 'number') {
+        return mul(mul(numNode(arg1.value), pow(arg0, numNode(arg1.value - 1))), d0)
+      }
+      return mul(node, add(mul(d1, callNode('ln', [arg0])), mul(arg1, div(d0, arg0))))
+    }
+    // mod / rem ≈ a − b·floor(a/b)
+    return sub(d0, mul(callNode('floor', [div(arg0, arg1)]), d1))
+  }
+
+  if (name === 'clamp') {
+    const [value, low, high] = node.args
+    const dValue = derivativeOf(value, target)
+    if (!dValue) return null
+    const within = binaryNode('&', binaryNode('>', value, low), binaryNode('<', value, high))
+    return ternaryNode(within, dValue, ZERO)
+  }
+
+  if (node.args.length !== 1) {
+    return null
+  }
+
+  switch (name) {
+    case 'sin': return chain((u, du) => mul(callNode('cos', [u]), du), node, target)
+    case 'cos': return chain((u, du) => unaryNode('-', mul(callNode('sin', [u]), du)), node, target)
+    case 'tan': return chain((u, du) => mul(add(ONE, pow(callNode('tan', [u]), numNode(2))), du), node, target)
+    case 'asin': return chain((u, du) => div(du, callNode('sqrt', [sub(ONE, pow(u, numNode(2)))])), node, target)
+    case 'acos': return chain((u, du) => unaryNode('-', div(du, callNode('sqrt', [sub(ONE, pow(u, numNode(2)))]))), node, target)
+    case 'atan': return chain((u, du) => div(du, add(ONE, pow(u, numNode(2)))), node, target)
+    case 'sinh': return chain((u, du) => mul(callNode('cosh', [u]), du), node, target)
+    case 'cosh': return chain((u, du) => mul(callNode('sinh', [u]), du), node, target)
+    case 'tanh': return chain((u, du) => mul(sub(ONE, pow(callNode('tanh', [u]), numNode(2))), du), node, target)
+    case 'ln': return chain((u, du) => div(du, u), node, target)
+    case 'log': return chain((u, du) => div(du, u), node, target)
+    case 'log2': return chain((u, du) => div(du, mul(u, numNode(Math.LN2))), node, target)
+    case 'log10': return chain((u, du) => div(du, mul(u, numNode(Math.LN10))), node, target)
+    case 'exp': return chain((u, du) => mul(callNode('exp', [u]), du), node, target)
+    case 'sqrt': return chain((u, du) => div(du, mul(numNode(2), callNode('sqrt', [u]))), node, target)
+    case 'cbrt': return chain((u, du) => div(du, mul(numNode(3), pow(callNode('cbrt', [u]), numNode(2)))), node, target)
+    case 'abs': return chain((u, du) => mul(callNode('sign', [u]), du), node, target)
+    case 'erf': return chain((u, du) => mul(numNode(2 / Math.sqrt(Math.PI)), mul(callNode('exp', [unaryNode('-', pow(u, numNode(2)))]), du)), node, target)
+    case 'erfc': return chain((u, du) => unaryNode('-', mul(numNode(2 / Math.sqrt(Math.PI)), mul(callNode('exp', [unaryNode('-', pow(u, numNode(2)))]), du))), node, target)
+    case 'deg2rad': return chain((_u, du) => mul(numNode(Math.PI / 180), du), node, target)
+    case 'rad2deg': return chain((_u, du) => mul(numNode(180 / Math.PI), du), node, target)
+    case 'heaviside':
+    case 'floor':
+    case 'ceil':
+    case 'round':
+    case 'fix':
+    case 'sign':
+      return ZERO
+    default:
+      // gamma / gammaln / sinc / factorial / min / max 等：回退有限差分
+      return null
+  }
+}
+
+export interface GradientExpression extends ParsedExpression {
+  /** 第 index 个参数在某点处的偏导（批量写入 out）。 */
+  gradientInto(
+    index: number,
+    x: Float64Array | null,
+    y: Float64Array | null,
+    params: Float64Array,
+    out: Float64Array,
+    length?: number,
+  ): void
+}
+
+export function parseExpressionWithGradient(source: string): GradientExpression {
+  const parsed = parseExpression(source)
+  const trimmed = source.trim()
+  const ast = new Parser(trimmed).parse()
+
+  const gradientCompiled = parsed.parameterNames.map((name) => {
+    const derivative = derivativeOf(ast, name)
+    if (!derivative) {
+      return null
+    }
+    return new Compiler(parsed.parameterNames).compile(derivative)
+  })
+
+  // 数值回退用的值闭包（与 parsed 同参数顺序）。
+  const valueCompiled = new Compiler(parsed.parameterNames).compile(ast)
+
+  const gradientInto: GradientExpression['gradientInto'] = (index, x, y, params, out, length) => {
+    const count = length ?? out.length
+    const gradient = gradientCompiled[index]
+
+    if (gradient) {
+      for (let i = 0; i < count; i += 1) {
+        out[i] = gradient(params, x ? x[i] : Number.NaN, y ? y[i] : Number.NaN)
+      }
+      return
+    }
+
+    // 回退：中心差分
+    const original = params[index]
+    const step = 1e-6 * Math.max(1, Math.abs(original))
+    params[index] = original + step
+    for (let i = 0; i < count; i += 1) {
+      out[i] = valueCompiled(params, x ? x[i] : Number.NaN, y ? y[i] : Number.NaN)
+    }
+    params[index] = original - step
+    for (let i = 0; i < count; i += 1) {
+      out[i] = (out[i] - valueCompiled(params, x ? x[i] : Number.NaN, y ? y[i] : Number.NaN)) / (2 * step)
+    }
+    params[index] = original
+  }
+
+  return { ...parsed, gradientInto }
+}
