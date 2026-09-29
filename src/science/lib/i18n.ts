@@ -36,6 +36,7 @@ export interface ScienceCopy {
   input: string
   secondInput: string
   remove: string
+  stepMenu: string
   results: string
   noResult: string
   error: string
@@ -216,6 +217,7 @@ const ZH: ScienceCopy = {
   input: '输入',
   secondInput: '第二输入',
   remove: '删除',
+  stepMenu: '步骤菜单',
   results: '结果',
   noResult: '选中一个结果变量查看详情',
   error: '错误',
@@ -300,6 +302,7 @@ const EN: ScienceCopy = {
   input: 'Input',
   secondInput: 'Second input',
   remove: 'Remove',
+  stepMenu: 'Step menu',
   results: 'Result',
   noResult: 'Select a result variable to inspect',
   error: 'Error',
@@ -385,6 +388,7 @@ const JA: ScienceCopy = {
   input: '入力',
   secondInput: '第 2 入力',
   remove: '削除',
+  stepMenu: '手順メニュー',
   results: '結果',
   noResult: '結果の変数を選択してください',
   error: 'エラー',

@@ -4,6 +4,7 @@ import { useRef, useState, type DragEvent } from 'react'
 import { FlaskConical, FolderOpen, UploadCloud } from 'lucide-react'
 import type { ScienceCopy } from '../lib/i18n.ts'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Dialog,
   DialogContent,
@@ -20,9 +21,11 @@ interface Props {
   restoring: boolean
   onImport: (files: File[]) => void
   onLoadSample: () => void
+  /** 紧凑样式（放进 navbar 工具条时用），不占满整行。 */
+  compact?: boolean
 }
 
-export function ImportDialog({ copy, importing, restoring, onImport, onLoadSample }: Props) {
+export function ImportDialog({ copy, importing, restoring, onImport, onLoadSample, compact = false }: Props) {
   const [open, setOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -39,18 +42,33 @@ export function ImportDialog({ copy, importing, restoring, onImport, onLoadSampl
     handleFiles(Array.from(event.dataTransfer.files))
   }
 
+  const label = restoring ? copy.restoring : importing ? copy.importing : copy.importData
+  const trigger = (
+    <button
+      type="button"
+      aria-label={compact ? label : undefined}
+      className={compact
+        ? 'grid size-7 shrink-0 place-items-center rounded-[calc(var(--radius-field)-2px)] text-base-content/60 transition hover:bg-base-content/10 hover:text-base-content disabled:pointer-events-none disabled:opacity-50'
+        : 'flex h-8 w-full cursor-pointer items-center justify-center gap-1.5 rounded-[var(--radius-field)] bg-primary text-xs font-semibold text-primary-content transition hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50'}
+      disabled={importing || restoring}
+    >
+      <UploadCloud size={compact ? 15 : 13} strokeWidth={2.2} />
+      {compact ? null : label}
+    </button>
+  )
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <button
-          type="button"
-          className="flex h-8 w-full cursor-pointer items-center justify-center gap-1.5 rounded-[var(--radius-field)] bg-primary text-xs font-semibold text-primary-content transition hover:opacity-90 disabled:pointer-events-none disabled:opacity-50"
-          disabled={importing || restoring}
-        >
-          <UploadCloud size={13} strokeWidth={2.2} />
-          {restoring ? copy.restoring : importing ? copy.importing : copy.importData}
-        </button>
-      </DialogTrigger>
+      {compact ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DialogTrigger asChild>{trigger}</DialogTrigger>
+          </TooltipTrigger>
+          <TooltipContent>{label}</TooltipContent>
+        </Tooltip>
+      ) : (
+        <DialogTrigger asChild>{trigger}</DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>{copy.importData}</DialogTitle>

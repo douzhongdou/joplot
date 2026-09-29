@@ -1,12 +1,20 @@
 'use client'
 
 import { useState } from 'react'
+import { Ellipsis, Play } from 'lucide-react'
 import type { ScienceValue } from '../types.ts'
 import type { ScienceCopy } from '../lib/i18n.ts'
 import type { AnalysisStep, OpKind } from '../lib/pipeline.ts'
 import { getOperator, OPERATORS, OPERATOR_CATEGORIES, type OperatorParams, type ParamSpec } from '../lib/operators.ts'
 import { parseExpression } from '../../lib/expression.ts'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Select,
   SelectContent,
@@ -257,23 +265,47 @@ export function AnalysisPanel({
                 {timings[step.id] !== undefined && stepStatus(index) !== 'dirty' ? (
                   <span className="font-mono text-[10px] text-base-content/40">{`${timings[step.id].toFixed(1)}ms`}</span>
                 ) : null}
-                <div className="ml-auto flex items-center gap-2">
-                  <button
-                    type="button"
-                    title={copy.runToHere}
-                    disabled={running}
-                    onClick={() => onRunStep(index)}
-                    className="text-[11px] text-base-content/45 transition hover:text-primary disabled:opacity-40"
-                  >
-                    ▶
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onRemove(step.id)}
-                    className="text-[10px] text-base-content/45 transition hover:text-error"
-                  >
-                    {copy.remove}
-                  </button>
+                <div className="ml-auto flex items-center gap-1">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex">
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          className="size-7 rounded-[var(--radius-field)] shadow-none"
+                          disabled={running}
+                          onClick={() => onRunStep(index)}
+                          aria-label={copy.runToHere}
+                        >
+                          <Play size={14} strokeWidth={2.5} />
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>{copy.runToHere}</TooltipContent>
+                  </Tooltip>
+                  <DropdownMenu>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="size-7 rounded-[var(--radius-field)] text-base-content/45 hover:bg-base-content/10 hover:text-base-content dark:hover:bg-base-content/10 focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-ring/40 data-[state=open]:bg-base-content/10 data-[state=open]:text-base-content"
+                            aria-label={copy.stepMenu}
+                          >
+                            <Ellipsis size={16} strokeWidth={2.2} />
+                          </Button>
+                        </DropdownMenuTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent>{copy.stepMenu}</TooltipContent>
+                    </Tooltip>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem variant="destructive" onSelect={() => onRemove(step.id)}>
+                        {copy.remove}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
 

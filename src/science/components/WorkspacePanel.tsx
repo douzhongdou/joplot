@@ -5,7 +5,6 @@ import { ChevronDown, X } from 'lucide-react'
 import type { DatasetSummary, ScienceValue } from '../types.ts'
 import type { ScienceCopy } from '../lib/i18n.ts'
 import { SelectMenu } from '@/components/SelectMenu'
-import { ImportDialog } from './ImportDialog.tsx'
 
 interface DatasetMapping {
   xColumn: string
@@ -30,35 +29,23 @@ export function WorkspacePanel({
   selectedId,
   copy,
   onSelect,
-  onReload,
   datasets,
   mappings,
-  importing,
-  restoring,
   importError,
   persistenceError,
-  onImport,
   onMappingChange,
   onRemoveDataset,
-  onExport,
-  canExport,
 }: {
   values: ScienceValue[]
   selectedId: string
   copy: ScienceCopy
   onSelect: (id: string) => void
-  onReload: () => void
   datasets: DatasetSummary[]
   mappings: Record<string, DatasetMapping>
-  importing: boolean
-  restoring: boolean
   importError: string
   persistenceError: boolean
-  onImport: (files: File[]) => void
   onMappingChange: (datasetId: string, xColumn: string, yColumns: string[]) => void
   onRemoveDataset: (datasetId: string) => void
-  onExport: () => void
-  canExport: boolean
 }) {
   // 数据集卡默认折叠；仅新导入的自动展开（恢复的旧数据集保持折叠）。
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set())
@@ -127,16 +114,6 @@ export function WorkspacePanel({
 
   return (
     <aside className="flex min-h-0 flex-col gap-3 border-b border-base-300 bg-base-100 p-3 lg:h-full lg:overflow-hidden lg:border-b-0 lg:border-r">
-      {/* 导入 */}
-      <div className="shrink-0">
-        <ImportDialog
-          copy={copy}
-          importing={importing}
-          restoring={restoring}
-          onImport={onImport}
-          onLoadSample={onReload}
-        />
-      </div>
       {importError ? <p role="alert" className="shrink-0 text-xs text-error">{importError}</p> : null}
       {persistenceError ? <p role="alert" className="shrink-0 text-[10px] text-warning">{copy.storageError}</p> : null}
 
@@ -236,16 +213,6 @@ export function WorkspacePanel({
           )}
         </div>
       </div>
-
-      {/* 底部操作 */}
-      <button
-        type="button"
-        disabled={!canExport}
-        onClick={onExport}
-        className="h-8 shrink-0 rounded-[var(--radius-field)] bg-muted text-xs font-semibold text-base-content/80 transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        {copy.exportCsv}
-      </button>
     </aside>
   )
 }

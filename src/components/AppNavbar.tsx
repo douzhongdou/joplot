@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { Activity, FlaskConical, FunctionSquare, Languages, TableProperties } from 'lucide-react'
 import { HelpPopover } from './HelpPopover'
@@ -24,6 +25,10 @@ interface Props {
   mobile?: boolean
   viewMode?: 'chart' | 'data'
   onChangeViewMode?: (mode: 'chart' | 'data') => void
+  /** 是否显示板块导航（数据 / 函数 / super-plot / 科学处理）；工具栏模式可关掉。 */
+  showNav?: boolean
+  /** 当前板块自己的工具按钮，渲染在导航与语言/帮助之间。 */
+  toolbar?: ReactNode
 }
 
 export function AppNavbar({
@@ -32,6 +37,8 @@ export function AppNavbar({
   mobile = false,
   viewMode = 'chart',
   onChangeViewMode,
+  showNav = true,
+  toolbar,
 }: Props) {
   const { language, setLanguage, t } = useI18n()
 
@@ -56,7 +63,8 @@ export function AppNavbar({
           <img src="/navbar-icon.webp" alt="joplot" className="block size-full object-contain" />
         </div>
 
-        <nav className="ml-1 flex min-w-0 items-center gap-0.5 overflow-x-auto sm:ml-3" aria-label={t('nav.sectionsLabel')}>
+        {showNav ? (
+          <nav className="ml-1 flex min-w-0 items-center gap-0.5 overflow-x-auto sm:ml-3" aria-label={t('nav.sectionsLabel')}>
           <Link
             href={getLanguagePath(language)}
             aria-current={section === 'workbench' ? 'page' : undefined}
@@ -89,7 +97,8 @@ export function AppNavbar({
             <FlaskConical size={15} strokeWidth={2.1} aria-hidden="true" />
             <span>{t('nav.science')}</span>
           </Link>
-        </nav>
+          </nav>
+        ) : null}
 
         {showViewToggle ? (
           <div role="group" aria-label={`${t('dataView.chartLabel')} / ${t('dataView.tabLabel')}`} className="ml-1 flex items-center gap-1 border-l border-base-300 pl-2 sm:ml-2 sm:pl-3">
@@ -120,6 +129,12 @@ export function AppNavbar({
           </div>
         ) : null}
       </div>
+
+      {toolbar ? (
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
+          {toolbar}
+        </div>
+      ) : null}
 
       <div className="flex items-center gap-1">
         <div className="min-w-0">

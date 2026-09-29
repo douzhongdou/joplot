@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Download, Play, X, Zap } from 'lucide-react'
 import type { DatasetMapping, DatasetSummary, ScienceValue, WorkspaceSource } from '../types.ts'
 import { values1d } from '../lib/dense.ts'
 import { sanitizeMapping } from '../lib/base.ts'
@@ -12,7 +13,10 @@ import { computeDirtySteps } from '../lib/dirty.ts'
 import { createSampleWorkspace } from '../lib/workspace.ts'
 import { useComputeHost, type ComputeResult, type MutateOptions, type MutateResult } from '../compute/host.ts'
 import { AnalysisPanel, ResultsPanel, type StepStatus } from './AnalysisPanel.tsx'
+import { ImportDialog } from './ImportDialog.tsx'
+import { AppNavbar } from '../../components/AppNavbar.tsx'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Plot, type AxisRange, type PlotApi, type ScienceTrace, type TraceUpdate } from './Plot.tsx'
 import { PlotToolbar, type PlotCopyState } from '../../components/PlotToolbar.tsx'
 import { WorkspacePanel } from './WorkspacePanel.tsx'
@@ -586,6 +590,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   }
 
   const isDirty = dirtyIds.size > 0 || result === null
+  const canExport = Boolean(selected && status === 'ready' && !isDirty)
   const statusText = status === 'running'
     ? copy.running
     : status === 'error'
@@ -602,28 +607,136 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
         ? 'bg-base-content/30'
         : 'bg-success'
 
-  return (
-    <div className="grid min-h-[calc(100vh-var(--navbar-height))] grid-cols-1 bg-base-200 lg:h-[calc(100vh-var(--navbar-height))] lg:min-h-0 lg:grid-cols-[260px_minmax(0,1fr)_330px] lg:overflow-hidden">
-      <WorkspacePanel
-        values={values}
-        selectedId={selected?.id ?? ''}
-        copy={copy}
-        onSelect={setSelectedId}
-        onReload={reload}
-        datasets={datasets}
-        mappings={mappings}
-        importing={importing}
-        restoring={!hydrated}
-        importError={importError}
-        persistenceError={persistenceError}
-        onImport={(files) => void importFiles(files)}
-        onMappingChange={updateMapping}
-        onRemoveDataset={removeDataset}
-        onExport={() => void exportSelected()}
-        canExport={Boolean(selected && status === 'ready' && !isDirty)}
-      />
+  const toolbar = (
+    <div className="flex items-center gap-2.5">
+      {/* 文件区 */}
+      <div className="flex items-center gap-1">
+        <ImportDialog
+          compact
+          copy={copy}
+          importing={importing}
+          restoring={!hydrated}
+          onImport={(files) => void importFiles(files)}
+          onLoadSample={reload}
+        />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex shrink-0">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                disabled={!canExport}
+                onClick={() => void exportSelected()}
+                aria-label={copy.exportCsv}
+                className="size-7 shrink-0 rounded-[calc(var(--radius-field)-2px)] text-base-content/60 hover:bg-base-content/10 hover:text-base-content"
+              >
+                <Download size={15} strokeWidth={2.2} />
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{copy.exportCsv}</TooltipContent>
+        </Tooltip>
+      </div>
 
-      <main className="flex min-w-0 flex-col gap-4 p-4 lg:h-full lg:overflow-y-auto">
+      <span className="h-5 w-px shrink-0 bg-base-300" aria-hidden="true" />
+
+      {/* 运行区 */}
+      <div className="flex items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex shrink-0">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-pressed={autoRun}
+                onClick={() => setAutoRun((value) => !value)}
+                aria-label={copy.auto}
+                className={`size-7 shrink-0 rounded-[calc(var(--radius-field)-2px)] ${
+                  autoRun
+                    ? 'bg-primary/10 text-primary hover:bg-primary/15'
+                    : 'text-base-content/50 hover:bg-base-content/10 hover:text-base-content'
+                }`}
+              >
+                <Zap size={15} strokeWidth={2.2} />
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{copy.auto}</TooltipContent>
+        </Tooltip>
+
+        {status === 'running' ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex shrink-0">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={cancel}
+                  aria-label={copy.cancel}
+                  className="size-7 shrink-0 rounded-[calc(var(--radius-field)-2px)] text-base-content/60 hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <X size={15} strokeWidth={2.2} />
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{copy.cancel}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex shrink-0">
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  disabled={!isDirty}
+                  onClick={() => void run(dirtyIdsRef.current, {})}
+                  aria-label={copy.runAll}
+                  className="size-7 shrink-0 rounded-[calc(var(--radius-field)-2px)] shadow-none"
+                >
+                  <Play size={14} strokeWidth={2.5} />
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{copy.runAll}</TooltipContent>
+          </Tooltip>
+        )}
+      </div>
+
+      <span className="h-5 w-px shrink-0 bg-base-300" aria-hidden="true" />
+
+      {/* 状态区 */}
+      <span className="inline-flex shrink-0 items-center gap-1.5 px-0.5 text-[11px] font-medium text-base-content/60">
+        <span className={`size-1.5 shrink-0 rounded-full ${statusDot}`} />
+        {statusText ? <span className="hidden max-w-40 truncate sm:inline">{statusText}</span> : null}
+        {result ? (
+          <span className="hidden shrink-0 font-mono text-[10px] text-base-content/40 md:inline">{`${result.elapsedMs.toFixed(0)} ms`}</span>
+        ) : null}
+      </span>
+    </div>
+  )
+
+  return (
+    <div className="grid h-full grid-rows-[var(--navbar-height)_minmax(0,1fr)] bg-base-200">
+      <AppNavbar section="science" showNav={false} toolbar={toolbar} />
+
+      <div className="grid min-h-0 min-w-0 grid-cols-1 overflow-y-auto lg:grid-cols-[260px_minmax(0,1fr)_330px] lg:overflow-hidden">
+        <WorkspacePanel
+          values={values}
+          selectedId={selected?.id ?? ''}
+          copy={copy}
+          onSelect={setSelectedId}
+          datasets={datasets}
+          mappings={mappings}
+          importError={importError}
+          persistenceError={persistenceError}
+          onMappingChange={updateMapping}
+          onRemoveDataset={removeDataset}
+        />
+
+        <main className="flex min-w-0 flex-col gap-4 p-4 lg:h-full lg:overflow-y-auto">
         <section className="flex min-w-0 flex-col gap-2 rounded-[calc(var(--radius-box)+0.25rem)] bg-base-100 p-4 shadow-sm">
           <div className="flex items-center gap-2">
             <span className="size-2.5 rounded-full bg-primary" />
@@ -706,44 +819,6 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
       </main>
 
       <div className="flex min-h-0 flex-col border-t border-base-300 bg-base-100 lg:h-full lg:overflow-y-auto lg:border-l lg:border-t-0">
-        <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-base-300 bg-base-100 px-4 py-2">
-          <span className={`size-2 shrink-0 rounded-full ${statusDot}`} />
-          <span className="min-w-0 flex-1 truncate text-[11px] text-base-content/60">{statusText}</span>
-          {result ? (
-            <span className="font-mono text-[10px] text-base-content/40">{`${result.elapsedMs.toFixed(0)} ms`}</span>
-          ) : null}
-          {status === 'running' ? (
-            <button
-              type="button"
-              onClick={cancel}
-              className="h-7 shrink-0 rounded-[var(--radius-field)] bg-muted px-2.5 text-[11px] font-semibold text-base-content/70 transition hover:bg-destructive/10 hover:text-destructive"
-            >
-              {copy.cancel}
-            </button>
-          ) : (
-            <>
-              <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[10px] text-base-content/55">
-                <input
-                  type="checkbox"
-                  className="size-3 accent-[var(--color-primary)]"
-                  checked={autoRun}
-                  onChange={(event) => setAutoRun(event.target.checked)}
-                />
-                {copy.auto}
-              </label>
-              <Button
-                type="button"
-                size="sm"
-                disabled={!isDirty}
-                onClick={() => void run(dirtyIdsRef.current, {})}
-                className="h-7 shrink-0 rounded-[var(--radius-field)] px-2.5 text-[11px] font-semibold"
-              >
-                {copy.runAll}
-              </Button>
-            </>
-          )}
-        </div>
-
         <AnalysisPanel
           steps={steps}
           values={values}
@@ -759,6 +834,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
           onRunStep={runToStep}
         />
         <ResultsPanel value={selected} copy={copy} />
+      </div>
       </div>
     </div>
   )
