@@ -44,6 +44,8 @@ export interface SpectrumValue {
   kind: 'spectrum'
   frequency: DenseArray
   magnitude: DenseArray
+  /** 单次 FFT 相位（弧度）；Welch 功率平均时为 null。 */
+  phase: DenseArray | null
   peaks: SpectrumPeak[]
   sampleRate: number
   frequencyUnit?: string
@@ -56,6 +58,9 @@ export interface FitParameter {
   value: number
   stderr: number
 }
+
+/** 拟合停止原因：步长收敛 / 达到最大迭代 / 无法继续下降。 */
+export type FitStopReason = 'converged' | 'maxIterations' | 'stalled'
 
 export interface FitValue {
   id: string
@@ -71,6 +76,11 @@ export interface FitValue {
   params: FitParameter[]
   rSquared: number
   rmse: number
+  /** 实际进入 LM 外层循环的次数（零次运行记 0）。 */
+  iterations: number
+  converged: boolean
+  /** 停止原因，与 `converged` 同源，供界面区分「没算够」与「卡住」。 */
+  stopReason: FitStopReason
   pointCount?: number
   provenance: string
 }

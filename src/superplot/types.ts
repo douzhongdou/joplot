@@ -69,6 +69,8 @@ export interface SpectrumOptions {
 export interface SpectrumResult {
   freq: Float64Array
   magnitude: Float64Array
+  /** 单次 FFT 的相位（弧度，相对片段起点）；Welch 功率平均时无唯一相位。 */
+  phase: Float64Array | null
   /** 原始 FFT 长度（补零后）。 */
   fftSize: number
   /** 实际参与运算的样本数（Welch 时为单段长度）。 */

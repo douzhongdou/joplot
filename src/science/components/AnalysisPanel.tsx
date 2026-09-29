@@ -1,43 +1,29 @@
 'use client'
 
-import { useState } from 'react'
-import { Ellipsis, Play } from 'lucide-react'
+import { Ellipsis, Play, Plus } from 'lucide-react'
 import type { ScienceValue } from '../types.ts'
 import type { ScienceCopy } from '../lib/i18n.ts'
-import type { AnalysisStep, OpKind } from '../lib/pipeline.ts'
+import type { AnalysisStep, OpKind, StepInsertPosition } from '../lib/pipeline.ts'
 import { getOperator, OPERATORS, OPERATOR_CATEGORIES, type OperatorParams, type ParamSpec } from '../lib/operators.ts'
 import { parseExpression } from '../../lib/expression.ts'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Field, NumberInput, SelectInput, TextInput } from './Controls.tsx'
+import { vectorFields, vectorId } from '../lib/vectors.ts'
 
 function label(copy: ScienceCopy, key: string, fallback?: string): string {
   return copy.labels[key] ?? fallback ?? key
-}
-
-function formatNumber(value: number, digits = 4): string {
-  if (!Number.isFinite(value)) {
-    return '—'
-  }
-  if (value !== 0 && (Math.abs(value) >= 1e5 || Math.abs(value) < 1e-3)) {
-    return value.toExponential(3)
-  }
-  return value.toFixed(digits)
 }
 
 interface Option {
@@ -139,7 +125,6 @@ function ParamControl({
     </div>
   )
 }
-
 export type StepStatus = 'clean' | 'dirty' | 'running' | 'error'
 
 function statusDot(status: StepStatus): string {
@@ -147,6 +132,19 @@ function statusDot(status: StepStatus): string {
   if (status === 'error') return 'bg-error'
   if (status === 'dirty') return 'bg-base-content/30'
   return 'bg-success'
+}
+
+function OperatorMenuItems({ copy, onChoose }: { copy: ScienceCopy; onChoose: (op: OpKind) => void }) {
+  return OPERATOR_CATEGORIES.map((category) => (
+    <DropdownMenuGroup key={category}>
+      <DropdownMenuLabel className="text-xs text-muted-foreground">{copy.categories[category]}</DropdownMenuLabel>
+      {OPERATORS.filter((operator) => operator.category === category).map((operator) => (
+        <DropdownMenuItem key={operator.kind} onSelect={() => onChoose(operator.kind)}>
+          {copy.operators[operator.kind] ?? operator.kind}
+        </DropdownMenuItem>
+      ))}
+    </DropdownMenuGroup>
+  ))
 }
 
 export function AnalysisPanel({
@@ -172,13 +170,11 @@ export function AnalysisPanel({
   stepStatus: (index: number) => StepStatus
   /** valueId → 来源文件名，用于给数据集列的选项加 `文件名 · 列名` 前缀。 */
   sourceNames?: Record<string, string>
-  onAdd: (op: OpKind) => void
+  onAdd: (op: OpKind, position: StepInsertPosition) => void
   onUpdate: (step: AnalysisStep) => void
   onRemove: (id: string) => void
   onRunStep: (index: number) => void
 }) {
-  const [pendingOp, setPendingOp] = useState<OpKind>('fit')
-
   const producedIds = new Set(steps.map((step) => step.outputId))
   const baseSeries = values.filter((value) => value.kind === 'series' && !producedIds.has(value.id))
 
@@ -188,16 +184,17 @@ export function AnalysisPanel({
   }
 
   const seriesOptionsFor = (index: number): Option[] => {
-    const priorSeriesIds = steps
-      .slice(0, index)
-      .filter((candidate) => getOperator(candidate.op)?.output === 'series')
-      .map((candidate) => candidate.outputId)
+    const priorOutputIds = new Set(steps.slice(0, index).map((candidate) => candidate.outputId))
+    const available = values.filter((value) => !producedIds.has(value.id) || priorOutputIds.has(value.id))
 
     return [
       ...baseSeries.map((value) => ({ value: value.id, label: optionLabel(value) })),
-      ...values
-        .filter((value) => value.kind === 'series' && priorSeriesIds.includes(value.id))
+      ...available.filter((value) => value.kind === 'series' && priorOutputIds.has(value.id))
         .map((value) => ({ value: value.id, label: value.name })),
+      ...available.flatMap((value) => vectorFields(value).map((field) => ({
+        value: vectorId(value.id, field),
+        label: `${optionLabel(value)}.${field}`,
+      }))),
     ]
   }
 
@@ -213,36 +210,8 @@ export function AnalysisPanel({
   }
 
   return (
-    <section className="flex flex-col gap-3 border-b border-base-300 p-4">
+    <section className="flex flex-col gap-3 p-4">
       <h2 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-base-content/45">{copy.analysis}</h2>
-
-      <div className="flex items-center gap-2">
-        <Select value={pendingOp} onValueChange={(value) => setPendingOp(value as OpKind)}>
-          <SelectTrigger size="sm" className="h-8 min-w-0 flex-1 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {OPERATOR_CATEGORIES.map((category) => (
-              <SelectGroup key={category}>
-                <SelectLabel>{copy.categories[category]}</SelectLabel>
-                {OPERATORS.filter((operator) => operator.category === category).map((operator) => (
-                  <SelectItem key={operator.kind} value={operator.kind} className="text-xs">
-                    {copy.operators[operator.kind] ?? operator.kind}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => onAdd(pendingOp)}
-          className="shrink-0 rounded-[var(--radius-field)] text-xs font-semibold"
-        >
-          {copy.addStep}
-        </Button>
-      </div>
 
       <ul className="flex flex-col gap-2">
         {steps.map((step, index) => {
@@ -284,23 +253,30 @@ export function AnalysisPanel({
                     <TooltipContent>{copy.runToHere}</TooltipContent>
                   </Tooltip>
                   <DropdownMenu>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            className="size-7 rounded-[var(--radius-field)] text-base-content/45 hover:bg-base-content/10 hover:text-base-content dark:hover:bg-base-content/10 focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-ring/40 data-[state=open]:bg-base-content/10 data-[state=open]:text-base-content"
-                            aria-label={copy.stepMenu}
-                          >
-                            <Ellipsis size={16} strokeWidth={2.2} />
-                          </Button>
-                        </DropdownMenuTrigger>
-                      </TooltipTrigger>
-                      <TooltipContent>{copy.stepMenu}</TooltipContent>
-                    </Tooltip>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="size-7 rounded-[var(--radius-field)] text-base-content/45 hover:bg-base-content/10 hover:text-base-content dark:hover:bg-base-content/10 focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-ring/40 data-[state=open]:bg-base-content/10 data-[state=open]:text-base-content"
+                        aria-label={copy.stepMenu}
+                      >
+                        <Ellipsis size={16} strokeWidth={2.2} />
+                      </Button>
+                    </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>{copy.insertBefore}</DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="max-h-80 w-52 overflow-y-auto">
+                          <OperatorMenuItems copy={copy} onChoose={(op) => onAdd(op, { type: 'before', stepId: step.id })} />
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>{copy.insertAfter}</DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="max-h-80 w-52 overflow-y-auto">
+                          <OperatorMenuItems copy={copy} onChoose={(op) => onAdd(op, { type: 'after', stepId: step.id })} />
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
                       <DropdownMenuItem variant="destructive" onSelect={() => onRemove(step.id)}>
                         {copy.remove}
                       </DropdownMenuItem>
@@ -346,89 +322,20 @@ export function AnalysisPanel({
           )
         })}
       </ul>
-    </section>
-  )
-}
-
-export function ResultsPanel({ value, copy }: { value: ScienceValue | undefined; copy: ScienceCopy }) {
-  if (!value) {
-    return <p className="p-4 text-xs text-base-content/45">{copy.noResult}</p>
-  }
-
-  return (
-    <section className="flex flex-col gap-3 p-4">
-      <h2 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-base-content/45">
-        {`${copy.results} · ${value.name}`}
-      </h2>
-
-      <p className="font-mono text-[10px] text-base-content/45">{value.provenance}</p>
-
-      {value.kind === 'stats' ? (
-        <table className="w-full text-xs">
-          <tbody>
-            {value.rows.map((row) => (
-              <tr key={row.key} className="border-b border-base-200">
-                <td className="py-1 text-base-content/60">{copy.stats[row.key] ?? row.key}</td>
-                <td className="py-1 text-right font-mono text-base-content">{formatNumber(row.value)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : null}
-
-      {value.kind === 'fit' ? (
-        <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <span className="text-base-content/60">{copy.fit.rSquared}</span>
-            <span className="text-right font-mono">{formatNumber(value.rSquared)}</span>
-            <span className="text-base-content/60">{copy.fit.rmse}</span>
-            <span className="text-right font-mono">{formatNumber(value.rmse)}</span>
-            <span className="text-base-content/60">{copy.fit.converged}</span>
-            <span className="text-right font-mono">{copy.fit.yes}</span>
-          </div>
-          <div>
-            <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-base-content/45">
-              {copy.fit.params}
-            </h3>
-            <table className="w-full text-xs">
-              <tbody>
-                {value.params.map((parameter) => (
-                  <tr key={parameter.name} className="border-b border-base-200">
-                    <td className="py-1 font-mono text-base-content/70">{parameter.name}</td>
-                    <td className="py-1 text-right font-mono text-base-content">{formatNumber(parameter.value)}</td>
-                    <td className="py-1 text-right font-mono text-base-content/45">
-                      {Number.isFinite(parameter.stderr) ? `± ${formatNumber(parameter.stderr, 3)}` : ''}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : null}
-
-      {value.kind === 'spectrum' ? (
-        <div>
-          <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-base-content/45">
-            {copy.plot.peak}
-          </h3>
-          <table className="w-full text-xs">
-            <tbody>
-              {value.peaks.map((peak) => (
-                <tr key={peak.frequency} className="border-b border-base-200">
-                  <td className="py-1 font-mono text-base-content/70">{`${formatNumber(peak.frequency, 3)} ${value.frequencyUnit ?? 'Hz'}`}</td>
-                  <td className="py-1 text-right font-mono text-base-content">{formatNumber(peak.magnitude)}</td>
-                  <td className="py-1 text-right font-mono text-base-content/45">{`${formatNumber(peak.relativeDb, 1)} dB`}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-
-      {value.kind === 'series' ? (
-        <p className="text-xs text-base-content/50">{`${value.y.shape[0]} ${copy.kinds.series}`}</p>
-      ) : null}
+      <div className="flex items-center gap-3 pt-1">
+        <span className="h-px flex-1 bg-border" aria-hidden="true" />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="outline" size="icon-sm" className="size-8 rounded-full" aria-label={copy.addStep}>
+              <Plus size={16} aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="center" side="top" className="max-h-80 w-52 overflow-y-auto">
+            <OperatorMenuItems copy={copy} onChoose={(op) => onAdd(op, { type: 'end' })} />
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <span className="h-px flex-1 bg-border" aria-hidden="true" />
+      </div>
     </section>
   )
 }

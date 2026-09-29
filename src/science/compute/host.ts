@@ -37,6 +37,8 @@ export interface RunOptions {
   source: WorkspaceSource
   mappings?: Record<string, DatasetMapping>
   dirtyIds?: Iterable<string>
+  /** 需要从 Worker 缓存驱逐的产出 id（被删除的步骤）。 */
+  evictIds?: Iterable<string>
   previewTarget?: number
 }
 
@@ -56,14 +58,23 @@ export interface ComputeHost {
   mutate(options: MutateOptions): Promise<MutateResult>
   exportValue(valueId: string): Promise<Blob>
   preview(valueIds: string[], xRange: { min: number; max: number } | null, target?: number): Promise<ScienceValue[]>
+  /**
+   * 独立驱逐产出自 Worker 缓存（与 run/mutate 同队列保序）。
+   * Worker 尚未创建时为空操作（新 Worker 缓存本就为空）。
+   */
+  evict(ids: string[]): Promise<void>
   terminate(): void
 }
 
 export function createComputeHost(): ComputeHost {
   let worker: Worker | null = null
   let sequence = 0
+  /** Worker 被终止时自增；排队中尚未发出的请求据此判为取消。 */
+  let generation = 0
+  /** run/mutate 串行链：保证 Worker 侧状态变更按发出顺序执行，互不交错。 */
+  let queue: Promise<unknown> = Promise.resolve()
   const pending = new Map<number, {
-    resolve: (result: ComputeResult | MutateResult | Blob | ScienceValue[]) => void
+    resolve: (result: ComputeResult | MutateResult | Blob | ScienceValue[] | undefined) => void
     reject: (error: unknown) => void
   }>()
 
@@ -113,6 +124,8 @@ export function createComputeHost(): ComputeHost {
         entry.resolve(message.blob)
       } else if (message.type === 'preview-result') {
         entry.resolve(message.values)
+      } else if (message.type === 'evict-result') {
+        entry.resolve(undefined)
       } else {
         entry.reject(new Error(message.message))
       }
@@ -126,43 +139,59 @@ export function createComputeHost(): ComputeHost {
     return worker
   }
 
+  /** 状态类请求（run/mutate）串行执行；terminate 后排队中的任务直接判为取消。 */
+  const enqueue = <T>(task: () => Promise<T>): Promise<T> => {
+    const gen = generation
+    const next = queue.then(
+      () => (gen === generation ? task() : Promise.reject(new Error('compute cancelled'))),
+      () => (gen === generation ? task() : Promise.reject(new Error('compute cancelled'))),
+    )
+    queue = next.catch(() => undefined)
+    return next
+  }
+
   return {
     run(steps, options) {
-      const instance = ensureWorker()
-      const requestId = (sequence += 1)
-      return new Promise<ComputeResult>((resolve, reject) => {
-        pending.set(requestId, { resolve: (result) => resolve(result as ComputeResult), reject })
-        const request: WorkerRequest = {
-          type: 'run',
-          requestId,
-          reset: Boolean(options.reset),
-          source: options.source,
-          mappings: options.mappings,
-          dirtyIds: options.dirtyIds ? [...options.dirtyIds] : [],
-          steps,
-          previewTarget: options.previewTarget ?? DEFAULT_PREVIEW_TARGET,
-        }
-        instance.postMessage(request)
+      return enqueue(() => {
+        const instance = ensureWorker()
+        const requestId = (sequence += 1)
+        return new Promise<ComputeResult>((resolve, reject) => {
+          pending.set(requestId, { resolve: (result) => resolve(result as ComputeResult), reject })
+          const request: WorkerRequest = {
+            type: 'run',
+            requestId,
+            reset: Boolean(options.reset),
+            source: options.source,
+            mappings: options.mappings,
+            dirtyIds: options.dirtyIds ? [...options.dirtyIds] : [],
+            evictIds: options.evictIds ? [...options.evictIds] : [],
+            steps,
+            previewTarget: options.previewTarget ?? DEFAULT_PREVIEW_TARGET,
+          }
+          instance.postMessage(request)
+        })
       })
     },
     mutate(options) {
-      const instance = ensureWorker()
-      const requestId = (sequence += 1)
-      return new Promise<MutateResult>((resolve, reject) => {
-        pending.set(requestId, { resolve: (result) => resolve(result as MutateResult), reject })
-        const request: MutateRequest = {
-          type: 'mutate',
-          kind: options.kind,
-          requestId,
-          source: options.source,
-          mappings: options.mappings,
-          steps: options.steps,
-          files: options.files,
-          datasetId: options.datasetId,
-          resetStepsToStats: options.resetStepsToStats,
-          previewTarget: options.previewTarget ?? DEFAULT_PREVIEW_TARGET,
-        }
-        instance.postMessage(request)
+      return enqueue(() => {
+        const instance = ensureWorker()
+        const requestId = (sequence += 1)
+        return new Promise<MutateResult>((resolve, reject) => {
+          pending.set(requestId, { resolve: (result) => resolve(result as MutateResult), reject })
+          const request: MutateRequest = {
+            type: 'mutate',
+            kind: options.kind,
+            requestId,
+            source: options.source,
+            mappings: options.mappings,
+            steps: options.steps,
+            files: options.files,
+            datasetId: options.datasetId,
+            resetStepsToStats: options.resetStepsToStats,
+            previewTarget: options.previewTarget ?? DEFAULT_PREVIEW_TARGET,
+          }
+          instance.postMessage(request)
+        })
       })
     },
     exportValue(valueId) {
@@ -181,7 +210,26 @@ export function createComputeHost(): ComputeHost {
         instance.postMessage({ type: 'preview', requestId, valueIds, xRange, target } satisfies WorkerRequest)
       })
     },
+    evict(ids) {
+      // 尚无 Worker 时无缓存可清；直接空操作，避免为一个空驱逐创建 Worker。
+      if (ids.length === 0 || !worker) {
+        return Promise.resolve()
+      }
+      return enqueue<void>(() => {
+        const instance = worker
+        if (!instance) {
+          return Promise.resolve()
+        }
+        const requestId = (sequence += 1)
+        return new Promise<void>((resolve, reject) => {
+          pending.set(requestId, { resolve: () => resolve(), reject })
+          instance.postMessage({ type: 'evict', requestId, ids } satisfies WorkerRequest)
+        })
+      })
+    },
     terminate() {
+      // 自增 generation：排队中尚未发出的 run/mutate 会在出队时直接判为取消。
+      generation += 1
       rejectAll(new Error('compute cancelled'))
       worker?.terminate()
       worker = null

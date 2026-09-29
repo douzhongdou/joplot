@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import { createSampleWorkspace } from '../src/science/lib/workspace.ts'
 import { runPipeline } from '../src/science/lib/pipeline.ts'
+import { resolveValue, vectorFields } from '../src/science/lib/vectors.ts'
 
 test('sample pipeline runs without errors and fits the damped signal', () => {
   const { base, steps } = createSampleWorkspace()
@@ -18,4 +19,7 @@ test('sample pipeline runs without errors and fits the damped signal', () => {
   const spectrum = values.find((value) => value.id === 'fft1')
   assert.ok(spectrum && spectrum.kind === 'spectrum')
   assert.ok(spectrum.peaks.length > 0)
+  assert.ok(spectrum.phase)
+  assert.deepEqual(vectorFields(spectrum), ['frequency', 'magnitude', 'phase'])
+  assert.equal(resolveValue(values, 'fft1::phase')?.kind, 'series')
 })

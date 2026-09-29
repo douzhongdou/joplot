@@ -5,6 +5,7 @@ import { ChevronDown, X } from 'lucide-react'
 import type { DatasetSummary, ScienceValue } from '../types.ts'
 import type { ScienceCopy } from '../lib/i18n.ts'
 import { SelectMenu } from '@/components/SelectMenu'
+import { vectorData, vectorFields, vectorId } from '../lib/vectors.ts'
 
 interface DatasetMapping {
   xColumn: string
@@ -33,6 +34,7 @@ export function WorkspacePanel({
   mappings,
   importError,
   persistenceError,
+  importing,
   onMappingChange,
   onRemoveDataset,
 }: {
@@ -44,6 +46,7 @@ export function WorkspacePanel({
   mappings: Record<string, DatasetMapping>
   importError: string
   persistenceError: boolean
+  importing: boolean
   onMappingChange: (datasetId: string, xColumn: string, yColumns: string[]) => void
   onRemoveDataset: (datasetId: string) => void
 }) {
@@ -91,6 +94,7 @@ export function WorkspacePanel({
 
   function renderValue(value: ScienceValue) {
     const active = value.id === selectedId
+    const fields = vectorFields(value)
     return (
       <li key={value.id}>
         <button
@@ -108,6 +112,27 @@ export function WorkspacePanel({
           </span>
           <span className="font-mono text-[10px] text-base-content/45">{valueMeta(value)}</span>
         </button>
+        {fields.length > 0 && (
+          <ul className="ml-3 border-l border-base-300 pl-1.5">
+            {fields.map((field) => {
+              const id = vectorId(value.id, field)
+              const length = (value.kind === 'stats' ? undefined : value.pointCount) ?? vectorData(value, field)?.shape[0] ?? 0
+              return (
+                <li key={id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(id)}
+                    aria-current={selectedId === id ? 'true' : undefined}
+                    className={`flex w-full items-center gap-2 rounded-[calc(var(--radius-field)-2px)] px-2 py-1 text-left transition ${selectedId === id ? 'bg-accent' : 'hover:bg-muted'}`}
+                  >
+                    <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-base-content/80" title={`${value.name}.${field}`}>{field}</span>
+                    <span className="font-mono text-[10px] text-base-content/45">{length.toLocaleString()}</span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
       </li>
     )
   }
@@ -123,7 +148,7 @@ export function WorkspacePanel({
         if (!mapping) return null
         const expanded = expandedIds.has(dataset.id)
         return (
-          <div key={dataset.id} className="shrink-0 rounded-[var(--radius-field)] bg-muted/50">
+          <div key={dataset.id} className={`shrink-0 rounded-[var(--radius-field)] bg-muted/50 ${importing ? 'pointer-events-none opacity-60' : ''}`}>
             <div className="flex items-center gap-1 py-1 pl-1 pr-1.5">
               <button
                 type="button"

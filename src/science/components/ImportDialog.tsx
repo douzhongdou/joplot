@@ -21,12 +21,18 @@ interface Props {
   restoring: boolean
   onImport: (files: File[]) => void
   onLoadSample: () => void
-  /** 紧凑样式（放进 navbar 工具条时用），不占满整行。 */
+  /** 仅图标样式，供空间受限的位置使用。 */
   compact?: boolean
+  /** 由菜单入口控制弹窗时隐藏默认按钮。 */
+  hideTrigger?: boolean
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
-export function ImportDialog({ copy, importing, restoring, onImport, onLoadSample, compact = false }: Props) {
-  const [open, setOpen] = useState(false)
+export function ImportDialog({ copy, importing, restoring, onImport, onLoadSample, compact = false, hideTrigger = false, open, onOpenChange }: Props) {
+  const [internalOpen, setInternalOpen] = useState(false)
+  const dialogOpen = open ?? internalOpen
+  const changeOpen = onOpenChange ?? setInternalOpen
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -34,7 +40,7 @@ export function ImportDialog({ copy, importing, restoring, onImport, onLoadSampl
     if (files.length === 0) return
     onImport(files)
     setDragging(false)
-    setOpen(false)
+    changeOpen(false)
   }
 
   function handleDrop(event: DragEvent<HTMLDivElement>) {
@@ -44,22 +50,24 @@ export function ImportDialog({ copy, importing, restoring, onImport, onLoadSampl
 
   const label = restoring ? copy.restoring : importing ? copy.importing : copy.importData
   const trigger = (
-    <button
+    <Button
       type="button"
+      variant="outline"
+      size="sm"
       aria-label={compact ? label : undefined}
       className={compact
-        ? 'grid size-7 shrink-0 place-items-center rounded-[calc(var(--radius-field)-2px)] text-base-content/60 transition hover:bg-base-content/10 hover:text-base-content disabled:pointer-events-none disabled:opacity-50'
-        : 'flex h-8 w-full cursor-pointer items-center justify-center gap-1.5 rounded-[var(--radius-field)] bg-primary text-xs font-semibold text-primary-content transition hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50'}
+        ? 'size-8 shrink-0 px-0'
+        : 'h-7 shrink-0 gap-1 px-2 text-xs has-[>svg]:px-2'}
       disabled={importing || restoring}
     >
-      <UploadCloud size={compact ? 15 : 13} strokeWidth={2.2} />
+      <UploadCloud size={15} strokeWidth={2.1} />
       {compact ? null : label}
-    </button>
+    </Button>
   )
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      {compact ? (
+    <Dialog open={dialogOpen} onOpenChange={changeOpen}>
+      {hideTrigger ? null : compact ? (
         <Tooltip>
           <TooltipTrigger asChild>
             <DialogTrigger asChild>{trigger}</DialogTrigger>
@@ -126,7 +134,7 @@ export function ImportDialog({ copy, importing, restoring, onImport, onLoadSampl
           type="button"
           onClick={() => {
             onLoadSample()
-            setOpen(false)
+            changeOpen(false)
           }}
           className="flex h-9 items-center justify-center gap-1.5 rounded-[var(--radius-field)] bg-muted text-xs font-semibold text-base-content/80 transition hover:bg-accent"
         >

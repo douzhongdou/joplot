@@ -13,7 +13,6 @@ import type { DatasetMapping, ScienceValue, WorkspaceSource } from '../types.ts'
 import type { SuperDataset } from '../../superplot/types.ts'
 import type { AnalysisStep } from '../lib/pipeline.ts'
 import { createSampleWorkspace } from '../lib/workspace.ts'
-import { runStep } from '../lib/pipeline.ts'
 import {
   baseValueIds,
   buildBaseValues,
@@ -22,8 +21,11 @@ import {
   remapStepInputs,
 } from '../lib/base.ts'
 import { readScienceDataset } from '../lib/readDataset.ts'
+import { dedupeDatasetId, removeDatasetById, resolveDatasetMutationBase } from '../lib/datasets.ts'
 import { loadScienceDatasets, saveScienceDatasets } from '../lib/persistence.ts'
 import { valueToCsv } from '../lib/export.ts'
+import { resolveValue, vectorParentId } from '../lib/vectors.ts'
+import { computeValues } from './engine.ts'
 import { toPreview, toPreviewInRange } from './preview.ts'
 import type { MutateRequest, RunRequest, WorkerRequest, WorkerResponse } from './protocol.ts'
 
@@ -80,50 +82,6 @@ function finalizeSteps(steps: AnalysisStep[], resetStepsToStats: boolean): Analy
   return remapStepInputs(steps, available, firstId)
 }
 
-interface ComputeOutcome {
-  values: ScienceValue[]
-  errors: Record<string, string>
-  timings: Record<string, number>
-}
-
-function compute(steps: AnalysisStep[], dirtyIds: Set<string>): ComputeOutcome {
-  const available = new Map<string, ScienceValue>()
-  const values: ScienceValue[] = [...(base ?? [])]
-  for (const value of values) {
-    available.set(value.id, value)
-  }
-
-  const errors: Record<string, string> = {}
-  const timings: Record<string, number> = {}
-
-  for (const step of steps) {
-    const cached = cache.get(step.outputId)
-    if (!dirtyIds.has(step.id) && cached) {
-      available.set(step.outputId, cached)
-      values.push(cached)
-      continue
-    }
-
-    const started = performance.now()
-    try {
-      const value = runStep(
-        step,
-        available.get(step.inputId),
-        step.secondInputId ? available.get(step.secondInputId) : undefined,
-      )
-      available.set(step.outputId, value)
-      cache.set(step.outputId, value)
-      values.push(value)
-    } catch (error) {
-      cache.delete(step.outputId)
-      errors[step.id] = error instanceof Error ? error.message : String(error)
-    }
-    timings[step.id] = performance.now() - started
-  }
-
-  return { values, errors, timings }
-}
-
 function previewValues(values: ScienceValue[], target: number): ScienceValue[] {
   return values.map((value) => toPreview(value, target))
 }
@@ -145,7 +103,13 @@ async function handleRun(request: RunRequest): Promise<void> {
   }
 
   const dirty = request.reset || !base ? allStepIds(request.steps) : new Set(request.dirtyIds)
-  const { values, errors, timings } = compute(request.steps, dirty)
+  const { values, errors, timings } = computeValues({
+    base: base ?? [],
+    steps: request.steps,
+    dirtyIds: dirty,
+    cache,
+    evictIds: request.evictIds,
+  })
 
   post({
     type: 'result',
@@ -159,41 +123,37 @@ async function handleRun(request: RunRequest): Promise<void> {
   })
 }
 
-function dedupeDatasetId(existing: SuperDataset[], parsed: SuperDataset): SuperDataset {
-  let dataset = parsed
-  let suffix = 2
-  while (existing.some((candidate) => candidate.id === dataset.id)) {
-    dataset = { ...parsed, id: `${parsed.id}-${suffix}` }
-    suffix += 1
-  }
-  return dataset
-}
-
 async function handleMutate(request: MutateRequest): Promise<void> {
   const started = performance.now()
 
-  if (request.kind === 'import') {
-    const files = request.files ?? []
-    let next = datasets
-    for (let index = 0; index < files.length; index += 1) {
-      const parsed = await readScienceDataset(files[index])
-      if (parsed.numericColumns.length === 0) {
-        throw new Error(`${parsed.fileName} has no numeric columns`)
+  if (request.kind === 'import' || request.kind === 'remove-dataset' || request.kind === 'reset-sample') {
+    // 关键：先解析操作基集（import/remove 在内存为空时从 IndexedDB 水合），
+    // 避免 Worker 重建后用空内存覆盖持久数据。reset-sample 主动清空。
+    const baseline = await resolveDatasetMutationBase(request.kind, datasets, loadScienceDatasets)
+
+    if (request.kind === 'import') {
+      const files = request.files ?? []
+      let next = baseline
+      for (let index = 0; index < files.length; index += 1) {
+        const parsed = await readScienceDataset(files[index])
+        if (parsed.numericColumns.length === 0) {
+          throw new Error(`${parsed.fileName} has no numeric columns`)
+        }
+        next = [...next, dedupeDatasetId(next, parsed)]
+        post({ type: 'progress', requestId: request.requestId, done: index + 1, total: files.length })
       }
-      next = [...next, dedupeDatasetId(next, parsed)]
-      post({ type: 'progress', requestId: request.requestId, done: index + 1, total: files.length })
+      datasets = next
+      mappings = reconcileMappings(request.mappings, datasets)
+      await saveScienceDatasets(datasets)
+    } else if (request.kind === 'remove-dataset') {
+      datasets = removeDatasetById(baseline, request.datasetId ?? '')
+      mappings = reconcileMappings(request.mappings, datasets)
+      await saveScienceDatasets(datasets)
+    } else {
+      datasets = baseline
+      mappings = {}
+      await saveScienceDatasets(datasets)
     }
-    datasets = next
-    mappings = reconcileMappings(request.mappings, datasets)
-    await saveScienceDatasets(datasets)
-  } else if (request.kind === 'remove-dataset') {
-    datasets = datasets.filter((dataset) => dataset.id !== request.datasetId)
-    mappings = reconcileMappings(request.mappings, datasets)
-    await saveScienceDatasets(datasets)
-  } else if (request.kind === 'reset-sample') {
-    datasets = []
-    await saveScienceDatasets(datasets)
-    mappings = {}
   } else {
     await hydrateIfNeeded(request.source)
     mappings = reconcileMappings(request.mappings, datasets)
@@ -203,7 +163,12 @@ async function handleMutate(request: MutateRequest): Promise<void> {
   cache.clear()
 
   const steps = finalizeSteps(request.steps, Boolean(request.resetStepsToStats))
-  const { values, errors, timings } = compute(steps, allStepIds(steps))
+  const { values, errors, timings } = computeValues({
+    base: base ?? [],
+    steps,
+    dirtyIds: allStepIds(steps),
+    cache,
+  })
 
   post({
     type: 'mutate-result',
@@ -219,7 +184,9 @@ async function handleMutate(request: MutateRequest): Promise<void> {
 }
 
 function findValue(valueId: string): ScienceValue | undefined {
-  return base?.find((value) => value.id === valueId) ?? cache.get(valueId)
+  const parentId = vectorParentId(valueId)
+  const parent = base?.find((value) => value.id === parentId) ?? cache.get(parentId)
+  return parent ? resolveValue([parent], valueId) : undefined
 }
 
 scope.addEventListener('message', (event: MessageEvent) => {
@@ -233,6 +200,15 @@ scope.addEventListener('message', (event: MessageEvent) => {
     } catch (error) {
       post({ type: 'error', requestId: request.requestId, message: error instanceof Error ? error.message : String(error) })
     }
+    return
+  }
+
+  if (request.type === 'evict') {
+    // 独立驱逐：删除步骤后立即清缓存，不依赖后续 run（autoRun 关闭也要生效）。
+    for (const id of request.ids) {
+      cache.delete(id)
+    }
+    post({ type: 'evict-result', requestId: request.requestId })
     return
   }
 

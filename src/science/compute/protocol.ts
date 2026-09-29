@@ -18,6 +18,8 @@ export interface RunRequest {
   mappings?: Record<string, DatasetMapping>
   /** 需要重算的步骤 id；其余步骤复用 Worker 侧缓存。 */
   dirtyIds: string[]
+  /** 需要从缓存驱逐的产出 id（被删除的步骤），避免幽灵值被预览/导出取到。 */
+  evictIds?: string[]
   steps: AnalysisStep[]
   previewTarget: number
 }
@@ -46,6 +48,13 @@ export interface ExportRequest {
   valueId: string
 }
 
+/** 独立驱逐：删除步骤后立即清 Worker 缓存，不依赖后续 run（autoRun 关闭时也要生效）。 */
+export interface EvictRequest {
+  type: 'evict'
+  requestId: number
+  ids: string[]
+}
+
 /** 按可见范围重新生成降采样预览（视野联动加细，不重算步骤）。 */
 export interface PreviewRequest {
   type: 'preview'
@@ -55,7 +64,7 @@ export interface PreviewRequest {
   target: number
 }
 
-export type WorkerRequest = RunRequest | MutateRequest | ExportRequest | PreviewRequest
+export type WorkerRequest = RunRequest | MutateRequest | ExportRequest | PreviewRequest | EvictRequest
 
 /** Worker → 主线程 */
 export interface RunResultMessage {
@@ -108,6 +117,11 @@ export interface PreviewResultMessage {
   values: ScienceValue[]
 }
 
+export interface EvictResultMessage {
+  type: 'evict-result'
+  requestId: number
+}
+
 export type WorkerResponse =
   | RunResultMessage
   | MutateResultMessage
@@ -115,5 +129,6 @@ export type WorkerResponse =
   | ErrorMessage
   | ExportResultMessage
   | PreviewResultMessage
+  | EvictResultMessage
 
 export const DEFAULT_PREVIEW_TARGET = 4000

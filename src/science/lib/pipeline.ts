@@ -7,6 +7,7 @@
 
 import type { ScienceValue, Series } from '../types.ts'
 import { getOperator, type OperatorParams } from './operators.ts'
+import { resolveValue } from './vectors.ts'
 
 export type OpKind = string
 
@@ -18,6 +19,10 @@ export interface AnalysisStep {
   params: OperatorParams
   outputId: string
 }
+
+export type StepInsertPosition =
+  | { type: 'before' | 'after'; stepId: string }
+  | { type: 'end' }
 
 export interface PipelineResult {
   values: ScienceValue[]
@@ -78,9 +83,9 @@ export function runPipeline(base: ScienceValue[], steps: AnalysisStep[]): Pipeli
 
   for (const step of steps) {
     const started = performance.now()
-    const input = values.find((value) => value.id === step.inputId)
+    const input = resolveValue(values, step.inputId)
     const secondInput = step.secondInputId
-      ? values.find((value) => value.id === step.secondInputId)
+      ? resolveValue(values, step.secondInputId)
       : undefined
 
     try {
@@ -104,6 +109,52 @@ export function nextStepId(steps: AnalysisStep[], op: OpKind): string {
     }
     index += 1
   }
+}
+
+/** Insert into the recipe, connecting the adjacent step when the new output is a series. */
+export function insertAnalysisStep(
+  steps: AnalysisStep[],
+  op: OpKind,
+  position: StepInsertPosition,
+  fallbackInputId: string,
+): { steps: AnalysisStep[]; inserted: AnalysisStep } | null {
+  const anchorIndex = position.type === 'end'
+    ? -1
+    : steps.findIndex((step) => step.id === position.stepId)
+  if (position.type !== 'end' && anchorIndex < 0) {
+    return null
+  }
+
+  const anchor = anchorIndex < 0 ? undefined : steps[anchorIndex]
+  const index = position.type === 'end'
+    ? steps.length
+    : position.type === 'before' ? anchorIndex : anchorIndex + 1
+  const anchorProducesSeries = anchor ? getOperator(anchor.op)?.output === 'series' : false
+  const inputId = position.type === 'before'
+    ? anchor!.inputId
+    : position.type === 'after'
+      ? anchorProducesSeries ? anchor!.outputId : anchor!.inputId
+      : fallbackInputId
+  const outputId = nextStepId(steps, op)
+  const inserted: AnalysisStep = {
+    id: `step-${outputId}`,
+    op,
+    inputId,
+    params: defaultParams(op),
+    outputId,
+  }
+  const next = [...steps]
+  next.splice(index, 0, inserted)
+
+  // Keep existing branches alone. Only the immediately following step in this chain is reconnected.
+  const shouldConnectNext = getOperator(op)?.output === 'series'
+    && (position.type === 'before' || (position.type === 'after' && anchorProducesSeries))
+  const following = next[index + 1]
+  if (shouldConnectNext && following?.inputId === inputId) {
+    next[index + 1] = { ...following, inputId: outputId }
+  }
+
+  return { steps: next, inserted }
 }
 
 export function defaultParams(op: OpKind): OperatorParams {

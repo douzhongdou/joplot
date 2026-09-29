@@ -257,6 +257,7 @@ export function computeSpectrum(signal: Float64Array, options: SpectrumOptions):
     return {
       freq: new Float64Array(0),
       magnitude: new Float64Array(0),
+      phase: new Float64Array(0),
       fftSize: 0,
       segmentLength: 0,
       segmentCount: 0,
@@ -276,6 +277,7 @@ export function computeSpectrum(signal: Float64Array, options: SpectrumOptions):
   const amplitudeScale = merged.normalize && windowGain > 0 ? 1 / (windowGain * segmentLength) : 1
 
   const power = new Float64Array(binCount)
+  const phase = segmentCount === 1 ? new Float64Array(binCount) : null
   const re = new Float64Array(fftSize)
   const im = new Float64Array(fftSize)
   let removedMean = 0
@@ -307,6 +309,7 @@ export function computeSpectrum(signal: Float64Array, options: SpectrumOptions):
 
     for (let k = 0; k <= half; k += 1) {
       const magnitude = Math.hypot(re[k], im[k])
+      if (phase) phase[k] = magnitude === 0 ? Number.NaN : Math.atan2(im[k], re[k])
       const isEdge = k === 0 || k === half
       const folded = isEdge ? magnitude : magnitude * 2
       const amplitude = folded * amplitudeScale
@@ -327,6 +330,7 @@ export function computeSpectrum(signal: Float64Array, options: SpectrumOptions):
   return {
     freq,
     magnitude,
+    phase,
     fftSize,
     segmentLength,
     segmentCount,

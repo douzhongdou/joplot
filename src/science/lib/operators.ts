@@ -411,6 +411,7 @@ export const OPERATORS: OperatorDef[] = [
         kind: 'spectrum',
         frequency: createDense(computation.frequency),
         magnitude: createDense(computation.magnitude),
+        phase: computation.phase ? createDense(computation.phase) : null,
         peaks: computation.peaks,
         sampleRate,
         frequencyUnit: input.xUnit === 's' ? 'Hz' : input.xUnit === 'sample'
@@ -476,6 +477,9 @@ export const OPERATORS: OperatorDef[] = [
         params: outcome.params,
         rSquared: outcome.rSquared,
         rmse: outcome.rmse,
+        iterations: outcome.iterations,
+        converged: outcome.converged,
+        stopReason: outcome.stopReason,
         provenance: `fit(${expression}) on ${input.name}`,
       }
     },

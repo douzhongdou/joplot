@@ -34,6 +34,17 @@ function take(values: Float64Array, indices: number[]): Float64Array {
   return out
 }
 
+/** 保持相位与按幅度选出的频率点共用下标。频率数组单调递增。 */
+function alignedPhase(frequency: Float64Array, phase: Float64Array, selectedFrequency: Float64Array): Float64Array {
+  const result = new Float64Array(selectedFrequency.length)
+  let index = 0
+  for (let i = 0; i < selectedFrequency.length; i += 1) {
+    while (index + 1 < frequency.length && frequency[index] < selectedFrequency[i]) index += 1
+    result[i] = phase[index]
+  }
+  return result
+}
+
 /** 包络抽稀（保尖峰），用于波形/频谱。 */
 function envelope(x: Float64Array, y: Float64Array, target: number): Float64Array[] {
   if (x.length <= target) {
@@ -55,7 +66,13 @@ export function toPreview(value: ScienceValue, target = DEFAULT_PREVIEW_TARGET):
     const frequency = values1d(value.frequency)
     const magnitude = values1d(value.magnitude)
     const [pf, pm] = envelope(frequency, magnitude, target)
-    return { ...value, frequency: createDense(pf), magnitude: createDense(pm), pointCount: value.frequency.shape[0] }
+    return {
+      ...value,
+      frequency: createDense(pf),
+      magnitude: createDense(pm),
+      phase: value.phase ? createDense(alignedPhase(frequency, values1d(value.phase), pf)) : null,
+      pointCount: value.frequency.shape[0],
+    }
   }
 
   if (value.kind === 'fit') {
@@ -127,8 +144,15 @@ export function toPreviewInRange(
   }
 
   if (value.kind === 'spectrum') {
-    const sampled = downsamplePoints(values1d(value.frequency), values1d(value.magnitude), 'envelope', target, range)
-    return { ...value, frequency: createDense(sampled.x), magnitude: createDense(sampled.y), pointCount: value.frequency.shape[0] }
+    const frequency = values1d(value.frequency)
+    const sampled = downsamplePoints(frequency, values1d(value.magnitude), 'envelope', target, range)
+    return {
+      ...value,
+      frequency: createDense(sampled.x),
+      magnitude: createDense(sampled.y),
+      phase: value.phase ? createDense(alignedPhase(frequency, values1d(value.phase), sampled.x)) : null,
+      pointCount: value.frequency.shape[0],
+    }
   }
 
   if (value.kind === 'fit') {

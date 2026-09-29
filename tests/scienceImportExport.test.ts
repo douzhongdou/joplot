@@ -31,6 +31,8 @@ test('row index mapping enables FFT and exports full precision values', async ()
   assert.deepEqual(result.errors, {})
   const spectrum = result.values.find((value) => value.id === 'spectrum')
   assert.equal(spectrum?.kind === 'spectrum' ? spectrum.frequencyUnit : null, 'cycles/sample')
+  assert.ok(spectrum && spectrum.kind === 'spectrum' && spectrum.phase)
+  assert.match(await valueToCsv(spectrum).text(), /^frequency,magnitude,phase\r\n/)
   assert.equal(await valueToCsv(series).text(), 'x,y\r\n0,1.25\r\n1,2.5\r\n2,3.75\r\n3,4.5\r\n')
 })
 

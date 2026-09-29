@@ -8,6 +8,7 @@
 import { parseExpression, parseExpressionWithGradient } from '../../lib/expression.ts'
 import { invertMatrix, solveLinearSystem } from './linalg.ts'
 import { computeSpectrumFor } from './spectrum.ts'
+import type { FitStopReason } from '../types.ts'
 
 export interface FitParameterEstimate {
   name: string
@@ -21,8 +22,10 @@ export interface FitOutcome {
   residual: Float64Array
   rSquared: number
   rmse: number
+  /** 实际进入 LM 外层循环的次数（零次运行记 0）。 */
   iterations: number
   converged: boolean
+  stopReason: FitStopReason
 }
 
 export interface FitModelDef {
@@ -309,9 +312,11 @@ export function fitModel(options: FitOptions): FitOutcome {
   let lambda = 1e-3
   let sse = sumSquares(residuals(parameters))
   let iterations = 0
-  let converged = false
+  let stopReason: FitStopReason = 'maxIterations'
 
-  for (; iterations < maxIterations; iterations += 1) {
+  // 计数语义：每次真正进入外层循环记 1（首次退出也算 1），预算为 0 时记 0。
+  while (iterations < maxIterations) {
+    iterations += 1
     const residual = residuals(parameters)
     const jac = jacobian(parameters)
     const normal: number[][] = Array.from({ length: dimension }, () =>
@@ -352,15 +357,18 @@ export function fitModel(options: FitOptions): FitOutcome {
     }
 
     if (!stepAccepted) {
+      stopReason = 'stalled'
       break
     }
 
     const stepNorm = Math.sqrt(lastStep.reduce((sum, value) => sum + value * value, 0))
     if (stepNorm < 1e-9) {
-      converged = true
+      stopReason = 'converged'
       break
     }
   }
+
+  const converged = stopReason === 'converged'
 
   // 报告用全量：在最终参数上对完整数据求预测、残差、R²、RMSE。
   const fullPredictions = new Float64Array(count)
@@ -426,5 +434,6 @@ export function fitModel(options: FitOptions): FitOutcome {
     rmse: Math.sqrt(fullSse / count),
     iterations,
     converged,
+    stopReason,
   }
 }

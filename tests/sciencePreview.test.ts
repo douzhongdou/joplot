@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import { toPreview, toPreviewInRange } from '../src/science/compute/preview.ts'
 import { createDense, values1d } from '../src/science/lib/dense.ts'
-import type { FitValue, Series } from '../src/science/types.ts'
+import type { FitValue, Series, SpectrumValue } from '../src/science/types.ts'
 
 function makeSeries(length: number): Series {
   const x = new Float64Array(length)
@@ -40,6 +40,9 @@ function makeFit(length: number): FitValue {
     params: [],
     rSquared: 1,
     rmse: 0,
+    iterations: 1,
+    converged: true,
+    stopReason: 'converged',
     provenance: 'test',
   }
 }
@@ -79,5 +82,24 @@ test('toPreviewInRange keeps fit traces aligned on shared x indices', () => {
   // y = 2x + 1 & fitted = 2x ⇒ residual ≡ 1，对齐错位会立刻破坏这个恒等式
   for (let index = 0; index < x.length; index += 1) {
     assert.equal(y[index] - fitted[index], residual[index])
+  }
+})
+
+test('spectrum previews keep phase paired with selected magnitude bins', () => {
+  const frequency = Float64Array.from({ length: 2000 }, (_, index) => index)
+  const magnitude = Float64Array.from({ length: 2000 }, (_, index) => index % 17 === 0 ? 10 : 1)
+  const phase = Float64Array.from({ length: 2000 }, (_, index) => index / 100)
+  const spectrum: SpectrumValue = {
+    id: 'fft1', name: 'fft1', kind: 'spectrum',
+    frequency: createDense(frequency), magnitude: createDense(magnitude), phase: createDense(phase),
+    peaks: [], sampleRate: 4000, provenance: 'test',
+  }
+  for (const preview of [toPreview(spectrum, 100), toPreviewInRange(spectrum, { min: 400, max: 800 }, 100)]) {
+    assert.equal(preview.kind, 'spectrum')
+    if (preview.kind !== 'spectrum' || !preview.phase) continue
+    const x = values1d(preview.frequency)
+    const y = values1d(preview.phase)
+    assert.equal(x.length, y.length)
+    for (let index = 0; index < x.length; index += 1) assert.equal(y[index], x[index] / 100)
   }
 })

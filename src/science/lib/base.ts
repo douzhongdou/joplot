@@ -9,6 +9,7 @@ import type { DatasetMapping, DatasetSummary, ScienceValue } from '../types.ts'
 import type { SuperDataset } from '../../superplot/types.ts'
 import type { AnalysisStep } from './pipeline.ts'
 import { seriesListFromDataset } from './import.ts'
+import { vectorParentId } from './vectors.ts'
 
 /** 用「数据集 + 映射」构建 base；无有效序列时返回空数组（由调用方决定是否回退示例信号）。 */
 export function buildBaseValues(
@@ -34,8 +35,8 @@ export function remapStepInputs(
 ): AnalysisStep[] {
   return steps.map((step) => ({
     ...step,
-    inputId: availableIds.has(step.inputId) ? step.inputId : fallbackId,
-    secondInputId: step.secondInputId && !availableIds.has(step.secondInputId)
+    inputId: availableIds.has(vectorParentId(step.inputId)) ? step.inputId : fallbackId,
+    secondInputId: step.secondInputId && !availableIds.has(vectorParentId(step.secondInputId))
       ? fallbackId
       : step.secondInputId,
   }))
@@ -43,6 +44,29 @@ export function remapStepInputs(
 
 export function baseValueIds(values: ScienceValue[]): Set<string> {
   return new Set(values.map((value) => value.id))
+}
+
+/** 从 Worker 返回的 values（base + 步骤产出）里还原 base 变量 id。 */
+export function inferBaseIds(values: ScienceValue[], producedSteps: AnalysisStep[]): string[] {
+  const produced = new Set(producedSteps.map((step) => step.outputId))
+  return values.filter((value) => !produced.has(value.id)).map((value) => value.id)
+}
+
+/**
+ * 数据源变化后，把「当前步骤」按新 base 重映射：
+ * 可用输入 = 新 base 变量 + 当前步骤产出；失效引用指向首个 base 变量。
+ */
+export function reconcileSteps(
+  values: ScienceValue[],
+  producedSteps: AnalysisStep[],
+  currentSteps: AnalysisStep[],
+): AnalysisStep[] {
+  const baseIds = inferBaseIds(values, producedSteps)
+  const available = new Set(baseIds)
+  for (const step of currentSteps) {
+    available.add(step.outputId)
+  }
+  return remapStepInputs(currentSteps, available, baseIds[0] ?? 'signal')
 }
 
 export function datasetSummary(dataset: SuperDataset): DatasetSummary {

@@ -5,6 +5,7 @@ export interface ScienceCopy {
   loadSample: string
   derived: string
   importData: string
+  fileMenu: string
   dropFiles: string
   dropFilesHint: string
   openFile: string
@@ -17,6 +18,8 @@ export interface ScienceCopy {
   removeDataset: string
   rowIndex: string
   exportCsv: string
+  exportShort: string
+  runActions: string
   noNumeric: string
   storageError: string
   variables: string
@@ -26,10 +29,14 @@ export interface ScienceCopy {
   empty: string
   analysis: string
   addStep: string
+  insertBefore: string
+  insertAfter: string
   run: string
   running: string
   cancel: string
   dirty: string
+  ready: string
+  lastRun: string
   runAll: string
   runToHere: string
   auto: string
@@ -52,6 +59,9 @@ export interface ScienceCopy {
     fit: string
     data: string
     peak: string
+    magnitude: string
+    phase: string
+    phaseUnavailable: string
   }
   fit: {
     rSquared: string
@@ -61,6 +71,9 @@ export interface ScienceCopy {
     yes: string
     no: string
     params: string
+    stopReason: string
+    /** stopReason → 本地化标签（converged / maxIterations / stalled）。 */
+    reasons: Record<string, string>
   }
   stats: Record<string, string>
 }
@@ -207,13 +220,20 @@ const ZH: ScienceCopy = {
   empty: '还没有变量',
   analysis: '分析栈',
   addStep: '添加步骤',
+  insertBefore: '前方添加步骤',
+  insertAfter: '后方添加步骤',
   run: '运行',
   running: '运行中…',
   cancel: '取消',
   dirty: '待运行',
   runAll: '全部运行',
   runToHere: '运行到此处',
-  auto: '自动',
+  auto: '自动运行',
+  ready: '就绪',
+  lastRun: '上次运行',
+  runActions: '运行控制',
+  exportShort: '导出 CSV',
+  fileMenu: '文件',
   input: '输入',
   secondInput: '第二输入',
   remove: '删除',
@@ -249,8 +269,11 @@ const ZH: ScienceCopy = {
     fit: '拟合',
     data: '数据',
     peak: '峰值',
+    magnitude: '幅度',
+    phase: '相位 (rad)',
+    phaseUnavailable: 'Welch 分段平均的是功率谱，没有唯一相位。将分段数设为 1 可查看 FFT 相位。',
   },
-  fit: { rSquared: 'R²', rmse: 'RMSE', iterations: '迭代', converged: '收敛', yes: '是', no: '否', params: '参数' },
+  fit: { rSquared: 'R²', rmse: 'RMSE', iterations: '迭代', converged: '收敛', yes: '是', no: '否', params: '参数', stopReason: '停止原因', reasons: { converged: '步长收敛', maxIterations: '达到最大迭代', stalled: '无法继续下降' } },
   stats: {
     count: '样本数',
     mean: '均值',
@@ -292,13 +315,20 @@ const EN: ScienceCopy = {
   empty: 'No variables yet',
   analysis: 'Analysis stack',
   addStep: 'Add step',
+  insertBefore: 'Insert step before',
+  insertAfter: 'Insert step after',
   run: 'Run',
   running: 'Running…',
   cancel: 'Cancel',
   dirty: 'Pending',
   runAll: 'Run all',
   runToHere: 'Run to here',
-  auto: 'Auto',
+  auto: 'Auto run',
+  ready: 'Ready',
+  lastRun: 'Last run',
+  runActions: 'Run controls',
+  exportShort: 'Export CSV',
+  fileMenu: 'File',
   input: 'Input',
   secondInput: 'Second input',
   remove: 'Remove',
@@ -334,8 +364,11 @@ const EN: ScienceCopy = {
     fit: 'Fit',
     data: 'Data',
     peak: 'Peak',
+    magnitude: 'Magnitude',
+    phase: 'Phase (rad)',
+    phaseUnavailable: 'Welch averages power across segments, so there is no unique phase. Set segments to 1 to view FFT phase.',
   },
-  fit: { rSquared: 'R²', rmse: 'RMSE', iterations: 'Iterations', converged: 'Converged', yes: 'yes', no: 'no', params: 'Parameters' },
+  fit: { rSquared: 'R²', rmse: 'RMSE', iterations: 'Iterations', converged: 'Converged', yes: 'yes', no: 'no', params: 'Parameters', stopReason: 'Stop reason', reasons: { converged: 'Step converged', maxIterations: 'Max iterations', stalled: 'No further descent' } },
   stats: {
     count: 'Count',
     mean: 'Mean',
@@ -378,13 +411,20 @@ const JA: ScienceCopy = {
   empty: '変数がありません',
   analysis: '解析手順',
   addStep: '手順を追加',
+  insertBefore: '前に手順を追加',
+  insertAfter: '後に手順を追加',
   run: '実行',
   running: '実行中…',
   cancel: 'キャンセル',
   dirty: '未実行',
   runAll: 'すべて実行',
   runToHere: 'ここまで実行',
-  auto: '自動',
+  auto: '自動実行',
+  ready: '準備完了',
+  lastRun: '前回',
+  runActions: '実行操作',
+  exportShort: 'CSV 出力',
+  fileMenu: 'ファイル',
   input: '入力',
   secondInput: '第 2 入力',
   remove: '削除',
@@ -411,8 +451,8 @@ const JA: ScienceCopy = {
     zscore: 'Z スコア', std: '標準偏差', rms: 'RMS', median: '中央値',
   },
   kinds: { series: '系列', spectrum: 'スペクトル', fit: 'フィット', stats: '統計' },
-  plot: { timeDomain: '時間領域', dataDomain: 'データ曲線', frequencyDomain: '周波数領域', residual: '残差', fit: 'フィット', data: 'データ', peak: 'ピーク' },
-  fit: { rSquared: 'R²', rmse: 'RMSE', iterations: '反復回数', converged: '収束', yes: 'はい', no: 'いいえ', params: 'パラメータ' },
+  plot: { timeDomain: '時間領域', dataDomain: 'データ曲線', frequencyDomain: '周波数領域', residual: '残差', fit: 'フィット', data: 'データ', peak: 'ピーク', magnitude: '振幅', phase: '位相 (rad)', phaseUnavailable: 'Welch 法はパワースペクトルを平均するため、一意の位相はありません。位相を表示するには分割数を 1 にしてください。' },
+  fit: { rSquared: 'R²', rmse: 'RMSE', iterations: '反復回数', converged: '収束', yes: 'はい', no: 'いいえ', params: 'パラメータ', stopReason: '停止理由', reasons: { converged: 'ステップ収束', maxIterations: '最大反復', stalled: '改善不能' } },
   stats: {
     count: '標本数', mean: '平均', std: '標準偏差', min: '最小', max: '最大', median: '中央値',
     q1: '第 1 四分位', q3: '第 3 四分位', rms: 'RMS', skew: '歪度', kurtosis: '超過尖度',

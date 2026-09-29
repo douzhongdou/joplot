@@ -17,12 +17,12 @@ export function valueToCsv(value: ScienceValue): Blob {
   const arrays = value.kind === 'series'
     ? [values1d(value.x), values1d(value.y)]
     : value.kind === 'spectrum'
-      ? [values1d(value.frequency), values1d(value.magnitude)]
+      ? [values1d(value.frequency), values1d(value.magnitude), ...(value.phase ? [values1d(value.phase)] : [])]
       : [values1d(value.x), values1d(value.y), values1d(value.fitted), values1d(value.residual)]
   const header = value.kind === 'series'
     ? 'x,y'
     : value.kind === 'spectrum'
-      ? 'frequency,magnitude'
+      ? value.phase ? 'frequency,magnitude,phase' : 'frequency,magnitude'
       : 'x,y,fitted,residual'
   const length = Math.min(...arrays.map((array) => array.length))
   const chunks: string[] = [`${header}\r\n`]

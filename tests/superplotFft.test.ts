@@ -95,6 +95,8 @@ test('computeSpectrum recovers the amplitude of a windowed tone', () => {
   const peakFrequency = result.freq[peakIndex]
   assert.ok(Math.abs(peakFrequency - frequency) <= result.binWidth)
   assert.ok(Math.abs(result.magnitude[peakIndex] - 0.25) < 0.02)
+  assert.ok(result.phase)
+  assert.ok(Math.abs(result.phase[peakIndex] + Math.PI / 2) < 0.02, 'sine FFT phase is -π/2 at the tone bin')
 })
 
 test('computeSpectrum supports Welch averaging across segments', () => {
@@ -110,6 +112,7 @@ test('computeSpectrum supports Welch averaging across segments', () => {
   })
 
   assert.ok(result.segmentCount > 1)
+  assert.equal(result.phase, null, 'Welch power averaging has no unique phase')
   assert.equal(result.fftSize, 1024)
 
   const peaks = findSpectrumPeaks(result.freq, result.magnitude, 1, { minFrequency: result.freq[1] * 2 })

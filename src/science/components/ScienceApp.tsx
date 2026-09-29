@@ -1,22 +1,25 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Download, Play, X, Zap } from 'lucide-react'
+import { ChevronDown, Download, Play, UploadCloud, X } from 'lucide-react'
 import type { DatasetMapping, DatasetSummary, ScienceValue, WorkspaceSource } from '../types.ts'
 import { values1d } from '../lib/dense.ts'
-import { sanitizeMapping } from '../lib/base.ts'
+import { resolveValue, vectorParentId } from '../lib/vectors.ts'
+import { reconcileSteps, sanitizeMapping } from '../lib/base.ts'
 import { datasetKey, loadScienceWorkspace, saveScienceRecipe, type ScienceRecipe } from '../lib/persistence.ts'
 import { SCIENCE_COLORS } from '../lib/colors.ts'
 import { createScienceCopy, type ScienceLanguage } from '../lib/i18n.ts'
-import { defaultParams, getOperator, nextStepId, type AnalysisStep, type OpKind } from '../lib/pipeline.ts'
+import { getOperator, insertAnalysisStep, type AnalysisStep, type OpKind, type StepInsertPosition } from '../lib/pipeline.ts'
 import { computeDirtySteps } from '../lib/dirty.ts'
+import { forgetSentEvictions, novelEvictions, selectionAfterRemoval, snapshotStillCurrent } from '../lib/coordination.ts'
 import { createSampleWorkspace } from '../lib/workspace.ts'
 import { useComputeHost, type ComputeResult, type MutateOptions, type MutateResult } from '../compute/host.ts'
-import { AnalysisPanel, ResultsPanel, type StepStatus } from './AnalysisPanel.tsx'
+import { AnalysisPanel, type StepStatus } from './AnalysisPanel.tsx'
 import { ImportDialog } from './ImportDialog.tsx'
 import { AppNavbar } from '../../components/AppNavbar.tsx'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Switch } from '@/components/ui/switch'
 import { Plot, type AxisRange, type PlotApi, type ScienceTrace, type TraceUpdate } from './Plot.tsx'
 import { PlotToolbar, type PlotCopyState } from '../../components/PlotToolbar.tsx'
 import { WorkspacePanel } from './WorkspacePanel.tsx'
@@ -50,6 +53,18 @@ function datasetPrefix(id: string): string {
   return secondColon < 0 ? id : id.slice(0, secondColon + 1)
 }
 
+function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) {
+    return false
+  }
+  for (const value of a) {
+    if (!b.has(value)) {
+      return false
+    }
+  }
+  return true
+}
+
 function seriesTrace(name: string, x: ArrayLike<number>, y: ArrayLike<number>, color: string, width: number): ScienceTrace {
   return { x, y, name, color, width, mode: 'lines' }
 }
@@ -61,7 +76,7 @@ function buildWaveTraces(values: ScienceValue[], selected: ScienceValue, copy: R
   const seriesMode = WAVE_MODE_PLOTLY[waveMode]
   let hasResidual = false
 
-  if (selected.kind === 'series' && selected.id.startsWith('ds:')) {
+  if (selected.kind === 'series' && selected.id.startsWith('ds:') && vectorParentId(selected.id) === selected.id) {
     const groupPrefix = datasetPrefix(selected.id)
     const colors = [SCIENCE_COLORS.series, '#e05252', '#38a3a5', '#a855f7', '#f2994a', '#76923c']
     values.filter((value) => value.kind === 'series' && value.id.startsWith(groupPrefix)).forEach((value, index) => {
@@ -73,7 +88,7 @@ function buildWaveTraces(values: ScienceValue[], selected: ScienceValue, copy: R
     return { traces, sources, hasResidual: false }
   }
 
-  if (base && base.kind === 'series' && selected.id !== base.id) {
+  if (base && base.kind === 'series' && selected.id !== base.id && vectorParentId(selected.id) === selected.id) {
     traces.push({ ...seriesTrace('signal', values1d(base.x), values1d(base.y), SCIENCE_COLORS.base, 1), mode: seriesMode })
     sources.push({ valueId: base.id, field: 'y' })
   }
@@ -112,7 +127,7 @@ function buildWaveTraces(values: ScienceValue[], selected: ScienceValue, copy: R
   return { traces, sources, hasResidual }
 }
 
-function buildSpectrumTraces(values: ScienceValue[], selected: ScienceValue): ScienceTrace[] {
+function buildSpectrumTraces(values: ScienceValue[], selected: ScienceValue, copy: ReturnType<typeof createScienceCopy>): ScienceTrace[] {
   const spectrum = selected.kind === 'spectrum'
     ? selected
     : [...values].reverse().find((value) => value.kind === 'spectrum')
@@ -122,7 +137,7 @@ function buildSpectrumTraces(values: ScienceValue[], selected: ScienceValue): Sc
   }
 
   return [
-    seriesTrace('spectrum', values1d(spectrum.frequency), values1d(spectrum.magnitude), SCIENCE_COLORS.spectrum, 1.6),
+    seriesTrace(copy.plot.magnitude, values1d(spectrum.frequency), values1d(spectrum.magnitude), SCIENCE_COLORS.spectrum, 1.6),
     {
       x: spectrum.peaks.map((peak) => peak.frequency),
       y: spectrum.peaks.map((peak) => peak.magnitude),
@@ -130,6 +145,10 @@ function buildSpectrumTraces(values: ScienceValue[], selected: ScienceValue): Sc
       color: SCIENCE_COLORS.peak,
       mode: 'markers',
     },
+    ...(spectrum.phase ? [{
+      ...seriesTrace(copy.plot.phase, values1d(spectrum.frequency), values1d(spectrum.phase), SCIENCE_COLORS.residual, 1.2),
+      yAxis: 'y2' as const,
+    }] : []),
   ]
 }
 
@@ -145,11 +164,14 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   const [status, setStatus] = useState<RunStatus>('idle')
   const [errorText, setErrorText] = useState('')
   const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set())
+  /** 待从 Worker 缓存驱逐的产出 id（被删除的步骤）。 */
+  const [evictIds, setEvictIds] = useState<Set<string>>(new Set())
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
   const [autoRun, setAutoRun] = useState(true)
   const [datasets, setDatasets] = useState<DatasetSummary[]>([])
   const [mappings, setMappings] = useState<Record<string, DatasetMapping>>({})
   const [importing, setImporting] = useState(false)
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [importError, setImportError] = useState('')
   const [hydrated, setHydrated] = useState(false)
   const [persistenceError, setPersistenceError] = useState(false)
@@ -171,6 +193,14 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   stepsRef.current = steps
   const dirtyIdsRef = useRef(dirtyIds)
   dirtyIdsRef.current = dirtyIds
+  const evictIdsRef = useRef(evictIds)
+  evictIdsRef.current = evictIds
+  const mappingsRef = useRef(mappings)
+  mappingsRef.current = mappings
+  const datasetsRef = useRef(datasets)
+  datasetsRef.current = datasets
+  /** 同步导入标志：供 effect / run 立即判定，不依赖 React state 的提交时机。 */
+  const importingRef = useRef(false)
   const lastStepsRef = useRef<AnalysisStep[]>([])
   const timingsRef = useRef<Record<string, number>>({})
   const sequence = useRef(0)
@@ -187,11 +217,17 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   /** 运行/增量重算；reset 会重建 base（映射变化、取消后、重载后）。 */
   const run = useCallback(async (
     ids: Iterable<string>,
-    options: { reset?: boolean; mappings?: Record<string, DatasetMapping>; throughIndex?: number } = {},
+    options: { reset?: boolean; mappings?: Record<string, DatasetMapping>; throughIndex?: number; evictIds?: string[] } = {},
   ) => {
+    // 导入期间不新发 run：运行需求由导入结束后的重算吸收，避免与导入请求交错。
+    if (importingRef.current) {
+      return
+    }
     const list = [...ids]
+    const evict = options.evictIds ?? []
     const shouldReset = Boolean(options.reset) || needsResetRef.current
-    if (list.length === 0 && !shouldReset) {
+    // 纯删除时 dirty 为空，但仍有缓存需驱逐、结果需刷新，因此不能早退。
+    if (list.length === 0 && !shouldReset && evict.length === 0) {
       return
     }
 
@@ -210,16 +246,30 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
         source: sourceRef.current,
         mappings: options.mappings,
         dirtyIds: list,
+        evictIds: evict,
       })
       if (id !== sequence.current) {
         return
       }
-      setResult(next)
       // 对齐 Worker 的运行时真相：取消/崩溃后靠下一次运行收敛（不会读到旧数据集）。
       setDatasets(next.datasets)
       setMappings(next.mappings)
       mergeTimings(next.timings)
       lastStepsRef.current = submitted
+
+      // 只清除本次请求实际发送过的驱逐项；期间新登记的驱逐必须保留，否则会永久丢失。
+      const remainingEvict = forgetSentEvictions(evictIdsRef.current, evict)
+      if (!sameSet(remainingEvict, evictIdsRef.current)) {
+        evictIdsRef.current = remainingEvict
+        setEvictIds(remainingEvict)
+      }
+
+      // 旧步骤快照的响应不得覆盖当前步骤（例如响应在途时删除了末步），否则幽灵产出会复活。
+      if (snapshotStillCurrent(submitted, stepsRef.current)) {
+        setResult(next)
+        setSelectedId((current) => (next.values.some((value) => value.id === current) ? current : (next.values[0]?.id ?? 'signal')))
+      }
+
       const remaining = computeDirtySteps(stepsRef.current, submitted)
       dirtyIdsRef.current = remaining
       setDirtyIds(remaining)
@@ -234,39 +284,60 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
     }
   }, [host])
 
-  /** 采纳 import / hydrate / remove-dataset 的结果：Worker 已更新数据集与步骤。 */
-  const applyMutate = useCallback((next: MutateResult) => {
+  /**
+   * 采纳 import / hydrate / remove-dataset 的结果。
+   * `forSteps` 是请求发出时的步骤快照：
+   * - 步骤未变：直接采纳 Worker 的步骤与结果；
+   * - 步骤已变（导入期间被编辑）：只采纳数据集，保留当前步骤并按新 base 重映射，
+   *   随后交给脏传播重算，避免出现「新步骤配旧结果」。
+   */
+  const applyMutate = useCallback((next: MutateResult, forSteps: AnalysisStep[]) => {
     needsResetRef.current = false
-    lastStepsRef.current = next.steps
-    dirtyIdsRef.current = new Set()
+    // mutate 会清空 Worker 缓存，因此此前累积的待驱逐项一并作废。
+    evictIdsRef.current = new Set()
+    setEvictIds(evictIdsRef.current)
     setDatasets(next.datasets)
     setMappings(next.mappings)
-    setSteps(next.steps)
-    setResult(next)
     mergeTimings(next.timings)
-    setDirtyIds(new Set())
-    setStatus('ready')
-    setSelectedId((current) => (next.values.some((value) => value.id === current) ? current : (next.values[0]?.id ?? 'signal')))
+
+    if (stepsRef.current === forSteps) {
+      lastStepsRef.current = next.steps
+      dirtyIdsRef.current = new Set()
+      setSteps(next.steps)
+      setResult(next)
+      setDirtyIds(new Set())
+      setStatus('ready')
+      setSelectedId((current) => (next.values.some((value) => value.id === current) ? current : (next.values[0]?.id ?? 'signal')))
+      return
+    }
+
+    // 步骤已变：保留当前步骤，按新 base 重映射后交给脏传播重算。
+    const remapped = reconcileSteps(next.values, next.steps, stepsRef.current)
+    lastStepsRef.current = []
+    dirtyIdsRef.current = new Set(remapped.map((step) => step.id))
+    setSteps(remapped)
+    setDirtyIds(dirtyIdsRef.current)
+    setResult(null)
+    setStatus('idle')
   }, [])
 
-  /** 带 epoch 守卫地执行 mutate：过期结果（被取消/被更晚的请求取代）不覆盖状态。 */
-  const runMutate = useCallback(async (
+  /** 带 epoch 守卫地发出 mutate：过期结果（被取消/被更晚的请求取代）返回 null，不覆盖状态。 */
+  const requestMutate = useCallback(async (
     options: MutateOptions,
     onError?: (message: string) => void,
-  ): Promise<boolean> => {
+  ): Promise<MutateResult | null> => {
     const id = (sequence.current += 1)
     setStatus('running')
     setErrorText('')
     try {
       const next = await host.mutate(options)
       if (id !== sequence.current) {
-        return false
+        return null
       }
-      applyMutate(next)
-      return true
+      return next
     } catch (error) {
       if (id !== sequence.current) {
-        return false
+        return null
       }
       const message = error instanceof Error ? error.message : String(error)
       if (onError) {
@@ -276,45 +347,89 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
         setStatus('error')
         setErrorText(message)
       }
+      return null
+    }
+  }, [host])
+
+  const runMutate = useCallback(async (
+    options: MutateOptions,
+    onError?: (message: string) => void,
+  ): Promise<boolean> => {
+    const next = await requestMutate(options, onError)
+    if (!next) {
       return false
     }
-  }, [host, applyMutate])
+    applyMutate(next, options.steps)
+    return true
+  }, [requestMutate, applyMutate])
 
   // 步骤变化 → 依赖级脏传播；自动模式则防抖运行「变脏的那些步骤」。
   useEffect(() => {
     if (!hydrated) return
+
+    // 1) 脏步骤：只保留仍存在的步骤 id，避免删除后残留。
     const dirty = computeDirtySteps(steps, lastStepsRef.current)
-    if (dirty.size > 0) {
-      const merged = new Set([...dirtyIdsRef.current, ...dirty])
-      dirtyIdsRef.current = merged
-      setDirtyIds(merged)
+    const live = new Set(steps.map((step) => step.id))
+    const mergedDirty = new Set<string>()
+    for (const id of dirtyIdsRef.current) {
+      if (live.has(id)) mergedDirty.add(id)
+    }
+    for (const id of dirty) mergedDirty.add(id)
+    if (!sameSet(mergedDirty, dirtyIdsRef.current)) {
+      dirtyIdsRef.current = mergedDirty
+      setDirtyIds(mergedDirty)
     }
 
-    if (!autoRun || (dirty.size === 0 && !needsResetRef.current)) {
+    // 2) 删除步骤产生的产出：登记为待驱逐，并**立即**发独立 evict 消息——
+    //    即使 autoRun 关闭、或旧 run 仍在途，Worker 缓存也不能再留幽灵产出。
+    const novel = novelEvictions(lastStepsRef.current, steps, evictIdsRef.current)
+    if (novel.length > 0) {
+      const mergedEvict = new Set([...evictIdsRef.current, ...novel])
+      evictIdsRef.current = mergedEvict
+      setEvictIds(mergedEvict)
+      void host.evict(novel).catch(() => undefined)
+    }
+
+    // 导入期间不新发 run：运行需求会在导入结束（importing 翻转）后重新评估并合并成一次重算。
+    if (importingRef.current) {
+      return
+    }
+
+    const hasEvictions = evictIdsRef.current.size > 0
+    if (!autoRun || (mergedDirty.size === 0 && !hasEvictions && !needsResetRef.current)) {
       return
     }
     const timer = setTimeout(() => {
-      void run(new Set([...dirtyIdsRef.current, ...dirty]), { reset: needsResetRef.current })
+      // 纯删除时 mergedDirty 可能为空，但 evictIds 非空，run 仍会刷新结果并驱逐缓存。
+      void run(new Set(mergedDirty), {
+        reset: needsResetRef.current,
+        evictIds: [...evictIdsRef.current],
+      })
     }, 180)
     return () => clearTimeout(timer)
-  }, [steps, hydrated, autoRun, run])
+  }, [steps, hydrated, autoRun, importing, run, host])
 
   const cancel = () => {
     sequence.current += 1
     host.terminate()
     needsResetRef.current = true
     lastStepsRef.current = []
+    evictIdsRef.current = new Set()
+    setEvictIds(evictIdsRef.current)
     setDirtyIds(new Set(steps.map((step) => step.id)))
     setResult(null)
     setStatus('idle')
   }
 
   const reload = () => {
+    if (importingRef.current) return
     sequence.current += 1
     host.terminate()
     needsResetRef.current = true
     lastStepsRef.current = []
     dirtyIdsRef.current = new Set()
+    evictIdsRef.current = new Set()
+    setEvictIds(evictIdsRef.current)
     timingsRef.current = {}
     setTimings({})
     setDirtyIds(new Set())
@@ -331,23 +446,48 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
 
   const importFiles = async (files: File[]) => {
     if (files.length === 0) return
+    importingRef.current = true
     setImporting(true)
     setImportError('')
+    const stepsAtStart = stepsRef.current
     try {
-      await runMutate({
+      const imported = await requestMutate({
         kind: 'import',
         source: 'dataset',
-        mappings,
-        steps: stepsRef.current,
+        mappings: mappingsRef.current,
+        steps: stepsAtStart,
         files,
-        resetStepsToStats: datasets.length === 0,
+        // 「首次导入重置为统计步骤」只在导入期间没有步骤编辑时才成立。
+        resetStepsToStats: datasetsRef.current.length === 0,
       }, setImportError)
+      if (!imported) return
+
+      if (stepsRef.current === stepsAtStart) {
+        applyMutate(imported, stepsAtStart)
+        return
+      }
+
+      // 步骤在导入期间被改动：只采纳数据集，用当前步骤在新 base 上重映射并重算。
+      setDatasets(imported.datasets)
+      setMappings(imported.mappings)
+      const snapshot = stepsRef.current
+      const recomputed = await requestMutate({
+        kind: 'hydrate',
+        source: imported.datasets.length > 0 ? 'dataset' : 'sample',
+        mappings: imported.mappings,
+        steps: snapshot,
+      })
+      if (recomputed) {
+        applyMutate(recomputed, snapshot)
+      }
     } finally {
+      importingRef.current = false
       setImporting(false)
     }
   }
 
   const updateMapping = (datasetId: string, nextX: string, nextYs: string[]) => {
+    if (importingRef.current) return
     const summary = datasets.find((candidate) => candidate.id === datasetId)
     if (!summary) return
     const next = { ...mappings, [datasetId]: sanitizeMapping(summary, nextX, nextYs) }
@@ -358,6 +498,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   }
 
   const removeDataset = (datasetId: string) => {
+    if (importingRef.current) return
     const remaining = datasets.filter((candidate) => candidate.id !== datasetId)
     void runMutate({
       kind: 'remove-dataset',
@@ -381,6 +522,8 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
         restored.recipe.datasets.map((entry) => [entry.datasetId, { xColumn: entry.xColumn, yColumns: entry.yColumns }]),
       )
       setSelectedId(restored.recipe.selectedId)
+      // 先落步骤，使 mutate 结果按「步骤未变」路径原子采纳。
+      setSteps(restored.recipe.steps)
       void runMutate({
         kind: 'hydrate',
         source: restored.recipe.source,
@@ -427,7 +570,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
 
   const values = result?.values ?? []
   const errors = result?.errors ?? {}
-  const selected = values.find((value) => value.id === selectedId) ?? values[0]
+  const selected = resolveValue(values, selectedId) ?? values[0]
 
   const hasDatasets = datasets.length > 0
   const selectedDatasetId = selected?.kind === 'series' && selected.id.startsWith('ds:')
@@ -477,8 +620,8 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   waveRef.current = wave
   statusRef.current = status
   const spectrum = useMemo(
-    () => (selected ? buildSpectrumTraces(values, selected) : []),
-    [values, selected],
+    () => (selected ? buildSpectrumTraces(values, selected, copy) : []),
+    [values, selected, copy],
   )
 
   // 视野联动：缩放后按可见范围向 Worker 要更密的降采样，restyle 就地刷新（不打断缩放）。
@@ -538,16 +681,15 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   // 只有分析栈里配了产出频谱的步骤时才显示频域区块，否则整块隐藏。
   const hasSpectrumStep = steps.some((step) => getOperator(step.op)?.output === 'spectrum')
 
-  const addStep = (op: OpKind) => {
+  const addStep = (op: OpKind, position: StepInsertPosition) => {
     const seriesValues = values.filter((value) => value.kind === 'series')
     const selectedSeries = selected && selected.kind === 'series' ? selected.id : undefined
     const inputId = selectedSeries ?? seriesValues[seriesValues.length - 1]?.id ?? 'signal'
-    const outputId = nextStepId(steps, op)
-    setSteps((previous) => [
-      ...previous,
-      { id: `step-${outputId}`, op, inputId, params: defaultParams(op), outputId },
-    ])
-    setSelectedId(outputId)
+    const next = insertAnalysisStep(stepsRef.current, op, position, inputId)
+    if (!next) return
+    stepsRef.current = next.steps
+    setSteps(next.steps)
+    setSelectedId(next.inserted.outputId)
   }
 
   const updateStep = (next: AnalysisStep) => {
@@ -555,21 +697,61 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   }
 
   const removeStep = (id: string) => {
-    setSteps((previous) => {
-      const target = previous.find((step) => step.id === id)
-      if (!target) {
+    const target = stepsRef.current.find((step) => step.id === id)
+    if (!target) {
+      return
+    }
+    const removedOutput = target.outputId
+
+    // 选择状态：仅当被删的正是当前选中项时改选，避免保存一个已不存在的幽灵 id。
+    const remainingIds = (result?.values ?? [])
+      .filter((value) => value.id !== removedOutput)
+      .map((value) => value.id)
+    const fallbackId = stepsRef.current.find((step) => step.id !== id)?.outputId ?? target.inputId ?? 'signal'
+    setSelectedId((current) => selectionAfterRemoval(current, removedOutput, remainingIds, fallbackId))
+
+    // 立即从结果里剔除被删步骤的输出（值 / 错误 / 计时），避免幽灵值留在界面；
+    // 待驱逐 id 由 effect 依据与 lastSteps 的差异登记，交给 Worker 清缓存。
+    setResult((previous) => {
+      if (!previous) {
         return previous
       }
+      const values = previous.values.filter((value) => value.id !== removedOutput)
+      if (values.length === previous.values.length) {
+        return previous
+      }
+      const errors = { ...previous.errors }
+      delete errors[id]
+      const timings = { ...previous.timings }
+      delete timings[id]
+      return { ...previous, values, errors, timings }
+    })
+
+    setSteps((previous) => {
+      const removing = previous.find((step) => step.id === id)
+      if (!removing) {
+        return previous
+      }
+      // 下游输入重映射：inputId 与 secondInputId 都指向被删步骤产出时，改接到其输入。
       return previous
         .filter((step) => step.id !== id)
-        .map((step) => (step.inputId === target.outputId ? { ...step, inputId: target.inputId } : step))
+        .map((step) => {
+          const inputId = vectorParentId(step.inputId) === removing.outputId ? removing.inputId : step.inputId
+          const secondInputId = step.secondInputId && vectorParentId(step.secondInputId) === removing.outputId ? removing.inputId : step.secondInputId
+          return inputId === step.inputId && secondInputId === step.secondInputId
+            ? step
+            : { ...step, inputId, secondInputId }
+        })
     })
   }
 
   const runToStep = (index: number) => {
     const upto = steps.slice(0, index + 1)
     const dirtyUpTo = upto.filter((step) => dirtyIdsRef.current.has(step.id)).map((step) => step.id)
-    void run(dirtyUpTo.length > 0 ? dirtyUpTo : [steps[index].id], { throughIndex: index })
+    void run(dirtyUpTo.length > 0 ? dirtyUpTo : [steps[index].id], {
+      throughIndex: index,
+      evictIds: [...evictIdsRef.current],
+    })
   }
 
   const stepStatus = (index: number): StepStatus => {
@@ -589,7 +771,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
     return 'clean'
   }
 
-  const isDirty = dirtyIds.size > 0 || result === null
+  const isDirty = dirtyIds.size > 0 || evictIds.size > 0 || result === null
   const canExport = Boolean(selected && status === 'ready' && !isDirty)
   const statusText = status === 'running'
     ? copy.running
@@ -607,120 +789,88 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
         ? 'bg-base-content/30'
         : 'bg-success'
 
+  const fileMenu = (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" variant="ghost" size="sm" className="app-menubar-trigger h-7 gap-1 px-1.5 text-xs sm:px-2">
+            {copy.fileMenu}
+            <ChevronDown size={12} className="hidden sm:block" aria-hidden="true" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          className="min-w-44"
+          onCloseAutoFocus={(event) => {
+            if (importDialogOpen) event.preventDefault()
+          }}
+        >
+          <DropdownMenuItem disabled={importing || !hydrated} onSelect={() => setImportDialogOpen(true)}>
+            <UploadCloud size={15} aria-hidden="true" />
+            {copy.importData}
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={!canExport} onSelect={() => void exportSelected()}>
+            <Download size={15} aria-hidden="true" />
+            {copy.exportShort}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <ImportDialog
+        hideTrigger
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        copy={copy}
+        importing={importing}
+        restoring={!hydrated}
+        onImport={(files) => void importFiles(files)}
+        onLoadSample={reload}
+      />
+    </>
+  )
+
   const toolbar = (
-    <div className="flex items-center gap-2.5">
-      {/* 文件区 */}
-      <div className="flex items-center gap-1">
-        <ImportDialog
-          compact
-          copy={copy}
-          importing={importing}
-          restoring={!hydrated}
-          onImport={(files) => void importFiles(files)}
-          onLoadSample={reload}
-        />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="inline-flex shrink-0">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                disabled={!canExport}
-                onClick={() => void exportSelected()}
-                aria-label={copy.exportCsv}
-                className="size-7 shrink-0 rounded-[calc(var(--radius-field)-2px)] text-base-content/60 hover:bg-base-content/10 hover:text-base-content"
-              >
-                <Download size={15} strokeWidth={2.2} />
-              </Button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>{copy.exportCsv}</TooltipContent>
-        </Tooltip>
-      </div>
-
-      <span className="h-5 w-px shrink-0 bg-base-300" aria-hidden="true" />
-
-      {/* 运行区 */}
-      <div className="flex items-center gap-1">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="inline-flex shrink-0">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-pressed={autoRun}
-                onClick={() => setAutoRun((value) => !value)}
-                aria-label={copy.auto}
-                className={`size-7 shrink-0 rounded-[calc(var(--radius-field)-2px)] ${
-                  autoRun
-                    ? 'bg-primary/10 text-primary hover:bg-primary/15'
-                    : 'text-base-content/50 hover:bg-base-content/10 hover:text-base-content'
-                }`}
-              >
-                <Zap size={15} strokeWidth={2.2} />
-              </Button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>{copy.auto}</TooltipContent>
-        </Tooltip>
-
+    <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:min-w-max sm:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-3" role="group" aria-label={copy.runActions}>
+        <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap text-xs font-medium text-base-content/75">
+          <Switch checked={autoRun} onCheckedChange={setAutoRun} aria-label={copy.auto} className="h-5" />
+          <span className="hidden sm:inline">{copy.auto}</span>
+        </label>
         {status === 'running' ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex shrink-0">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={cancel}
-                  aria-label={copy.cancel}
-                  className="size-7 shrink-0 rounded-[calc(var(--radius-field)-2px)] text-base-content/60 hover:bg-destructive/10 hover:text-destructive"
-                >
-                  <X size={15} strokeWidth={2.2} />
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>{copy.cancel}</TooltipContent>
-          </Tooltip>
+          <Button type="button" variant="outline" size="sm" className="h-7 gap-1 px-1 text-xs has-[>svg]:px-1 sm:px-2 sm:has-[>svg]:px-2" onClick={cancel} aria-label={copy.cancel}>
+            <X size={15} strokeWidth={2.1} />
+            <span className="hidden sm:inline">{copy.cancel}</span>
+          </Button>
         ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex shrink-0">
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  disabled={!isDirty}
-                  onClick={() => void run(dirtyIdsRef.current, {})}
-                  aria-label={copy.runAll}
-                  className="size-7 shrink-0 rounded-[calc(var(--radius-field)-2px)] shadow-none"
-                >
-                  <Play size={14} strokeWidth={2.5} />
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>{copy.runAll}</TooltipContent>
-          </Tooltip>
+          <Button
+            type="button"
+            size="sm"
+            className="h-7 gap-1 px-1 text-xs has-[>svg]:px-1 sm:px-2 sm:has-[>svg]:px-2"
+            disabled={!isDirty}
+            onClick={() => void run(dirtyIdsRef.current, { evictIds: [...evictIdsRef.current] })}
+            aria-label={copy.runAll}
+          >
+            <Play size={14} strokeWidth={2.3} />
+            <span className="hidden sm:inline">{copy.runAll}</span>
+          </Button>
         )}
       </div>
 
-      <span className="h-5 w-px shrink-0 bg-base-300" aria-hidden="true" />
-
-      {/* 状态区 */}
-      <span className="inline-flex shrink-0 items-center gap-1.5 px-0.5 text-[11px] font-medium text-base-content/60">
-        <span className={`size-1.5 shrink-0 rounded-full ${statusDot}`} />
-        {statusText ? <span className="hidden max-w-40 truncate sm:inline">{statusText}</span> : null}
+      <span role="status" aria-label={statusText || copy.ready} className={`size-2 shrink-0 rounded-full sm:hidden ${statusDot}`} />
+      <div role="status" className="hidden shrink-0 items-center gap-2 rounded-md border border-base-300 bg-base-100 px-2.5 py-1.5 text-xs text-base-content/70 sm:flex">
+        <span className={`size-2 shrink-0 rounded-full ${statusDot}`} aria-hidden="true" />
+        <span className="max-w-40 truncate font-medium">{statusText || copy.ready}</span>
         {result ? (
-          <span className="hidden shrink-0 font-mono text-[10px] text-base-content/40 md:inline">{`${result.elapsedMs.toFixed(0)} ms`}</span>
+          <span className="ml-1 border-l border-base-300 pl-2 text-base-content/55">
+            {copy.lastRun} <span className="font-mono tabular-nums">{result.elapsedMs.toFixed(0)} ms</span>
+          </span>
         ) : null}
-      </span>
+      </div>
     </div>
   )
 
   return (
     <div className="grid h-full grid-rows-[var(--navbar-height)_minmax(0,1fr)] bg-base-200">
-      <AppNavbar section="science" showNav={false} toolbar={toolbar} />
+      <AppNavbar section="science" showNav={false} menu={fileMenu} toolbar={toolbar} />
 
       <div className="grid min-h-0 min-w-0 grid-cols-1 overflow-y-auto lg:grid-cols-[260px_minmax(0,1fr)_330px] lg:overflow-hidden">
         <WorkspacePanel
@@ -732,6 +882,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
           mappings={mappings}
           importError={importError}
           persistenceError={persistenceError}
+          importing={importing}
           onMappingChange={updateMapping}
           onRemoveDataset={removeDataset}
         />
@@ -808,12 +959,16 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
                 traces={spectrum}
                 exportTitle="spectrum"
                 xTitle={`frequency (${spectrumValue?.kind === 'spectrum' ? spectrumValue.frequencyUnit ?? 'Hz' : 'Hz'})`}
-                yTitle="magnitude"
+                yTitle={copy.plot.magnitude}
+                y2Title={spectrumValue?.kind === 'spectrum' && spectrumValue.phase ? copy.plot.phase : undefined}
                 height={240}
               />
             ) : (
               <p className="p-6 text-center text-xs text-base-content/40">{copy.empty}</p>
             )}
+            {spectrumValue?.kind === 'spectrum' && !spectrumValue.phase ? (
+              <p className="text-[11px] text-base-content/55">{copy.plot.phaseUnavailable}</p>
+            ) : null}
           </section>
         ) : null}
       </main>
@@ -833,7 +988,6 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
           onRemove={removeStep}
           onRunStep={runToStep}
         />
-        <ResultsPanel value={selected} copy={copy} />
       </div>
       </div>
     </div>

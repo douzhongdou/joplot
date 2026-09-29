@@ -18,6 +18,7 @@ export interface SpectrumSettings {
 export interface SpectrumComputation {
   frequency: Float64Array
   magnitude: Float64Array
+  phase: Float64Array | null
   fftSize: number
   peaks: SpectrumPeak[]
 }
@@ -38,6 +39,7 @@ export function computeSpectrumFor(
   return {
     frequency: result.freq,
     magnitude: result.magnitude,
+    phase: result.phase,
     fftSize: result.fftSize,
     peaks: findSpectrumPeaks(result.freq, result.magnitude, 6),
   }

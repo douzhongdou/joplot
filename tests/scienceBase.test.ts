@@ -1,10 +1,22 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { buildBaseValues, defaultMapping, remapStepInputs, sanitizeMapping } from '../src/science/lib/base.ts'
-import type { DatasetSummary } from '../src/science/types.ts'
+import { buildBaseValues, defaultMapping, inferBaseIds, reconcileSteps, remapStepInputs, sanitizeMapping } from '../src/science/lib/base.ts'
+import { createDense } from '../src/science/lib/dense.ts'
+import type { DatasetSummary, ScienceValue } from '../src/science/types.ts'
 import type { AnalysisStep } from '../src/science/lib/pipeline.ts'
 import type { SuperDataset, SuperNumericColumn } from '../src/superplot/types.ts'
+
+function series(id: string): ScienceValue {
+  return {
+    id,
+    name: id,
+    kind: 'series',
+    x: createDense(Float64Array.from([0, 1])),
+    y: createDense(Float64Array.from([0, 1])),
+    provenance: 'test',
+  }
+}
 
 function numericColumn(name: string, values: number[]): SuperNumericColumn {
   const data = Float64Array.from(values)
@@ -100,4 +112,29 @@ test('defaultMapping prefers the inferred time column', () => {
   assert.deepEqual(defaultMapping(withTime), { xColumn: 't', yColumns: ['v'] })
   const withoutTime = summary({ numericColumns: ['a', 'b'], timeColumn: null })
   assert.deepEqual(defaultMapping(withoutTime), { xColumn: '', yColumns: ['a'] })
+})
+
+test('inferBaseIds drops values produced by steps', () => {
+  const values = [series('ds:a:v'), series('smooth1')]
+  const produced: AnalysisStep[] = [
+    { id: 's1', op: 'smooth', inputId: 'ds:a:v', params: {}, outputId: 'smooth1' },
+  ]
+  assert.deepEqual(inferBaseIds(values, produced), ['ds:a:v'])
+})
+
+test('reconcileSteps remaps stale inputs onto the new base and keeps chains', () => {
+  // 新数据集的 base 是 ds:b:v；旧步骤还引用示例信号 signal，且下游链式引用 smooth1。
+  const values = [series('ds:b:v'), series('smooth1')]
+  const produced: AnalysisStep[] = [
+    { id: 's1', op: 'smooth', inputId: 'ds:b:v', params: {}, outputId: 'smooth1' },
+  ]
+  const current: AnalysisStep[] = [
+    { id: 's1', op: 'smooth', inputId: 'signal', params: {}, outputId: 'smooth1' },
+    { id: 's2', op: 'fit', inputId: 'smooth1', params: {}, outputId: 'fit1' },
+  ]
+
+  const remapped = reconcileSteps(values, produced, current)
+
+  assert.equal(remapped[0].inputId, 'ds:b:v', 'stale base reference moves to the new base')
+  assert.equal(remapped[1].inputId, 'smooth1', 'step-to-step chaining is preserved')
 })

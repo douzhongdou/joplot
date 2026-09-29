@@ -130,3 +130,52 @@ test('lorentzian model recovers a peak', () => {
   assert.ok(Math.abs(parameter(outcome, 'w') - 0.5) < 1e-2)
   assert.ok(outcome.rSquared > 0.999)
 })
+
+test('fit reports iterations and a converged stop reason for a well-conditioned fit', () => {
+  const count = 60
+  const x = new Float64Array(count)
+  const y = new Float64Array(count)
+  for (let i = 0; i < count; i += 1) {
+    x[i] = i / 10
+    y[i] = 2.5 * x[i] + 0.7
+  }
+
+  const outcome = fitModel({ x, y, expr: 'a*x + b', initial: { a: 1, b: 0 } })
+
+  assert.equal(outcome.stopReason, 'converged')
+  assert.equal(outcome.converged, true)
+  assert.ok(outcome.iterations >= 1)
+})
+
+test('fit counts zero iterations when the iteration budget is zero', () => {
+  const x = Float64Array.from([0, 1, 2, 3, 4])
+  const y = Float64Array.from([1, 3, 5, 7, 9])
+
+  const outcome = fitModel({ x, y, expr: 'a*x + b', maxIterations: 0 })
+
+  assert.equal(outcome.iterations, 0)
+  assert.equal(outcome.stopReason, 'maxIterations')
+  assert.equal(outcome.converged, false)
+})
+
+test('fit reports maxIterations when the budget is exhausted mid-fit', () => {
+  const count = 240
+  const x = new Float64Array(count)
+  const y = new Float64Array(count)
+  for (let i = 0; i < count; i += 1) {
+    x[i] = -2 + (4 * i) / (count - 1)
+    y[i] = 2.2 * Math.exp(-((x[i] - 1.3) ** 2) / 0.32) + 0.3
+  }
+
+  const outcome = fitModel({
+    x,
+    y,
+    expr: 'a*exp(-((x-mu)^2)/(2*sigma^2)) + c',
+    initial: { a: 1, c: 0, mu: 0, sigma: 1 },
+    maxIterations: 1,
+  })
+
+  assert.equal(outcome.iterations, 1)
+  assert.equal(outcome.stopReason, 'maxIterations')
+  assert.equal(outcome.converged, false)
+})

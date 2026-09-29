@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Script from 'next/script'
 import { notFound } from 'next/navigation'
 import type { ReactNode } from 'react'
+import { FocusModality } from '../../src/components/FocusModality'
 import { getLanguageMetadata, getSoftwareApplicationJsonLd } from '../../src/lib/siteMetadata'
 import {
   getHtmlLang,
@@ -52,6 +53,7 @@ export default async function LangLayout({
   return (
     <html lang={getHtmlLang(language)} suppressHydrationWarning>
       <body>
+        <FocusModality />
         {UMAMI_WEBSITE_ID && (
           <Script
             defer
