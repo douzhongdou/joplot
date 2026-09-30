@@ -208,6 +208,7 @@ export const zhCN = {
     function: '函数',
     superplot: 'super-plot',
     science: '科学处理',
+    imagej: '图像',
     more: '更多',
   },
   functionStudio: {

@@ -126,6 +126,7 @@ export {
   getFunctionStudioPath,
   getSuperPlotPath,
   getSciencePath,
+  getImagejPath,
   getLanguagePath,
   getRouteLanguage,
   getHtmlLang,
