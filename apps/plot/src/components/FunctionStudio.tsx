@@ -8,7 +8,7 @@ import { Button } from '@joplot/ui/button'
 import { PlotCanvas, type PlotCanvasApi } from './PlotCanvas'
 import { PlotToolbar } from './PlotToolbar'
 import { DATASET_STORAGE_KEY } from '../hooks/useCsvData'
-import { getLanguagePath, useI18n } from '../i18n'
+import { HOME_PATH, useI18n } from '../i18n'
 import { appendDatasetToSerialized, writePendingChartDatasetIds } from '../lib/datasetPersistence'
 import { ExpressionError, parseExpression, type ParsedExpression } from '../lib/expression'
 import { FUNCTION_EXAMPLES, type FunctionExample } from '../lib/functionExamples'
@@ -106,7 +106,7 @@ function readStoredState() {
 }
 
 export function FunctionStudio() {
-  const { t, language } = useI18n()
+  const { t } = useI18n()
   const plotRef = useRef<PlotCanvasApi>(null)
   const [hydrated, setHydrated] = useState(false)
   const [persistenceFailed, setPersistenceFailed] = useState(false)
@@ -416,7 +416,7 @@ export function FunctionStudio() {
       writePendingChartDatasetIds(window.localStorage, sentDatasetIds)
       setSendFeedback({ kind: 'success', count: sampledCurves.length })
       window.setTimeout(() => {
-        window.location.assign(getLanguagePath(language))
+        window.location.assign(HOME_PATH)
       }, WORKBENCH_REDIRECT_MS)
     } catch {
       setSendFeedback({ kind: 'failed' })

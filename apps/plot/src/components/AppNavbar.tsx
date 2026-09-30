@@ -19,12 +19,12 @@ import {
 } from '@joplot/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import {
+  FUNCTION_STUDIO_PATH,
+  HOME_PATH,
+  IMAGEJ_PATH,
+  SCIENCE_PATH,
+  SUPER_PLOT_PATH,
   SUPPORTED_LANGUAGES,
-  getFunctionStudioPath,
-  getImagejPath,
-  getLanguagePath,
-  getSuperPlotPath,
-  getSciencePath,
   useI18n,
   type SupportedLanguage,
 } from '../i18n'
@@ -134,7 +134,7 @@ export function AppNavbar({
         {showNav ? (
           <nav className="ml-1 flex min-w-0 items-center gap-0.5 overflow-x-auto sm:ml-3" aria-label={t('nav.sectionsLabel')}>
           <Link
-            href={getLanguagePath(language)}
+            href={HOME_PATH}
             aria-current={section === 'workbench' ? 'page' : undefined}
             className={sectionLinkClass(section === 'workbench')}
           >
@@ -142,7 +142,7 @@ export function AppNavbar({
             <span>{t('nav.workbench')}</span>
           </Link>
           <Link
-            href={getFunctionStudioPath(language)}
+            href={FUNCTION_STUDIO_PATH}
             aria-current={section === 'function' ? 'page' : undefined}
             className={sectionLinkClass(section === 'function')}
           >
@@ -150,7 +150,7 @@ export function AppNavbar({
             <span>{t('nav.function')}</span>
           </Link>
           <Link
-            href={getSuperPlotPath(language)}
+            href={SUPER_PLOT_PATH}
             aria-current={section === 'superplot' ? 'page' : undefined}
             className={sectionLinkClass(section === 'superplot')}
           >
@@ -158,7 +158,7 @@ export function AppNavbar({
             <span>{t('nav.superplot')}</span>
           </Link>
           <Link
-            href={getSciencePath(language)}
+            href={SCIENCE_PATH}
             aria-current={section === 'science' ? 'page' : undefined}
             className={sectionLinkClass(section === 'science')}
           >
@@ -166,7 +166,7 @@ export function AppNavbar({
             <span>{t('nav.science')}</span>
           </Link>
           <Link
-            href={getImagejPath(language)}
+            href={IMAGEJ_PATH}
             aria-current={section === 'imagej' ? 'page' : undefined}
             className={sectionLinkClass(section === 'imagej')}
           >

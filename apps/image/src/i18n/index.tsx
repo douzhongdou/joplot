@@ -16,4 +16,4 @@ const dictionaries: Record<SupportedLanguage, TranslationDictionary> = {
 export const { I18nProvider, useI18n } = createI18n({ dictionaries })
 
 export * from './config'
-export type { RouteLanguage, SupportedLanguage } from '@joplot/i18n'
+export type { SupportedLanguage } from '@joplot/i18n'

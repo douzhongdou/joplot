@@ -30,7 +30,7 @@ import {
   toRgba,
   type GrayImage,
 } from '../src/imagej/lib/processor.ts'
-import { getImagejPath } from '../src/i18n/config.ts'
+import { IMAGEJ_PATH } from '../src/i18n/config.ts'
 
 /** 按行优先数值创建测试图。 */
 function image(width: number, height: number, values: number[]): GrayImage {
@@ -465,8 +465,6 @@ test('中英日文案结构完全一致', () => {
   assert.equal(createImagejCopy('fr-FR' as unknown as Parameters<typeof createImagejCopy>[0]).title, en.title)
 })
 
-test('图像工作台路由挂在语言前缀下', () => {
-  assert.equal(getImagejPath('zh-CN'), '/zh/imagej')
-  assert.equal(getImagejPath('en'), '/en/imagej')
-  assert.equal(getImagejPath('ja-JP'), '/ja/imagej')
+test('图像工作台使用不含语言的静态路径', () => {
+  assert.equal(IMAGEJ_PATH, '/imagej')
 })

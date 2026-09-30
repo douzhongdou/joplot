@@ -488,9 +488,9 @@ const JA: ScienceCopy = {
   },
 }
 
-export function resolveScienceLanguage(routeLanguage: string | undefined): ScienceLanguage {
-  if (routeLanguage === 'zh') return 'zh-CN'
-  if (routeLanguage === 'ja') return 'ja-JP'
+export function resolveScienceLanguage(language: string | undefined): ScienceLanguage {
+  if (language?.startsWith('zh')) return 'zh-CN'
+  if (language?.startsWith('ja')) return 'ja-JP'
   return 'en'
 }
 

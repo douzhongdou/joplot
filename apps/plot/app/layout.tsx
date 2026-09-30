@@ -1,57 +1,33 @@
 import type { Metadata } from 'next'
 import Script from 'next/script'
-import { notFound } from 'next/navigation'
 import type { ReactNode } from 'react'
-import { FocusModality } from '../../src/components/FocusModality'
-import { getLanguageMetadata, getSoftwareApplicationJsonLd } from '../../src/lib/siteMetadata'
-import {
-  getHtmlLang,
-  isRouteLanguage,
-  resolveSupportedLanguageFromRouteLanguage,
-} from '../../src/i18n/config'
-import '../globals.css'
+import { ErrorBoundary } from '../src/components/ErrorBoundary'
+import { FocusModality } from '../src/components/FocusModality'
+import { I18nProvider } from '../src/i18n'
+import { LANGUAGE_HTML_LANG } from '../src/i18n/config'
+import { getRequestLanguage } from '../src/lib/requestLanguage'
+import { getLanguageMetadata, getSoftwareApplicationJsonLd } from '../src/lib/siteMetadata'
+import './globals.css'
 
 const UMAMI_SCRIPT_URL = process.env.NEXT_PUBLIC_UMAMI_SCRIPT_URL || 'https://analytics.hardgit.com/script.js'
 const UMAMI_WEBSITE_ID = process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID?.trim()
 const UMAMI_DOMAINS = process.env.NEXT_PUBLIC_UMAMI_DOMAINS?.trim()
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ lang: string }>
-}): Promise<Metadata> {
-  const { lang } = await params
-  const language = resolveSupportedLanguageFromRouteLanguage(lang)
-
-  if (!language) {
-    return {}
-  }
-
+export async function generateMetadata(): Promise<Metadata> {
+  const language = await getRequestLanguage()
   return getLanguageMetadata(language)
 }
 
-export default async function LangLayout({
+export default async function RootLayout({
   children,
-  params,
 }: {
   children: ReactNode
-  params: Promise<{ lang: string }>
 }) {
-  const { lang } = await params
-
-  if (!isRouteLanguage(lang)) {
-    notFound()
-  }
-
-  const language = resolveSupportedLanguageFromRouteLanguage(lang)
+  const language = await getRequestLanguage()
   const softwareApplicationJsonLd = getSoftwareApplicationJsonLd()
 
-  if (!language) {
-    notFound()
-  }
-
   return (
-    <html lang={getHtmlLang(language)} suppressHydrationWarning>
+    <html lang={LANGUAGE_HTML_LANG[language]} suppressHydrationWarning>
       <body>
         <FocusModality />
         {UMAMI_WEBSITE_ID && (
@@ -67,7 +43,9 @@ export default async function LangLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationJsonLd) }}
         />
-        {children}
+        <I18nProvider initialLanguage={language}>
+          <ErrorBoundary>{children}</ErrorBoundary>
+        </I18nProvider>
       </body>
     </html>
   )

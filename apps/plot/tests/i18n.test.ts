@@ -2,8 +2,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  LANGUAGE_COOKIE_KEY,
   normalizeLanguage,
-  resolveInitialLanguage,
+  parseLanguageCookie,
+  resolveLanguage,
+  serializeLanguageCookie,
 } from '../src/i18n/config.ts'
 
 test('normalizeLanguage accepts supported language ids', () => {
@@ -26,17 +29,34 @@ test('normalizeLanguage returns null for unsupported languages', () => {
   assert.equal(normalizeLanguage(undefined), null)
 })
 
-test('resolveInitialLanguage prefers stored language over browser language', () => {
-  assert.equal(resolveInitialLanguage('ja-JP', 'zh-CN'), 'ja-JP')
-  assert.equal(resolveInitialLanguage('en', 'ja-JP'), 'en')
+test('parseLanguageCookie reads the language cookie out of a cookie header', () => {
+  assert.equal(parseLanguageCookie(`${LANGUAGE_COOKIE_KEY}=ja-JP`), 'ja-JP')
+  assert.equal(parseLanguageCookie(`theme=dark; ${LANGUAGE_COOKIE_KEY}=zh-CN; foo=1`), 'zh-CN')
+  assert.equal(parseLanguageCookie('theme=dark'), null)
+  assert.equal(parseLanguageCookie(''), null)
+  assert.equal(parseLanguageCookie(undefined), null)
+  assert.equal(parseLanguageCookie(`${LANGUAGE_COOKIE_KEY}=fr-FR`), null)
 })
 
-test('resolveInitialLanguage falls back to browser language when stored value is invalid', () => {
-  assert.equal(resolveInitialLanguage('fr-FR', 'ja-JP'), 'ja-JP')
-  assert.equal(resolveInitialLanguage(null, 'zh-CN'), 'zh-CN')
+test('serializeLanguageCookie produces a readable Set-Cookie value', () => {
+  const cookie = serializeLanguageCookie('zh-CN')
+  assert.match(cookie, new RegExp(`^${LANGUAGE_COOKIE_KEY}=`))
+  assert.match(cookie, /Path=\//)
+  assert.equal(parseLanguageCookie(cookie), 'zh-CN')
 })
 
-test('resolveInitialLanguage falls back to english when nothing matches', () => {
-  assert.equal(resolveInitialLanguage(null, 'fr-FR'), 'en')
-  assert.equal(resolveInitialLanguage(undefined, undefined), 'en')
+test('resolveLanguage prefers cookie over browser language', () => {
+  assert.equal(resolveLanguage({ cookie: `${LANGUAGE_COOKIE_KEY}=ja-JP`, browser: 'zh-CN' }), 'ja-JP')
+  assert.equal(resolveLanguage({ cookie: `${LANGUAGE_COOKIE_KEY}=en`, browser: 'ja-JP' }), 'en')
+})
+
+test('resolveLanguage falls back to the browser language when the cookie is missing or invalid', () => {
+  assert.equal(resolveLanguage({ browser: 'zh-CN' }), 'zh-CN')
+  assert.equal(resolveLanguage({ cookie: `${LANGUAGE_COOKIE_KEY}=fr-FR`, browser: 'ja-JP' }), 'ja-JP')
+})
+
+test('resolveLanguage falls back to english when nothing matches', () => {
+  assert.equal(resolveLanguage({ browser: 'fr-FR' }), 'en')
+  assert.equal(resolveLanguage(), 'en')
+  assert.equal(resolveLanguage({ fallback: 'ja-JP' }), 'ja-JP')
 })

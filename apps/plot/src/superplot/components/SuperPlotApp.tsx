@@ -5,15 +5,23 @@ import { Activity, Database, FileUp, Loader2, UploadCloud, X } from 'lucide-reac
 import type { SuperDataset } from '../types.ts'
 import { readSuperDataset, toSuperDatasetId, type ParseProgress } from '../lib/parse.ts'
 import { createSuperPlotCopy, type SuperPlotLanguage } from '../lib/i18n.ts'
+import { useI18n } from '../../i18n'
+import type { SupportedLanguage } from '@joplot/i18n/config'
 import { formatBytes, formatCount, formatFrequency } from '../lib/format.ts'
 import { SuperPlotWorkspace } from './SuperPlotWorkspace.tsx'
 
 interface Props {
   language: SuperPlotLanguage
-  routeLanguage: string
 }
 
-export function SuperPlotApp({ language, routeLanguage }: Props) {
+const SWITCH_LANGUAGES: Array<{ value: SupportedLanguage; label: string }> = [
+  { value: 'zh-CN', label: 'zh' },
+  { value: 'en', label: 'en' },
+  { value: 'ja-JP', label: 'ja' },
+]
+
+export function SuperPlotApp({ language }: Props) {
+  const { language: activeLanguage, setLanguage } = useI18n()
   const copy = useMemo(() => createSuperPlotCopy(language), [language])
   const locale = language === 'zh-CN' ? 'zh-CN' : language === 'ja-JP' ? 'ja-JP' : 'en'
   const [datasets, setDatasets] = useState<SuperDataset[]>([])
@@ -177,22 +185,23 @@ export function SuperPlotApp({ language, routeLanguage }: Props) {
 
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <a
-            href={`/${routeLanguage}`}
+            href="/"
             className="hidden h-8 items-center rounded-[var(--radius-field)] px-2 text-xs font-medium text-base-content/60 transition hover:bg-base-200 hover:text-base-content sm:inline-flex"
           >
             {copy.back}
           </a>
-          {(['zh', 'en', 'ja'] as const).map((lang) => (
-            <a
-              key={lang}
-              href={`/${lang}/super-plot`}
-              aria-current={lang === routeLanguage ? 'true' : undefined}
+          {SWITCH_LANGUAGES.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setLanguage(option.value)}
+              aria-current={option.value === activeLanguage ? 'true' : undefined}
               className={`inline-flex h-7 min-w-7 items-center justify-center rounded-[var(--radius-field)] px-1.5 text-[11px] font-semibold uppercase transition ${
-                lang === routeLanguage ? 'bg-primary text-primary-content' : 'text-base-content/50 hover:bg-base-200'
+                option.value === activeLanguage ? 'bg-primary text-primary-content' : 'text-base-content/50 hover:bg-base-200'
               }`}
             >
-              {lang}
-            </a>
+              {option.label}
+            </button>
           ))}
         </div>
       </header>

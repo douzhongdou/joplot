@@ -2,44 +2,34 @@ import type { Metadata } from 'next'
 import type { SupportedLanguage } from '../i18n/config'
 
 interface LanguageMetadataContent {
-  path: '/en' | '/zh' | '/ja'
   locale: string
   title: string
   description: string
 }
 
 const siteUrl = 'https://joplot.com'
-const canonicalLanguages = {
-  en: `${siteUrl}/en`,
-  'zh-CN': `${siteUrl}/zh`,
-  ja: `${siteUrl}/ja`,
-  'x-default': `${siteUrl}/en`,
-}
 
 const metadataByLanguage: Record<SupportedLanguage, LanguageMetadataContent> = {
   en: {
-    path: '/en',
     locale: 'en_US',
     title: 'joplot | Free online CSV plot tool',
     description: 'Plot CSV files online with joplot. Import CSV or Excel files, build charts quickly, filter data, and compare datasets in one workspace.',
   },
   'zh-CN': {
-    path: '/zh',
     locale: 'zh_CN',
     title: 'joplot | CSV 图表与数据分析工作台',
     description: '拖拽上传多个 CSV，快速生成图表、筛选数据并在同一画布中比较多份数据集。',
   },
   'ja-JP': {
-    path: '/ja',
     locale: 'ja_JP',
     title: 'joplot | CSV グラフとデータ分析ワークスペース',
     description: '複数の CSV を取り込み、グラフ作成、データの絞り込み、比較を 1 つのキャンバスで行えます。',
   },
 }
 
+// 语言不再进入 URL：站点只有一个 canonical，标题/描述按当前语言本地化。
 export function getLanguageMetadata(language: SupportedLanguage): Metadata {
   const content = metadataByLanguage[language]
-  const url = `${siteUrl}${content.path}`
 
   return {
     title: content.title,
@@ -54,14 +44,13 @@ export function getLanguageMetadata(language: SupportedLanguage): Metadata {
     applicationName: 'joplot',
     authors: [{ name: 'joplot' }],
     alternates: {
-      canonical: url,
-      languages: canonicalLanguages,
+      canonical: `${siteUrl}/`,
     },
     openGraph: {
       type: 'website',
       locale: content.locale,
       siteName: 'joplot',
-      url,
+      url: `${siteUrl}/`,
       title: content.title,
       description: content.description,
       images: [
@@ -121,17 +110,10 @@ const functionStudioContentByLanguage: Record<SupportedLanguage, { title: string
   },
 }
 
-const functionStudioCanonicalLanguages = {
-  en: `${siteUrl}/en/function`,
-  'zh-CN': `${siteUrl}/zh/function`,
-  ja: `${siteUrl}/ja/function`,
-  'x-default': `${siteUrl}/en/function`,
-}
-
 export function getFunctionStudioMetadata(language: SupportedLanguage): Metadata {
   const base = getLanguageMetadata(language)
   const content = functionStudioContentByLanguage[language]
-  const url = `${siteUrl}${metadataByLanguage[language].path}/function`
+  const url = `${siteUrl}/function`
 
   return {
     ...base,
@@ -146,7 +128,6 @@ export function getFunctionStudioMetadata(language: SupportedLanguage): Metadata
     ],
     alternates: {
       canonical: url,
-      languages: functionStudioCanonicalLanguages,
     },
     openGraph: {
       ...base.openGraph,
@@ -168,7 +149,7 @@ export function getSoftwareApplicationJsonLd() {
     '@type': 'WebApplication',
     name: 'joplot',
     alternateName: 'joplot CSV plot tool',
-    url: canonicalLanguages.en,
+    url: `${siteUrl}/`,
     applicationCategory: ['DataVisualizationApplication', 'BusinessApplication'],
     operatingSystem: 'Web',
     description: 'joplot is a free online CSV plot tool for turning CSV and Excel files into clean charts in the browser.',

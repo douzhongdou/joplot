@@ -4,8 +4,8 @@ import Link from 'next/link'
 import { Image as ImageIcon } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@joplot/ui/select'
 import {
+  IMAGEJ_PATH,
   SUPPORTED_LANGUAGES,
-  getImagejPath,
   useI18n,
   type SupportedLanguage,
 } from '../i18n'
@@ -23,7 +23,7 @@ export function AppNavbar({ section = 'imagej' }: { section?: string } = {}) {
   return (
     <header className="flex h-[var(--navbar-height)] items-center justify-between gap-3 border-b border-base-300 bg-base-100 px-3 sm:px-4">
       <Link
-        href={getImagejPath(language)}
+        href={IMAGEJ_PATH}
         aria-current={section === 'imagej' ? 'page' : undefined}
         className="inline-flex items-center gap-2 rounded-[var(--radius-field)] px-1 text-sm font-semibold text-base-content"
       >

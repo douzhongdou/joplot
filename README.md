@@ -15,7 +15,7 @@ packages/
 
 - `apps/plot` 与 `apps/image` 各自拥有 `app/`、`src/`、`tests/` 和工程配置，互不引用。
 - `packages/ui` 导出 `@joplot/ui/<primitive>` 与 `@joplot/ui/utils`（`cn`）、`@joplot/ui/theme.css`。
-- `packages/i18n` 导出语言枚举、路径前缀工具，以及 `createI18n({ dictionaries })` 工厂；各应用自带字典与板块路由段。
+- `packages/i18n` 导出语言枚举、cookie 读写与 `resolveLanguage`、以及 `createI18n({ dictionaries })` 工厂；各应用自带字典与板块路径常量。
 
 ## 常用命令
 
@@ -31,14 +31,20 @@ pnpm dev:image        # 启动图像工作台
 
 也可以在单个应用目录内运行 `pnpm dev` / `pnpm build` / `pnpm test` / `pnpm typecheck`。
 
+## 多语言
+
+语言**不进入 URL**：由 cookie `joplot-language` 决定，首次访问按浏览器语言回退，默认英文。服务端在 layout 里读 cookie 决定 `<html lang>` 与 metadata，客户端切换只写 cookie 并就地重渲染，不跳转、不刷新。因此每种语言没有独立的可索引 URL（`sitemap` 只列静态页面，没有 hreflang）。
+
+历史路径 `/zh`、`/en/function` 等会在 `apps/plot/next.config.ts` 里被 308 重定向到去掉语言前缀的地址。
+
 ## 部署：同一域名、按路径拆分
 
-生产环境是一个域名，两种路径：
+生产环境是一个域名：
 
 | 路径 | 应用 |
 | --- | --- |
-| `/`、`/zh`、`/zh/science`、`/zh/function`、`/zh/super-plot` … | 绘图工作台 `apps/plot`（主应用，占域名根） |
-| `/zh/imagej`、`/en/imagej`、`/ja/imagej` | 图像工作台 `apps/image` |
+| `/`、`/science`、`/function`、`/super-plot` … | 绘图工作台 `apps/plot`（主应用，占域名根） |
+| `/imagej` | 图像工作台 `apps/image` |
 
 采用 Next.js 多 zone 的标准做法，两个应用各自独立部署：
 
@@ -46,15 +52,15 @@ pnpm dev:image        # 启动图像工作台
    `IMAGE_ASSET_PREFIX=<图像应用部署源>`（绝对 URL），让它的 `/_next/static` 资源
    直接指向自己，避免与主应用的静态资源路径冲突。
 2. 主应用（`apps/plot`）设置 `IMAGE_APP_ORIGIN=<图像应用部署源>`，
-   `next.config.ts` 里的 `rewrites` 会把 `/{zh|en|ja}/imagej*` 反代到图像应用。
-3. 顶部导航里的「图像」入口指向 `/xx/imagej`，因此无需改成外链。
+   `next.config.ts` 里的 `rewrites` 会把 `/imagej*` 反代到图像应用。
+3. 顶部导航里的「图像」入口指向 `/imagej`，因此无需改成外链。
 
 本地同时开发两个应用：
 
 ```bash
 pnpm dev:plot     # http://localhost:3000
 pnpm dev:image    # http://localhost:3001
-# 若要验证主应用里的 /xx/imagej 跳转，另起一个带反代的 plot：
+# 若要验证主应用里的 /imagej 跳转，另起一个带反代的 plot：
 #   PowerShell: $env:IMAGE_APP_ORIGIN='http://localhost:3001'; pnpm dev:plot
 ```
 

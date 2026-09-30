@@ -1,34 +1,17 @@
 /**
- * 语言与本地化路由的通用工具，不包含任何具体应用的板块（route segment）。
- * 各应用用 `createLocalizedPath(segment)` 生成自己的 /zh/xxx、/en/xxx 路径。
+ * 语言偏好的通用工具。语言不再出现在 URL 路径里，而是由 cookie 决定，
+ * 首次访问时回退到浏览器语言。各应用用静态路径常量（如 '/imagej'）指板块。
  */
 
-/** localStorage 里保存语言偏好的键。默认沿用历史键名，避免老用户丢失选择。 */
-export const LANGUAGE_STORAGE_KEY = 'plotnow-language'
+/** 保存语言偏好的 cookie 名。 */
+export const LANGUAGE_COOKIE_KEY = 'joplot-language'
+
+/** 没有 cookie、也匹配不到浏览器语言时使用的语言。 */
+export const DEFAULT_LANGUAGE = 'en' as const
 
 export const SUPPORTED_LANGUAGES = ['zh-CN', 'en', 'ja-JP'] as const
-export const ROUTE_LANGUAGES = ['zh', 'en', 'ja'] as const
 
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number]
-export type RouteLanguage = (typeof ROUTE_LANGUAGES)[number]
-
-export const LANGUAGE_PATHS: Record<SupportedLanguage, '/zh' | '/en' | '/ja'> = {
-  'zh-CN': '/zh',
-  en: '/en',
-  'ja-JP': '/ja',
-}
-
-export const ROUTE_LANGUAGE_TO_SUPPORTED_LANGUAGE: Record<RouteLanguage, SupportedLanguage> = {
-  zh: 'zh-CN',
-  en: 'en',
-  ja: 'ja-JP',
-}
-
-export const SUPPORTED_LANGUAGE_TO_ROUTE_LANGUAGE: Record<SupportedLanguage, RouteLanguage> = {
-  'zh-CN': 'zh',
-  en: 'en',
-  'ja-JP': 'ja',
-}
 
 export const LANGUAGE_HTML_LANG: Record<SupportedLanguage, string> = {
   'zh-CN': 'zh-CN',
@@ -36,25 +19,11 @@ export const LANGUAGE_HTML_LANG: Record<SupportedLanguage, string> = {
   'ja-JP': 'ja',
 }
 
-export function isRouteLanguage(value: string): value is RouteLanguage {
-  return ROUTE_LANGUAGES.includes(value as RouteLanguage)
+export function isSupportedLanguage(value: string): value is SupportedLanguage {
+  return (SUPPORTED_LANGUAGES as readonly string[]).includes(value)
 }
 
-function normalizePathname(pathname?: string | null): string | null {
-  if (!pathname) {
-    return null
-  }
-
-  const trimmed = pathname.trim()
-
-  if (!trimmed) {
-    return null
-  }
-
-  const normalized = trimmed.replace(/\/+$/, '')
-  return normalized === '' ? '/' : normalized.toLowerCase()
-}
-
+/** 把任意语言标识（cookie / 浏览器语言）归一到受支持的语言，无法识别时返回 null。 */
 export function normalizeLanguage(input?: string | null): SupportedLanguage | null {
   if (!input) {
     return null
@@ -77,78 +46,49 @@ export function normalizeLanguage(input?: string | null): SupportedLanguage | nu
   return null
 }
 
-export function resolveLanguageFromPath(pathname?: string | null): SupportedLanguage | null {
-  const normalizedPathname = normalizePathname(pathname)
-
-  if (!normalizedPathname) {
+/** 从 cookie 头（`a=1; joplot-language=zh-CN`）里解析语言偏好。 */
+export function parseLanguageCookie(
+  cookieHeader?: string | null,
+  cookieKey: string = LANGUAGE_COOKIE_KEY,
+): SupportedLanguage | null {
+  if (!cookieHeader) {
     return null
   }
 
-  const routeLanguage = extractRouteLanguage(normalizedPathname)
+  for (const part of cookieHeader.split(';')) {
+    const separator = part.indexOf('=')
+    if (separator < 0) {
+      continue
+    }
+    const name = part.slice(0, separator).trim()
+    if (name !== cookieKey) {
+      continue
+    }
+    return normalizeLanguage(decodeURIComponent(part.slice(separator + 1).trim()))
+  }
 
-  return routeLanguage ? ROUTE_LANGUAGE_TO_SUPPORTED_LANGUAGE[routeLanguage] : null
+  return null
 }
 
-function extractRouteLanguage(normalizedPathname: string): RouteLanguage | null {
-  const firstSegment = normalizedPathname.split('/')[1] ?? ''
-
-  return isRouteLanguage(firstSegment) ? firstSegment : null
+/** 生成写入语言偏好的 Set-Cookie 值。 */
+export function serializeLanguageCookie(
+  language: SupportedLanguage,
+  cookieKey: string = LANGUAGE_COOKIE_KEY,
+): string {
+  return `${cookieKey}=${encodeURIComponent(language)}; Path=/; Max-Age=31536000; SameSite=Lax`
 }
 
 /**
- * Swaps the language prefix of a localized path while keeping the rest of the
- * route, e.g. `/zh/function` -> `/en/function`. Unprefixed paths resolve to the
- * language root.
+ * 决定初始语言：cookie 优先，其次浏览器语言，最后回退到默认语言。
+ * 传入的回退语言用于服务端在没有 cookie 时表达默认值。
  */
-export function replaceRouteLanguage(pathname: string, nextLanguage: SupportedLanguage): string {
-  const targetPath = LANGUAGE_PATHS[nextLanguage]
-  const normalized = pathname.trim().replace(/\/+$/, '') || '/'
-  const currentRoute = extractRouteLanguage(normalized.toLowerCase())
-
-  if (!currentRoute) {
-    return targetPath
-  }
-
-  const rest = normalized.slice(currentRoute.length + 1)
-
-  return `${targetPath}${rest}`
-}
-
-/** 生成某个应用板块的本地化路由构造器，例如 `createLocalizedPath('imagej')('/en') === '/en/imagej'`。 */
-export function createLocalizedPath(segment: string): (language: SupportedLanguage) => string {
-  const normalizedSegment = segment.replace(/^\/+|\/+$/g, '')
-  return (language) => `${LANGUAGE_PATHS[language]}/${normalizedSegment}`
-}
-
-export function resolveSupportedLanguageFromRouteLanguage(language: string): SupportedLanguage | null {
-  return isRouteLanguage(language) ? ROUTE_LANGUAGE_TO_SUPPORTED_LANGUAGE[language] : null
-}
-
-export function getLanguagePath(language: SupportedLanguage): string {
-  return LANGUAGE_PATHS[language]
-}
-
-export function getRouteLanguage(language: SupportedLanguage): RouteLanguage {
-  return SUPPORTED_LANGUAGE_TO_ROUTE_LANGUAGE[language]
-}
-
-export function getHtmlLang(language: SupportedLanguage): string {
-  return LANGUAGE_HTML_LANG[language]
-}
-
-export function resolveInitialLanguage(
-  pathname?: string | null,
-  storedLanguage?: string | null,
-  browserLanguage?: string | null,
-): SupportedLanguage {
-  if (browserLanguage === undefined && !pathname?.trim().startsWith('/')) {
-    return normalizeLanguage(pathname)
-      ?? normalizeLanguage(storedLanguage)
-      ?? 'en'
-  }
-
-  return resolveLanguageFromPath(pathname)
-    ?? normalizeLanguage(storedLanguage)
-    ?? normalizeLanguage(browserLanguage)
-    ?? 'en'
+export function resolveLanguage(inputs: {
+  cookie?: string | null
+  browser?: string | null
+  fallback?: SupportedLanguage
+} = {}): SupportedLanguage {
+  return parseLanguageCookie(inputs.cookie)
+    ?? normalizeLanguage(inputs.browser)
+    ?? inputs.fallback
+    ?? DEFAULT_LANGUAGE
 }

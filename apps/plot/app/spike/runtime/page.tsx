@@ -1,9 +1,5 @@
 import type { Metadata } from 'next'
-import { SpikeRuntime } from '../../../../src/spike/SpikeRuntime'
-
-export function generateStaticParams() {
-  return [{ lang: 'en' }, { lang: 'zh' }, { lang: 'ja' }]
-}
+import { SpikeRuntime } from '../../../src/spike/SpikeRuntime'
 
 export const metadata: Metadata = {
   title: 'spike · data-model runtime probe',
