@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   Contrast,
   Crop,
@@ -74,6 +74,25 @@ function paintGray(canvas: HTMLCanvasElement | null, image: GrayImage | null): v
   context.putImageData(new ImageData(toRgba(image), image.width, image.height), 0, 0)
 }
 
+function paintRgba(canvas: HTMLCanvasElement | null, image: OriginalImage | null): void {
+  if (!canvas || !image) return
+  canvas.width = image.width
+  canvas.height = image.height
+  const context = canvas.getContext('2d')
+  if (!context) return
+  context.putImageData(new ImageData(image.data, image.width, image.height), 0, 0)
+}
+
+/** 判断导入的 RGBA 数据里是否存在彩色像素（R/G/B 不全相等）。 */
+function hasColorData(rgba: ArrayLike<number>): boolean {
+  for (let i = 0; i < rgba.length; i += 4) {
+    if (rgba[i] !== rgba[i + 1] || rgba[i + 1] !== rgba[i + 2]) {
+      return true
+    }
+  }
+  return false
+}
+
 function nextZoom(zoom: number, direction: 1 | -1): number {
   if (direction === 1) {
     return ZOOM_STEPS.find((step) => step > zoom + 1e-6) ?? ZOOM_STEPS[ZOOM_STEPS.length - 1]
@@ -137,10 +156,12 @@ export function ImageJApp() {
   const [original, setOriginal] = useState<OriginalImage | null>(null)
   const [sourceName, setSourceName] = useState('')
   const [current, setCurrent] = useState<GrayImage | null>(null)
+  const [showColor, setShowColor] = useState(true)
   const [roi, setRoi] = useState<Rect | null>(null)
   const [zoom, setZoom] = useState(1)
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
+  const pendingAnchorRef = useRef<{ imageX: number; imageY: number; offsetX: number; offsetY: number } | null>(null)
   const [brightness, setBrightness] = useState(0)
   const [contrast, setContrast] = useState(50)
   const [gaussianSigma, setGaussianSigma] = useState(1.5)
@@ -202,6 +223,7 @@ export function ImageJApp() {
         setStack(pages)
         setPageIndex(0)
         setCurrent(pages[0])
+        setShowColor(false)
         setProbe(null)
         setSourceName(file.name)
         setRoi(null)
@@ -252,6 +274,7 @@ export function ImageJApp() {
       const gray = toGrayFromRgba(width, height, rgba)
       setOriginal({ width, height, data: rgba })
       setCurrent(gray)
+      setShowColor(hasColorData(rgba))
       setProbe(null)
       setStack(null)
       setPageIndex(0)
@@ -286,6 +309,7 @@ export function ImageJApp() {
     if (!current) return
     historyRef.current.push(current)
     setCurrent(next)
+    setShowColor(false)
     setProbe(null)
     if (stack) setStack((pages) => pages?.map((page, index) => index === pageIndex ? next : page) ?? null)
     setParticles(null)
@@ -396,6 +420,7 @@ export function ImageJApp() {
     const previous = historyRef.current.undo(image)
     if (!previous) return
     setCurrent(previous)
+    setShowColor(false)
     setProbe(null)
     if (stack) setStack((pages) => pages?.map((page, index) => index === pageIndex ? previous : page) ?? null)
     setParticles(null)
@@ -410,6 +435,7 @@ export function ImageJApp() {
     const next = historyRef.current.redo(image)
     if (!next) return
     setCurrent(next)
+    setShowColor(false)
     setProbe(null)
     if (stack) setStack((pages) => pages?.map((page, index) => index === pageIndex ? next : page) ?? null)
     setParticles(null)
@@ -469,6 +495,7 @@ export function ImageJApp() {
     if (!stack || index < 0 || index >= stack.length) return
     setPageIndex(index)
     setCurrent(stack[index])
+    setShowColor(false)
     setProbe(null)
     setRoi(null)
     setParticles(null)
@@ -513,8 +540,12 @@ export function ImageJApp() {
   /* ---------------- 画布绘制 ---------------- */
 
   useEffect(() => {
+    if (showColor && original) {
+      paintRgba(resultCanvasRef.current, original)
+      return
+    }
     paintGray(resultCanvasRef.current, display)
-  }, [display])
+  }, [display, showColor, original])
 
   // 空格键临时切到平移（与中键、平移工具等效）。
   useEffect(() => {
@@ -590,31 +621,40 @@ export function ImageJApp() {
     }
   }
 
-  /** 以视口内某点为锚点缩放：缩放后该点下方的像素保持不动。 */
+  /** 以视口内某点为锚点缩放：滚动校正在浏览器绘制前完成，避免缩放时抖动。 */
   const zoomAt = (target: number, clientX: number, clientY: number) => {
     const viewport = viewportRef.current
+    const applied = clampZoom(target)
+
     if (!viewport || !current) {
-      const applied = clampZoom(target)
       zoomRef.current = applied
       setZoom(applied)
       return
     }
+
     const bounds = viewport.getBoundingClientRect()
     const offsetX = clientX - bounds.left
     const offsetY = clientY - bounds.top
     const currentZoom = zoomRef.current
-    const imageX = (viewport.scrollLeft + offsetX) / currentZoom
-    const imageY = (viewport.scrollTop + offsetY) / currentZoom
-    const applied = clampZoom(target)
+    pendingAnchorRef.current = {
+      imageX: (viewport.scrollLeft + offsetX) / currentZoom,
+      imageY: (viewport.scrollTop + offsetY) / currentZoom,
+      offsetX,
+      offsetY,
+    }
     zoomRef.current = applied
     setZoom(applied)
-    requestAnimationFrame(() => {
-      const node = viewportRef.current
-      if (!node) return
-      node.scrollLeft = imageX * applied - offsetX
-      node.scrollTop = imageY * applied - offsetY
-    })
   }
+
+  // 尺寸变化后、浏览器绘制前同步校正滚动位置（同一帧内完成，不会闪）。
+  useLayoutEffect(() => {
+    const anchor = pendingAnchorRef.current
+    pendingAnchorRef.current = null
+    const viewport = viewportRef.current
+    if (!anchor || !viewport) return
+    viewport.scrollLeft = anchor.imageX * zoom - anchor.offsetX
+    viewport.scrollTop = anchor.imageY * zoom - anchor.offsetY
+  }, [zoom])
 
   const zoomByStep = (direction: 1 | -1) => {
     const viewport = viewportRef.current
@@ -731,14 +771,14 @@ export function ImageJApp() {
     const availableHeight = viewport.clientHeight - 24
     if (availableWidth <= 0 || availableHeight <= 0) return
     const fitted = clampZoom(Math.min(availableWidth / current.width, availableHeight / current.height))
+    pendingAnchorRef.current = {
+      imageX: current.width / 2,
+      imageY: current.height / 2,
+      offsetX: viewport.clientWidth / 2,
+      offsetY: viewport.clientHeight / 2,
+    }
     zoomRef.current = fitted
     setZoom(fitted)
-    requestAnimationFrame(() => {
-      const node = viewportRef.current
-      if (!node) return
-      node.scrollLeft = (current.width * fitted - node.clientWidth) / 2
-      node.scrollTop = (current.height * fitted - node.clientHeight) / 2
-    })
   }
 
   const showActualSize = () => {
@@ -800,6 +840,27 @@ export function ImageJApp() {
                 </button>
               ))}
             </div>
+
+            {original ? (
+              <div role="group" aria-label={copy.viewer.display} className="inline-flex shrink-0 rounded-[var(--radius-field)] bg-muted p-0.5">
+                {(['color', 'gray'] as const).map((value) => {
+                  const active = value === 'color' ? showColor : !showColor
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={active}
+                      className={`h-7 rounded-[calc(var(--radius-field)-2px)] px-2.5 text-xs font-medium transition ${
+                        active ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
+                      }`}
+                      onClick={() => setShowColor(value === 'color')}
+                    >
+                      {value === 'color' ? copy.viewer.color : copy.viewer.gray}
+                    </button>
+                  )
+                })}
+              </div>
+            ) : null}
 
             <Button type="button" variant="outline" size="icon-sm" aria-label={copy.zoomOut} disabled={!hasImage} onClick={() => zoomByStep(-1)}>
               <ZoomOut size={15} />
