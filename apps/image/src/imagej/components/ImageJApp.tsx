@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   Contrast,
   Crop,
@@ -610,13 +610,6 @@ export function ImageJApp() {
     })
   }
 
-  const onStageWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
-    if (!current) return
-    event.preventDefault()
-    const factor = event.deltaY < 0 ? 1.2 : 1 / 1.2
-    zoomAt(zoom * factor, event.clientX, event.clientY)
-  }
-
   const zoomByStep = (direction: 1 | -1) => {
     const viewport = viewportRef.current
     const target = nextZoom(zoom, direction)
@@ -627,6 +620,23 @@ export function ImageJApp() {
     const bounds = viewport.getBoundingClientRect()
     zoomAt(target, bounds.left + viewport.clientWidth / 2, bounds.top + viewport.clientHeight / 2)
   }
+
+  // 滚轮：普通滚动交给浏览器；只有 Ctrl/⌘ + 滚轮才缩放。
+  // 必须用非 passive 的原生监听，否则 preventDefault() 无效，会「一边缩放一边滚动」。
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+
+    const handleWheel = (event: WheelEvent) => {
+      if (!current || (!event.ctrlKey && !event.metaKey)) return
+      event.preventDefault()
+      const factor = event.deltaY < 0 ? 1.2 : 1 / 1.2
+      zoomAt(zoom * factor, event.clientX, event.clientY)
+    }
+
+    viewport.addEventListener('wheel', handleWheel, { passive: false })
+    return () => viewport.removeEventListener('wheel', handleWheel)
+  }, [current, zoom])
 
   const wantsPan = (event: ReactPointerEvent<HTMLCanvasElement>) =>
     tool === 'pan' || spaceHeld || event.button === 1 || event.altKey
@@ -849,9 +859,7 @@ export function ImageJApp() {
               </div>
               <div
                 ref={viewportRef}
-                onWheel={onStageWheel}
                 className="min-h-0 flex-1 overflow-auto rounded-[var(--radius-box)] border border-base-300 bg-muted/40"
-                style={{ touchAction: 'none' }}
               >
                 <div
                   className="relative inline-block"

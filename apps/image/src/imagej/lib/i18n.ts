@@ -135,7 +135,7 @@ const zhCN: ImagejCopy = {
     roiSelect: 'ROI',
     actualSize: '1:1',
     pixelHint: '始终按像素显示，不做插值',
-    panHint: '滚轮缩放；按住空格或中键拖动平移；切到 ROI 工具后拖拽可画选区。',
+    panHint: '滚轮滚动查看，Ctrl/⌘ + 滚轮缩放；按住空格或中键拖动平移；切到 ROI 工具后拖拽可画选区。',
   },
   roi: {
     draw: '矩形 ROI',
@@ -235,7 +235,7 @@ const en: ImagejCopy = {
     roiSelect: 'ROI',
     actualSize: '1:1',
     pixelHint: 'Pixel-accurate — no interpolation',
-    panHint: 'Wheel to zoom; hold Space or drag with the middle button to pan; switch to the ROI tool to draw a selection.',
+    panHint: 'Scroll to move around; Ctrl/⌘ + wheel to zoom; hold Space or drag with the middle button to pan; switch to the ROI tool to draw a selection.',
   },
   roi: {
     draw: 'Rectangle ROI',
@@ -335,7 +335,7 @@ const jaJP: ImagejCopy = {
     roiSelect: 'ROI',
     actualSize: '1:1',
     pixelHint: '常に画素どおりに表示（補間なし）',
-    panHint: 'ホイールでズーム、Space か中ボタンのドラッグで移動、ROI ツールで選択範囲を作成できます。',
+    panHint: 'ホイールでスクロール、Ctrl/⌘ + ホイールでズーム、Space か中ボタンのドラッグで移動、ROI ツールで選択範囲を作成できます。',
   },
   roi: {
     draw: '矩形 ROI',
