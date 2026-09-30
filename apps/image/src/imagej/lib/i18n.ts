@@ -17,6 +17,14 @@ export interface ImagejCopy {
   zoomLabel: string
   fit: string
   reset: string
+  viewer: {
+    tool: string
+    pan: string
+    roiSelect: string
+    actualSize: string
+    pixelHint: string
+    panHint: string
+  }
   roi: {
     draw: string
     clear: string
@@ -121,6 +129,14 @@ const zhCN: ImagejCopy = {
   zoomLabel: '缩放',
   fit: '适应窗口',
   reset: '重置',
+  viewer: {
+    tool: '工具',
+    pan: '平移',
+    roiSelect: 'ROI',
+    actualSize: '1:1',
+    pixelHint: '始终按像素显示，不做插值',
+    panHint: '滚轮缩放；按住空格或中键拖动平移；切到 ROI 工具后拖拽可画选区。',
+  },
   roi: {
     draw: '矩形 ROI',
     clear: '清除 ROI',
@@ -213,6 +229,14 @@ const en: ImagejCopy = {
   zoomLabel: 'Zoom',
   fit: 'Fit window',
   reset: 'Reset',
+  viewer: {
+    tool: 'Tool',
+    pan: 'Pan',
+    roiSelect: 'ROI',
+    actualSize: '1:1',
+    pixelHint: 'Pixel-accurate — no interpolation',
+    panHint: 'Wheel to zoom; hold Space or drag with the middle button to pan; switch to the ROI tool to draw a selection.',
+  },
   roi: {
     draw: 'Rectangle ROI',
     clear: 'Clear ROI',
@@ -305,6 +329,14 @@ const jaJP: ImagejCopy = {
   zoomLabel: '拡大率',
   fit: 'ウィンドウに合わせる',
   reset: 'リセット',
+  viewer: {
+    tool: 'ツール',
+    pan: '移動',
+    roiSelect: 'ROI',
+    actualSize: '1:1',
+    pixelHint: '常に画素どおりに表示（補間なし）',
+    panHint: 'ホイールでズーム、Space か中ボタンのドラッグで移動、ROI ツールで選択範囲を作成できます。',
+  },
   roi: {
     draw: '矩形 ROI',
     clear: 'ROI をクリア',

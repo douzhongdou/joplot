@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import {
   Contrast,
   Crop,
@@ -55,7 +55,9 @@ import {
 /** 浏览器 Canvas 支持的最大边长，超过则拒绝导入，避免解码时崩溃。 */
 const MAX_CANVAS_SIDE = 16_384
 
-const ZOOM_STEPS = [0.125, 0.25, 0.5, 1, 2, 4, 8] as const
+const ZOOM_STEPS = [0.1, 0.25, 0.5, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32] as const
+const MIN_ZOOM = ZOOM_STEPS[0]
+const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1]
 
 interface OriginalImage {
   width: number
@@ -70,15 +72,6 @@ function paintGray(canvas: HTMLCanvasElement | null, image: GrayImage | null): v
   const context = canvas.getContext('2d')
   if (!context) return
   context.putImageData(new ImageData(toRgba(image), image.width, image.height), 0, 0)
-}
-
-function paintRgba(canvas: HTMLCanvasElement | null, image: OriginalImage | null): void {
-  if (!canvas || !image) return
-  canvas.width = image.width
-  canvas.height = image.height
-  const context = canvas.getContext('2d')
-  if (!context) return
-  context.putImageData(new ImageData(image.data, image.width, image.height), 0, 0)
 }
 
 function nextZoom(zoom: number, direction: 1 | -1): number {
@@ -118,11 +111,15 @@ function toErrorText(error: unknown, copy: ImagejCopy): string {
 
 type StatsScope = 'image' | 'roi'
 
+type ViewerTool = 'pan' | 'roi'
+
 interface DragState {
-  mode: 'draw' | 'move'
+  mode: 'draw' | 'move' | 'pan'
   anchorX: number
   anchorY: number
   start: Rect
+  startScrollLeft: number
+  startScrollTop: number
 }
 
 export function ImageJApp() {
@@ -131,9 +128,8 @@ export function ImageJApp() {
 
   const historyRef = useRef(new ImageHistory())
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const stageRef = useRef<HTMLDivElement>(null)
-  const originalCanvasRef = useRef<HTMLCanvasElement>(null)
   const resultCanvasRef = useRef<HTMLCanvasElement>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
   const histogramCanvasRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<DragState | null>(null)
   const importTokenRef = useRef(0)
@@ -156,6 +152,8 @@ export function ImageJApp() {
   const [stack, setStack] = useState<GrayImage[] | null>(null)
   const [pageIndex, setPageIndex] = useState(0)
   const [probe, setProbe] = useState<{ x: number; y: number; value: number } | null>(null)
+  const [tool, setTool] = useState<ViewerTool>('pan')
+  const [spaceHeld, setSpaceHeld] = useState(false)
 
   const syncHistory = useCallback(() => {
     setHistoryFlags({
@@ -513,12 +511,28 @@ export function ImageJApp() {
   /* ---------------- 画布绘制 ---------------- */
 
   useEffect(() => {
-    paintRgba(originalCanvasRef.current, original)
-  }, [original])
-
-  useEffect(() => {
     paintGray(resultCanvasRef.current, display)
   }, [display])
+
+  // 空格键临时切到平移（与中键、平移工具等效）。
+  useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null) => {
+      const element = target as HTMLElement | null
+      return Boolean(element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.isContentEditable))
+    }
+    const down = (event: KeyboardEvent) => {
+      if (event.code === 'Space' && !isTypingTarget(event.target)) setSpaceHeld(true)
+    }
+    const up = (event: KeyboardEvent) => {
+      if (event.code === 'Space') setSpaceHeld(false)
+    }
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+    }
+  }, [])
 
   useEffect(() => {
     const canvas = histogramCanvasRef.current
@@ -558,7 +572,9 @@ export function ImageJApp() {
     context.fillRect(markerX, 0, 2, height)
   }, [stats, thresholdLevel])
 
-  /* ---------------- ROI 交互 ---------------- */
+  /* ---------------- 视口交互：缩放 / 平移 / ROI ---------------- */
+
+  const clampZoom = (value: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value))
 
   const pointerToImage = (event: ReactPointerEvent<HTMLCanvasElement>): { x: number; y: number } | null => {
     if (!current) return null
@@ -572,25 +588,93 @@ export function ImageJApp() {
     }
   }
 
+  /** 以视口内某点为锚点缩放：缩放后该点下方的像素保持不动。 */
+  const zoomAt = (target: number, clientX: number, clientY: number) => {
+    const viewport = viewportRef.current
+    if (!viewport || !current) {
+      setZoom(clampZoom(target))
+      return
+    }
+    const bounds = viewport.getBoundingClientRect()
+    const offsetX = clientX - bounds.left
+    const offsetY = clientY - bounds.top
+    const imageX = (viewport.scrollLeft + offsetX) / zoom
+    const imageY = (viewport.scrollTop + offsetY) / zoom
+    const applied = clampZoom(target)
+    setZoom(applied)
+    requestAnimationFrame(() => {
+      const node = viewportRef.current
+      if (!node) return
+      node.scrollLeft = imageX * applied - offsetX
+      node.scrollTop = imageY * applied - offsetY
+    })
+  }
+
+  const onStageWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if (!current) return
+    event.preventDefault()
+    const factor = event.deltaY < 0 ? 1.2 : 1 / 1.2
+    zoomAt(zoom * factor, event.clientX, event.clientY)
+  }
+
+  const zoomByStep = (direction: 1 | -1) => {
+    const viewport = viewportRef.current
+    const target = nextZoom(zoom, direction)
+    if (!viewport) {
+      setZoom(clampZoom(target))
+      return
+    }
+    const bounds = viewport.getBoundingClientRect()
+    zoomAt(target, bounds.left + viewport.clientWidth / 2, bounds.top + viewport.clientHeight / 2)
+  }
+
+  const wantsPan = (event: ReactPointerEvent<HTMLCanvasElement>) =>
+    tool === 'pan' || spaceHeld || event.button === 1 || event.altKey
+
   const onStagePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (!current) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const viewport = viewportRef.current
+
+    if (wantsPan(event) && viewport) {
+      event.preventDefault()
+      dragRef.current = {
+        mode: 'pan',
+        anchorX: event.clientX,
+        anchorY: event.clientY,
+        start: { x: 0, y: 0, width: 0, height: 0 },
+        startScrollLeft: viewport.scrollLeft,
+        startScrollTop: viewport.scrollTop,
+      }
+      return
+    }
+
     const point = pointerToImage(event)
     if (!point) return
-    event.currentTarget.setPointerCapture(event.pointerId)
 
     const insideRoi = roi
       && point.x >= roi.x && point.x < roi.x + roi.width
       && point.y >= roi.y && point.y < roi.y + roi.height
 
     dragRef.current = insideRoi && roi
-      ? { mode: 'move', anchorX: point.x - roi.x, anchorY: point.y - roi.y, start: roi }
-      : { mode: 'draw', anchorX: point.x, anchorY: point.y, start: { x: point.x, y: point.y, width: 1, height: 1 } }
+      ? { mode: 'move', anchorX: point.x - roi.x, anchorY: point.y - roi.y, start: roi, startScrollLeft: 0, startScrollTop: 0 }
+      : { mode: 'draw', anchorX: point.x, anchorY: point.y, start: { x: point.x, y: point.y, width: 1, height: 1 }, startScrollLeft: 0, startScrollTop: 0 }
     setRoi(dragRef.current.start)
   }
 
   const onStagePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    const drag = dragRef.current
     if (!current) return
+    const drag = dragRef.current
+
+    if (drag?.mode === 'pan') {
+      const viewport = viewportRef.current
+      if (viewport) {
+        viewport.scrollLeft = drag.startScrollLeft - (event.clientX - drag.anchorX)
+        viewport.scrollTop = drag.startScrollTop - (event.clientY - drag.anchorY)
+      }
+      return
+    }
+
     const point = pointerToImage(event)
     if (!point) return
     setProbe((previous) => previous?.x === point.x && previous?.y === point.y
@@ -625,11 +709,29 @@ export function ImageJApp() {
   }
 
   const fitToWindow = () => {
-    const container = stageRef.current
-    if (!current || !container) return
-    const available = container.clientWidth - 16
-    if (available <= 0) return
-    setZoom(Math.max(0.05, Math.min(4, available / current.width)))
+    const viewport = viewportRef.current
+    if (!current || !viewport) return
+    const availableWidth = viewport.clientWidth - 24
+    const availableHeight = viewport.clientHeight - 24
+    if (availableWidth <= 0 || availableHeight <= 0) return
+    const fitted = clampZoom(Math.min(availableWidth / current.width, availableHeight / current.height))
+    setZoom(fitted)
+    requestAnimationFrame(() => {
+      const node = viewportRef.current
+      if (!node) return
+      node.scrollLeft = (current.width * fitted - node.clientWidth) / 2
+      node.scrollTop = (current.height * fitted - node.clientHeight) / 2
+    })
+  }
+
+  const showActualSize = () => {
+    const viewport = viewportRef.current
+    if (!viewport) {
+      setZoom(1)
+      return
+    }
+    const bounds = viewport.getBoundingClientRect()
+    zoomAt(1, bounds.left + viewport.clientWidth / 2, bounds.top + viewport.clientHeight / 2)
   }
 
   const hasImage = Boolean(current)
@@ -668,15 +770,33 @@ export function ImageJApp() {
               ) : null}
             </div>
 
-            <div className="flex items-center gap-1">
-              <Button type="button" variant="outline" size="icon-sm" aria-label={copy.zoomOut} disabled={!hasImage} onClick={() => setZoom((value) => nextZoom(value, -1))}>
+            <div className="flex flex-wrap items-center gap-1">
+              <div role="group" aria-label={copy.viewer.tool} className="mr-1 inline-flex rounded-[var(--radius-field)] bg-muted p-0.5">
+                {(['pan', 'roi'] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={tool === value}
+                    className={`h-7 rounded-[calc(var(--radius-field)-2px)] px-2.5 text-xs font-medium transition ${
+                      tool === value ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
+                    }`}
+                    onClick={() => setTool(value)}
+                  >
+                    {value === 'pan' ? copy.viewer.pan : copy.viewer.roiSelect}
+                  </button>
+                ))}
+              </div>
+              <Button type="button" variant="outline" size="icon-sm" aria-label={copy.zoomOut} disabled={!hasImage} onClick={() => zoomByStep(-1)}>
                 <ZoomOut size={15} />
               </Button>
               <span className="min-w-14 text-center text-xs tabular-nums text-base-content/70">
                 {Math.round(zoom * 100)}%
               </span>
-              <Button type="button" variant="outline" size="icon-sm" aria-label={copy.zoomIn} disabled={!hasImage} onClick={() => setZoom((value) => nextZoom(value, 1))}>
+              <Button type="button" variant="outline" size="icon-sm" aria-label={copy.zoomIn} disabled={!hasImage} onClick={() => zoomByStep(1)}>
                 <ZoomIn size={15} />
+              </Button>
+              <Button type="button" variant="outline" size="sm" className="h-8" disabled={!hasImage} onClick={showActualSize}>
+                {copy.viewer.actualSize}
               </Button>
               <Button type="button" variant="outline" size="sm" className="h-8" disabled={!hasImage} onClick={fitToWindow}>
                 {copy.fit}
@@ -719,65 +839,56 @@ export function ImageJApp() {
                 <p className="text-xs text-base-content/45">{copy.localNote}</p>
               </div>
             </div>
-          ) : (
-            <div className={`grid gap-4 ${original ? 'md:grid-cols-2' : ''}`}>
-              {original ? <section className="flex min-w-0 flex-col gap-2">
-                <h2 className="text-sm font-semibold text-base-content">{copy.original}</h2>
-                <div className="grid place-items-center overflow-auto rounded-[var(--radius-box)] border border-base-300 bg-muted/40 p-2">
-                  <canvas
-                    ref={originalCanvasRef}
-                    className="block max-w-none bg-base-100 shadow-sm"
-                    style={{
-                      width: original ? original.width * zoom : undefined,
-                      height: original ? original.height * zoom : undefined,
-                      imageRendering: zoom >= 1 ? 'pixelated' : 'auto',
-                    }}
-                  />
-                </div>
-              </section> : null}
-
-              <section className="flex min-w-0 flex-col gap-2">
-                <div className="flex items-center justify-between gap-2">
-                  <h2 className="text-sm font-semibold text-base-content">{copy.result}</h2>
-                  <span className="truncate font-mono text-[11px] text-base-content/55">{probe ? `${copy.stats.pixel} (${probe.x}, ${probe.y}) = ${probe.value} · ` : ''}{roiLabel}</span>
-                </div>
+          ) : current ? (
+            <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-base-content">{copy.result}</h2>
+                <span className="truncate font-mono text-[11px] text-base-content/55">
+                  {probe ? `${copy.stats.pixel} (${probe.x}, ${probe.y}) = ${probe.value} · ` : ''}{roiLabel}
+                </span>
+              </div>
+              <div
+                ref={viewportRef}
+                onWheel={onStageWheel}
+                className="min-h-0 flex-1 overflow-auto rounded-[var(--radius-box)] border border-base-300 bg-muted/40"
+                style={{ touchAction: 'none' }}
+              >
                 <div
-                  ref={stageRef}
-                  className="grid place-items-center overflow-auto rounded-[var(--radius-box)] border border-base-300 bg-muted/40 p-2"
+                  className="relative inline-block"
+                  style={{ width: current.width * zoom, height: current.height * zoom, margin: 8 }}
                 >
-                  <div className="relative inline-block max-w-full">
-                    <canvas
-                      ref={resultCanvasRef}
-                      className="block max-w-none cursor-crosshair touch-none bg-base-100 shadow-sm"
+                  <canvas
+                    ref={resultCanvasRef}
+                    className="block touch-none bg-base-100 shadow-sm"
+                    style={{
+                      width: current.width * zoom,
+                      height: current.height * zoom,
+                      imageRendering: 'pixelated',
+                      cursor: tool === 'pan' || spaceHeld ? 'grab' : 'crosshair',
+                    }}
+                    onPointerDown={onStagePointerDown}
+                    onPointerMove={onStagePointerMove}
+                    onPointerLeave={() => setProbe(null)}
+                    onPointerUp={onStagePointerUp}
+                    onPointerCancel={onStagePointerUp}
+                  />
+                  {roi ? (
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute border-2 border-primary bg-primary/10"
                       style={{
-                        width: current ? current.width * zoom : undefined,
-                        height: current ? current.height * zoom : undefined,
-                        imageRendering: zoom >= 1 ? 'pixelated' : 'auto',
+                        left: roi.x * zoom,
+                        top: roi.y * zoom,
+                        width: roi.width * zoom,
+                        height: roi.height * zoom,
                       }}
-                      onPointerDown={onStagePointerDown}
-                      onPointerMove={onStagePointerMove}
-                      onPointerLeave={() => setProbe(null)}
-                      onPointerUp={onStagePointerUp}
-                      onPointerCancel={onStagePointerUp}
                     />
-                    {roi && current ? (
-                      <div
-                        aria-hidden="true"
-                        className="pointer-events-none absolute border-2 border-primary bg-primary/10"
-                        style={{
-                          left: roi.x * zoom,
-                          top: roi.y * zoom,
-                          width: roi.width * zoom,
-                          height: roi.height * zoom,
-                        }}
-                      />
-                    ) : null}
-                  </div>
+                  ) : null}
                 </div>
-                <p className="text-[11px] text-base-content/50">{copy.roi.hint}</p>
-              </section>
-            </div>
-          )}
+              </div>
+              <p className="text-[11px] text-base-content/50">{copy.viewer.pixelHint} · {copy.viewer.panHint}</p>
+            </section>
+          ) : null}
 
           <section className="grid gap-3 rounded-[var(--radius-box)] border border-base-300 bg-base-100 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
