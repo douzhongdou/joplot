@@ -139,6 +139,8 @@ export function ImageJApp() {
   const [current, setCurrent] = useState<GrayImage | null>(null)
   const [roi, setRoi] = useState<Rect | null>(null)
   const [zoom, setZoom] = useState(1)
+  const zoomRef = useRef(zoom)
+  zoomRef.current = zoom
   const [brightness, setBrightness] = useState(0)
   const [contrast, setContrast] = useState(50)
   const [gaussianSigma, setGaussianSigma] = useState(1.5)
@@ -592,15 +594,19 @@ export function ImageJApp() {
   const zoomAt = (target: number, clientX: number, clientY: number) => {
     const viewport = viewportRef.current
     if (!viewport || !current) {
-      setZoom(clampZoom(target))
+      const applied = clampZoom(target)
+      zoomRef.current = applied
+      setZoom(applied)
       return
     }
     const bounds = viewport.getBoundingClientRect()
     const offsetX = clientX - bounds.left
     const offsetY = clientY - bounds.top
-    const imageX = (viewport.scrollLeft + offsetX) / zoom
-    const imageY = (viewport.scrollTop + offsetY) / zoom
+    const currentZoom = zoomRef.current
+    const imageX = (viewport.scrollLeft + offsetX) / currentZoom
+    const imageY = (viewport.scrollTop + offsetY) / currentZoom
     const applied = clampZoom(target)
+    zoomRef.current = applied
     setZoom(applied)
     requestAnimationFrame(() => {
       const node = viewportRef.current
@@ -612,7 +618,7 @@ export function ImageJApp() {
 
   const zoomByStep = (direction: 1 | -1) => {
     const viewport = viewportRef.current
-    const target = nextZoom(zoom, direction)
+    const target = nextZoom(zoomRef.current, direction)
     if (!viewport) {
       setZoom(clampZoom(target))
       return
@@ -631,12 +637,12 @@ export function ImageJApp() {
       if (!current) return
       event.preventDefault()
       const factor = event.deltaY < 0 ? 1.2 : 1 / 1.2
-      zoomAt(zoom * factor, event.clientX, event.clientY)
+      zoomAt(zoomRef.current * factor, event.clientX, event.clientY)
     }
 
     viewport.addEventListener('wheel', handleWheel, { passive: false })
     return () => viewport.removeEventListener('wheel', handleWheel)
-  }, [current, zoom])
+  }, [current])
 
   const wantsPan = (event: ReactPointerEvent<HTMLCanvasElement>) =>
     tool === 'pan' || spaceHeld || event.button === 1 || event.altKey
@@ -725,6 +731,7 @@ export function ImageJApp() {
     const availableHeight = viewport.clientHeight - 24
     if (availableWidth <= 0 || availableHeight <= 0) return
     const fitted = clampZoom(Math.min(availableWidth / current.width, availableHeight / current.height))
+    zoomRef.current = fitted
     setZoom(fitted)
     requestAnimationFrame(() => {
       const node = viewportRef.current
@@ -737,6 +744,7 @@ export function ImageJApp() {
   const showActualSize = () => {
     const viewport = viewportRef.current
     if (!viewport) {
+      zoomRef.current = 1
       setZoom(1)
       return
     }
@@ -750,91 +758,95 @@ export function ImageJApp() {
   /* ---------------- 渲染 ---------------- */
 
   return (
-    <div className="grid h-full grid-rows-[var(--navbar-height)_minmax(0,1fr)] bg-base-200">
-      <AppNavbar section="imagej" />
+    <div className="grid h-full grid-rows-[var(--navbar-height)_minmax(0,1fr)] bg-base-100">
+      <AppNavbar
+        section="imagej"
+        toolbar={
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={onFileInput}
+            />
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 shrink-0 rounded-[var(--radius-box)] font-semibold"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <ImageIcon size={15} strokeWidth={2.2} />
+              {copy.openImage}
+            </Button>
+            {sourceName ? (
+              <span className="hidden max-w-48 shrink-0 truncate rounded-[var(--radius-field)] bg-muted px-2 py-1 text-xs text-base-content/70 sm:inline">
+                {sourceName}
+              </span>
+            ) : null}
+
+            <div role="group" aria-label={copy.viewer.tool} className="inline-flex shrink-0 rounded-[var(--radius-field)] bg-muted p-0.5">
+              {(['pan', 'roi'] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={tool === value}
+                  className={`h-7 rounded-[calc(var(--radius-field)-2px)] px-2.5 text-xs font-medium transition ${
+                    tool === value ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
+                  }`}
+                  onClick={() => setTool(value)}
+                >
+                  {value === 'pan' ? copy.viewer.pan : copy.viewer.roiSelect}
+                </button>
+              ))}
+            </div>
+
+            <Button type="button" variant="outline" size="icon-sm" aria-label={copy.zoomOut} disabled={!hasImage} onClick={() => zoomByStep(-1)}>
+              <ZoomOut size={15} />
+            </Button>
+            <span className="min-w-12 shrink-0 text-center text-xs tabular-nums text-base-content/70">
+              {Math.round(zoom * 100)}%
+            </span>
+            <Button type="button" variant="outline" size="icon-sm" aria-label={copy.zoomIn} disabled={!hasImage} onClick={() => zoomByStep(1)}>
+              <ZoomIn size={15} />
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="h-8 shrink-0" disabled={!hasImage} onClick={showActualSize}>
+              {copy.viewer.actualSize}
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="h-8 shrink-0" disabled={!hasImage} onClick={fitToWindow}>
+              {copy.fit}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0" disabled={!roi} onClick={() => setRoi(null)}>
+              {copy.roi.clear}
+            </Button>
+
+            {stack && stack.length > 1 ? (
+              <span className="inline-flex shrink-0 items-center gap-1">
+                <Button type="button" variant="outline" size="sm" className="h-8" disabled={pageIndex === 0} onClick={() => selectPage(pageIndex - 1)}>←</Button>
+                <span className="text-xs tabular-nums text-base-content/70">{pageIndex + 1} / {stack.length}</span>
+                <Button type="button" variant="outline" size="sm" className="h-8" disabled={pageIndex + 1 >= stack.length} onClick={() => selectPage(pageIndex + 1)}>→</Button>
+                <input type="range" min={0} max={stack.length - 1} value={pageIndex} onChange={(event) => selectPage(Number(event.target.value))} aria-label={copy.stack.page} className="w-28 accent-primary" />
+              </span>
+            ) : null}
+
+            <span className="ml-auto hidden shrink-0 truncate pl-2 font-mono text-[11px] text-base-content/55 md:inline">
+              {probe ? `(${probe.x}, ${probe.y}) = ${probe.value} · ` : ''}{roiLabel}
+            </span>
+          </>
+        }
+      />
 
       <div className="grid min-h-0 min-w-0 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_340px] lg:overflow-hidden">
-        <main className="flex min-h-0 min-w-0 flex-col gap-3 bg-base-100 p-3 lg:h-full lg:overflow-hidden">
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={onFileInput}
-              />
-              <Button
-                type="button"
-                className="h-9 rounded-[var(--radius-box)] font-semibold"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <ImageIcon size={16} strokeWidth={2.2} />
-                {copy.openImage}
-              </Button>
-              <span className="hidden text-xs text-base-content/55 sm:inline">{copy.dropHint}</span>
-              {sourceName ? (
-                <span className="max-w-56 truncate rounded-[var(--radius-field)] bg-muted px-2 py-1 text-xs text-base-content/70">
-                  {sourceName}
-                </span>
-              ) : null}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-1">
-              <div role="group" aria-label={copy.viewer.tool} className="mr-1 inline-flex rounded-[var(--radius-field)] bg-muted p-0.5">
-                {(['pan', 'roi'] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={tool === value}
-                    className={`h-7 rounded-[calc(var(--radius-field)-2px)] px-2.5 text-xs font-medium transition ${
-                      tool === value ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
-                    }`}
-                    onClick={() => setTool(value)}
-                  >
-                    {value === 'pan' ? copy.viewer.pan : copy.viewer.roiSelect}
-                  </button>
-                ))}
-              </div>
-              <Button type="button" variant="outline" size="icon-sm" aria-label={copy.zoomOut} disabled={!hasImage} onClick={() => zoomByStep(-1)}>
-                <ZoomOut size={15} />
-              </Button>
-              <span className="min-w-14 text-center text-xs tabular-nums text-base-content/70">
-                {Math.round(zoom * 100)}%
-              </span>
-              <Button type="button" variant="outline" size="icon-sm" aria-label={copy.zoomIn} disabled={!hasImage} onClick={() => zoomByStep(1)}>
-                <ZoomIn size={15} />
-              </Button>
-              <Button type="button" variant="outline" size="sm" className="h-8" disabled={!hasImage} onClick={showActualSize}>
-                {copy.viewer.actualSize}
-              </Button>
-              <Button type="button" variant="outline" size="sm" className="h-8" disabled={!hasImage} onClick={fitToWindow}>
-                {copy.fit}
-              </Button>
-              <Button type="button" variant="ghost" size="sm" className="h-8" disabled={!roi} onClick={() => setRoi(null)}>
-                {copy.roi.clear}
-              </Button>
-            </div>
-          </div>
-
-          {stack && stack.length > 1 ? (
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <Button type="button" variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => selectPage(pageIndex - 1)}>←</Button>
-              <span>{copy.stack.page} {pageIndex + 1} / {stack.length}</span>
-              <Button type="button" variant="outline" size="sm" disabled={pageIndex + 1 >= stack.length} onClick={() => selectPage(pageIndex + 1)}>→</Button>
-              <input type="range" min={0} max={stack.length - 1} value={pageIndex} onChange={(event) => selectPage(Number(event.target.value))} aria-label={copy.stack.page} className="max-w-48 accent-primary" />
-            </div>
-          ) : null}
-
+        <main className="relative min-h-[60vh] min-w-0 bg-base-100 lg:min-h-0">
           {error ? (
-            <p role="alert" className="rounded-[var(--radius-box)] border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p role="alert" className="absolute left-3 right-3 top-3 z-10 rounded-[var(--radius-box)] border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
             </p>
           ) : null}
 
           {!hasImage ? (
             <div
-              className="grid min-h-72 flex-1 place-items-center rounded-[calc(var(--radius-box)+0.25rem)] border border-dashed border-base-300 bg-muted/40 p-8 text-center"
+              className="grid h-full place-items-center p-8 text-center"
               onDragOver={(event) => event.preventDefault()}
               onDrop={(event) => {
                 event.preventDefault()
@@ -850,52 +862,44 @@ export function ImageJApp() {
               </div>
             </div>
           ) : current ? (
-            <section className="flex min-h-[60vh] min-w-0 flex-1 flex-col gap-2 lg:min-h-0">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold text-base-content">{copy.result}</h2>
-                <span className="truncate font-mono text-[11px] text-base-content/55">
-                  {probe ? `${copy.stats.pixel} (${probe.x}, ${probe.y}) = ${probe.value} · ` : ''}{roiLabel}
-                </span>
-              </div>
+            <div
+              ref={viewportRef}
+              className="absolute inset-0 overflow-scroll bg-base-100"
+              style={{ scrollbarGutter: 'stable' }}
+            >
               <div
-                ref={viewportRef}
-                className="min-h-0 flex-1 overflow-auto rounded-[var(--radius-box)] border border-base-300 bg-muted/40"
+                className="relative inline-block"
+                style={{ width: current.width * zoom, height: current.height * zoom, margin: 8 }}
               >
-                <div
-                  className="relative inline-block"
-                  style={{ width: current.width * zoom, height: current.height * zoom, margin: 8 }}
-                >
-                  <canvas
-                    ref={resultCanvasRef}
-                    className="block touch-none bg-base-100 shadow-sm"
+                <canvas
+                  ref={resultCanvasRef}
+                  className="block touch-none"
+                  style={{
+                    width: current.width * zoom,
+                    height: current.height * zoom,
+                    imageRendering: 'pixelated',
+                    cursor: tool === 'pan' || spaceHeld ? 'grab' : 'crosshair',
+                  }}
+                  onPointerDown={onStagePointerDown}
+                  onPointerMove={onStagePointerMove}
+                  onPointerLeave={() => setProbe(null)}
+                  onPointerUp={onStagePointerUp}
+                  onPointerCancel={onStagePointerUp}
+                />
+                {roi ? (
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute border-2 border-primary bg-primary/10"
                     style={{
-                      width: current.width * zoom,
-                      height: current.height * zoom,
-                      imageRendering: 'pixelated',
-                      cursor: tool === 'pan' || spaceHeld ? 'grab' : 'crosshair',
+                      left: roi.x * zoom,
+                      top: roi.y * zoom,
+                      width: roi.width * zoom,
+                      height: roi.height * zoom,
                     }}
-                    onPointerDown={onStagePointerDown}
-                    onPointerMove={onStagePointerMove}
-                    onPointerLeave={() => setProbe(null)}
-                    onPointerUp={onStagePointerUp}
-                    onPointerCancel={onStagePointerUp}
                   />
-                  {roi ? (
-                    <div
-                      aria-hidden="true"
-                      className="pointer-events-none absolute border-2 border-primary bg-primary/10"
-                      style={{
-                        left: roi.x * zoom,
-                        top: roi.y * zoom,
-                        width: roi.width * zoom,
-                        height: roi.height * zoom,
-                      }}
-                    />
-                  ) : null}
-                </div>
+                ) : null}
               </div>
-              <p className="shrink-0 text-[11px] text-base-content/50">{copy.viewer.pixelHint} · {copy.viewer.panHint}</p>
-            </section>
+            </div>
           ) : null}
         </main>
 
