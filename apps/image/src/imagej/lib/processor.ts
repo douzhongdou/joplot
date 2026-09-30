@@ -428,92 +428,272 @@ export function otsuThreshold(histogram: ArrayLike<number>): number {
 }
 
 /* ------------------------------------------------------------------ *
- * 3x3 滤波
+ * 3x3 滤波（零分配：邻域以标量传入，绝不构造数组）
+ *
+ * 灰度用 stride=1，彩色通道用 stride=4 + offset 0/1/2，
+ * 同一份实现既能算灰度也能就地算某个通道 —— 分通道不再需要拆平面。
  * ------------------------------------------------------------------ */
 
-/** 取边界复制（replicate）后的像素值。 */
-function sampleClamped(image: GrayImage, x: number, y: number): number {
-  const cx = x < 0 ? 0 : x >= image.width ? image.width - 1 : x
-  const cy = y < 0 ? 0 : y >= image.height ? image.height - 1 : y
-  return image.data[cy * image.width + cx]
+/** 平面视图：描述一个通道在缓冲区里的取值方式。 */
+export interface Plane {
+  data: Uint8Array | Uint8ClampedArray
+  stride: number
+  offset: number
 }
 
-/** 收集以 (x, y) 为中心的 3x3 邻域，顺序为 p1..p9（行优先）。 */
-function neighborhood(image: GrayImage, x: number, y: number): [number, number, number, number, number, number, number, number, number] {
-  return [
-    sampleClamped(image, x - 1, y - 1),
-    sampleClamped(image, x, y - 1),
-    sampleClamped(image, x + 1, y - 1),
-    sampleClamped(image, x - 1, y),
-    sampleClamped(image, x, y),
-    sampleClamped(image, x + 1, y),
-    sampleClamped(image, x - 1, y + 1),
-    sampleClamped(image, x, y + 1),
-    sampleClamped(image, x + 1, y + 1),
-  ]
-}
+type Kernel9 = (
+  p1: number, p2: number, p3: number,
+  p4: number, p5: number, p6: number,
+  p7: number, p8: number, p9: number,
+) => number
 
-function mapNeighborhood(
-  image: GrayImage,
-  kernel: (values: [number, number, number, number, number, number, number, number, number]) => number,
-): GrayImage {
-  const out = createImage(image.width, image.height)
-  for (let y = 0; y < image.height; y += 1) {
-    for (let x = 0; x < image.width; x += 1) {
-      const value = kernel(neighborhood(image, x, y))
-      out.data[y * image.width + x] = value < 0 ? 0 : value > 255 ? 255 : value
+/** 通用 3×3 遍历：边界复制，结果夹取到 0..255 后写入 dst。内核为标量函数，无任何分配。 */
+function map3x3(src: Plane, dst: Plane, width: number, height: number, kernel: Kernel9): void {
+  const sd = src.data
+  const dd = dst.data
+  const ss = src.stride
+  const ds = dst.stride
+  const so = src.offset
+  const dOff = dst.offset
+  const srcRowSpan = width * ss
+  const dstRowSpan = width * ds
+
+  for (let y = 0; y < height; y += 1) {
+    const r0 = (y > 0 ? y - 1 : 0) * srcRowSpan + so
+    const r1 = y * srcRowSpan + so
+    const r2 = (y + 1 < height ? y + 1 : height - 1) * srcRowSpan + so
+    const dRow = y * dstRowSpan + dOff
+    for (let x = 0; x < width; x += 1) {
+      const x0 = (x > 0 ? x - 1 : 0) * ss
+      const x1 = x * ss
+      const x2 = (x + 1 < width ? x + 1 : width - 1) * ss
+      const value = kernel(
+        sd[r0 + x0], sd[r0 + x1], sd[r0 + x2],
+        sd[r1 + x0], sd[r1 + x1], sd[r1 + x2],
+        sd[r2 + x0], sd[r2 + x1], sd[r2 + x2],
+      )
+      dd[dRow + x * ds] = value < 0 ? 0 : value > 255 ? 255 : value
     }
   }
-  return out
+}
+
+function grayPlane(image: GrayImage): Plane {
+  return { data: image.data, stride: 1, offset: 0 }
 }
 
 /** 3x3 均值（ByteProcessor BLUR_MORE：(sum + 4) / 9）。 */
-export function mean3x3(image: GrayImage): GrayImage {
-  return mapNeighborhood(image, (v) => Math.floor((v[0] + v[1] + v[2] + v[3] + v[4] + v[5] + v[6] + v[7] + v[8] + 4) / 9))
+export function mean3x3Into(src: Plane, dst: Plane, width: number, height: number): void {
+  map3x3(src, dst, width, height, (a, b, c, d, e, f, g, h, i) => Math.floor((a + b + c + d + e + f + g + h + i + 4) / 9))
 }
 
-/** 3x3 中值（ByteProcessor MEDIAN_FILTER：9 个值取第 5 大）。 */
-export function median3x3(image: GrayImage): GrayImage {
-  return mapNeighborhood(image, (values) => {
-    const sorted = [...values].sort((a, b) => a - b)
-    return sorted[4]
+/** 3x3 中值（9 个值取第 5 大）：复用一个 9 槽 scratch，逐像素原地插入排序。 */
+const medianScratch = new Uint8Array(9)
+
+export function median3x3Into(src: Plane, dst: Plane, width: number, height: number): void {
+  const s = medianScratch
+  map3x3(src, dst, width, height, (a, b, c, d, e, f, g, h, i) => {
+    s[0] = a; s[1] = b; s[2] = c
+    s[3] = d; s[4] = e; s[5] = f
+    s[6] = g; s[7] = h; s[8] = i
+    for (let m = 1; m < 9; m += 1) {
+      const value = s[m]
+      let j = m - 1
+      while (j >= 0 && s[j] > value) {
+        s[j + 1] = s[j]
+        j -= 1
+      }
+      s[j + 1] = value
+    }
+    return s[4]
   })
+}
+
+/** 3×3 最小 / 最大秩滤波。 */
+export function minimum3x3Into(src: Plane, dst: Plane, width: number, height: number): void {
+  map3x3(src, dst, width, height, (a, b, c, d, e, f, g, h, i) =>
+    Math.min(a, b, c, d, e, f, g, h, i))
+}
+
+export function maximum3x3Into(src: Plane, dst: Plane, width: number, height: number): void {
+  map3x3(src, dst, width, height, (a, b, c, d, e, f, g, h, i) =>
+    Math.max(a, b, c, d, e, f, g, h, i))
 }
 
 /**
  * 3x3 卷积（ByteProcessor.convolve3x3）：按 ImageJ 的整数除法（向零取整）
  * 与 `scale/2` 舍入，再夹取 0..255。
  */
-export function convolve3x3(
-  image: GrayImage,
+export function convolve3x3Into(
+  src: Plane,
+  dst: Plane,
+  width: number,
+  height: number,
   kernel: readonly number[],
-): GrayImage {
+): void {
   if (kernel.length !== 9) {
     throw new ImagejError('invalid-value', '卷积核必须是 9 个元素')
   }
-
   let scale = 0
+  const k: number[] = []
   for (const value of kernel) {
     if (!Number.isFinite(value)) {
       throw new ImagejError('invalid-value', '卷积核包含非数字')
     }
-    scale += Math.trunc(value)
+    const truncated = Math.trunc(value)
+    k.push(truncated)
+    scale += truncated
   }
   if (scale === 0) {
     scale = 1
   }
-
-  const [k1, k2, k3, k4, k5, k6, k7, k8, k9] = kernel.map((value) => Math.trunc(value)) as [
-    number, number, number, number, number, number, number, number, number,
-  ]
   const half = Math.trunc(scale / 2)
+  const [k1, k2, k3, k4, k5, k6, k7, k8, k9] = k
+  map3x3(src, dst, width, height, (a, b, c, d, e, f, g, h, i) =>
+    Math.trunc((k1 * a + k2 * b + k3 * c + k4 * d + k5 * e + k6 * f + k7 * g + k8 * h + k9 * i + half) / scale))
+}
 
-  return mapNeighborhood(image, (v) => {
-    const sum = k1 * v[0] + k2 * v[1] + k3 * v[2]
-      + k4 * v[3] + k5 * v[4] + k6 * v[5]
-      + k7 * v[6] + k8 * v[7] + k9 * v[8]
-    return Math.trunc((sum + half) / scale)
+/** Sobel 边缘（ByteProcessor FIND_EDGES）。 */
+export function sobelEdgesInto(src: Plane, dst: Plane, width: number, height: number): void {
+  map3x3(src, dst, width, height, (a, b, c, d, _e, f, g, h, i) => {
+    const sum1 = a + 2 * b + c - g - 2 * h - i
+    const sum2 = a + 2 * d + g - c - 2 * f - i
+    const magnitude = Math.trunc(Math.sqrt(sum1 * sum1 + sum2 * sum2))
+    return magnitude > 255 ? 255 : magnitude
   })
+}
+
+/** 可分离高斯（边界复制），逐像素四舍五入到 8 位；临时缓冲每次调用分配一个。 */
+export function gaussianBlurInto(src: Plane, dst: Plane, width: number, height: number, sigma: number): void {
+  if (!Number.isFinite(sigma) || sigma < 0.1 || sigma > 20) {
+    throw new ImagejError('invalid-value', '高斯 sigma 必须在 0.1 到 20 之间')
+  }
+  const radius = Math.ceil(3 * sigma)
+  const kernel = new Float64Array(radius * 2 + 1)
+  let total = 0
+  for (let k = -radius; k <= radius; k += 1) {
+    const value = Math.exp(-(k * k) / (2 * sigma * sigma))
+    kernel[k + radius] = value
+    total += value
+  }
+  for (let k = 0; k < kernel.length; k += 1) kernel[k] /= total
+
+  const sd = src.data
+  const dd = dst.data
+  const ss = src.stride
+  const ds = dst.stride
+  const so = src.offset
+  const dOff = dst.offset
+  const rowSpan = width * ss
+  const temp = new Float32Array(width * height)
+
+  // 水平
+  for (let y = 0; y < height; y += 1) {
+    const row = y * rowSpan + so
+    const tRow = y * width
+    for (let x = 0; x < width; x += 1) {
+      let sum = 0
+      for (let k = -radius; k <= radius; k += 1) {
+        const nx = x + k < 0 ? 0 : x + k >= width ? width - 1 : x + k
+        sum += sd[row + nx * ss] * kernel[k + radius]
+      }
+      temp[tRow + x] = sum
+    }
+  }
+
+  // 垂直
+  for (let y = 0; y < height; y += 1) {
+    const dRow = y * width * ds + dOff
+    for (let x = 0; x < width; x += 1) {
+      let sum = 0
+      for (let k = -radius; k <= radius; k += 1) {
+        const ny = y + k < 0 ? 0 : y + k >= height ? height - 1 : y + k
+        sum += temp[ny * width + x] * kernel[k + radius]
+      }
+      const value = Math.round(sum)
+      dd[dRow + x * ds] = value < 0 ? 0 : value > 255 ? 255 : value
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 逐像素映射与直方图（同样零分配，支持 stride）
+ * ------------------------------------------------------------------ */
+
+/** 逐像素一元映射：内核是标量函数，逐像素调用不产生分配。 */
+export function mapPixelsInto(
+  src: Plane,
+  dst: Plane,
+  width: number,
+  height: number,
+  fn: (value: number) => number,
+): void {
+  const sd = src.data
+  const dd = dst.data
+  const ss = src.stride
+  const ds = dst.stride
+  const so = src.offset
+  const dOff = dst.offset
+  const rowSpan = width * ss
+  const dRowSpan = width * ds
+  for (let y = 0; y < height; y += 1) {
+    const row = y * rowSpan + so
+    const dRow = y * dRowSpan + dOff
+    for (let x = 0; x < width; x += 1) {
+      const value = fn(sd[row + x * ss])
+      dd[dRow + x * ds] = value < 0 ? 0 : value > 255 ? 255 : value
+    }
+  }
+}
+
+/** 单通道 256 桶直方图（复用外部传入的 bins，不分配）。 */
+export function histogramInto(src: Plane, width: number, height: number, bins: Uint32Array): void {
+  bins.fill(0)
+  const sd = src.data
+  const ss = src.stride
+  const so = src.offset
+  const rowSpan = width * ss
+  for (let y = 0; y < height; y += 1) {
+    const row = y * rowSpan + so
+    for (let x = 0; x < width; x += 1) {
+      bins[sd[row + x * ss]] += 1
+    }
+  }
+}
+
+/* ---- 灰度图像入口（保持原有纯函数接口） ---- */
+
+/** 3x3 均值（ByteProcessor BLUR_MORE：(sum + 4) / 9）。 */
+export function mean3x3(image: GrayImage): GrayImage {
+  const out = createImage(image.width, image.height)
+  mean3x3Into(grayPlane(image), grayPlane(out), image.width, image.height)
+  return out
+}
+
+/** 3x3 中值（ByteProcessor MEDIAN_FILTER：9 个值取第 5 大）。 */
+export function median3x3(image: GrayImage): GrayImage {
+  const out = createImage(image.width, image.height)
+  median3x3Into(grayPlane(image), grayPlane(out), image.width, image.height)
+  return out
+}
+
+/** 3x3 最小 / 最大。 */
+export function minimum3x3(image: GrayImage): GrayImage {
+  const out = createImage(image.width, image.height)
+  minimum3x3Into(grayPlane(image), grayPlane(out), image.width, image.height)
+  return out
+}
+
+export function maximum3x3(image: GrayImage): GrayImage {
+  const out = createImage(image.width, image.height)
+  maximum3x3Into(grayPlane(image), grayPlane(out), image.width, image.height)
+  return out
+}
+
+/** 3x3 卷积（ByteProcessor.convolve3x3）。 */
+export function convolve3x3(image: GrayImage, kernel: readonly number[]): GrayImage {
+  const out = createImage(image.width, image.height)
+  convolve3x3Into(grayPlane(image), grayPlane(out), image.width, image.height, kernel)
+  return out
 }
 
 /** 锐化（ImageProcessor.sharpen 的 {-1,-1,-1,-1,12,-1,-1,-1,-1} 核）。 */
@@ -523,12 +703,9 @@ export function sharpen3x3(image: GrayImage): GrayImage {
 
 /** Sobel 边缘（ByteProcessor FIND_EDGES）。 */
 export function sobelEdges(image: GrayImage): GrayImage {
-  return mapNeighborhood(image, (p) => {
-    const sum1 = p[0] + 2 * p[1] + p[2] - p[6] - 2 * p[7] - p[8]
-    const sum2 = p[0] + 2 * p[3] + p[6] - p[2] - 2 * p[5] - p[8]
-    const magnitude = Math.trunc(Math.sqrt(sum1 * sum1 + sum2 * sum2))
-    return magnitude > 255 ? 255 : magnitude
-  })
+  const out = createImage(image.width, image.height)
+  sobelEdgesInto(grayPlane(image), grayPlane(out), image.width, image.height)
+  return out
 }
 
 /* ------------------------------------------------------------------ *

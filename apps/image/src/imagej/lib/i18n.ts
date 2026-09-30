@@ -28,6 +28,20 @@ export interface ImagejCopy {
     color: string
     gray: string
   }
+  steps: {
+    heading: string
+    source: string
+    empty: string
+    add: string
+    remove: string
+    insertBefore: string
+    insertAfter: string
+    channel: string
+    needsGray: string
+    categories: Record<string, string>
+    ops: Record<string, string>
+    params: Record<string, string>
+  }
   roi: {
     draw: string
     clear: string
@@ -143,6 +157,26 @@ const zhCN: ImagejCopy = {
     color: '彩色',
     gray: '灰度',
   },
+  steps: {
+    heading: '处理步骤',
+    source: '源图像',
+    empty: '还没有处理步骤',
+    add: '添加步骤',
+    remove: '删除步骤',
+    insertBefore: '在此之前插入',
+    insertAfter: '在此之后插入',
+    channel: '通道',
+    needsGray: '此步骤需要灰度图，请先添加「转灰度」步骤。',
+    categories: { format: '格式', adjust: '显示', threshold: '阈值', filter: '滤波', morphology: '形态学', geometry: '几何', analysis: '分析' },
+    ops: {
+      grayscale: '转灰度', invert: '反相', levels: '亮度/对比度', threshold: '阈值', otsu: 'Otsu 自动阈值',
+      mean3x3: '3×3 均值', median3x3: '3×3 中值', sharpen3x3: '锐化', sobel: 'Sobel 边缘', minimum3x3: '3×3 最小', maximum3x3: '3×3 最大',
+      gaussian: '高斯模糊', erode: '腐蚀', dilate: '膨胀', open: '开运算', close: '闭运算', fillHoles: '填孔',
+      crop: '裁剪', flipH: '水平翻转', flipV: '垂直翻转', rotateCW: '顺时针 90°', rotateCCW: '逆时针 90°',
+      measure: '测量与直方图', particles: '粒子分析',
+    },
+    params: { brightness: '亮度', contrast: '对比度', level: '阈值', sigma: 'σ', minArea: '最小面积', x: 'X', y: 'Y', width: '宽', height: '高' },
+  },
   roi: {
     draw: '矩形 ROI',
     clear: '清除 ROI',
@@ -246,6 +280,26 @@ const en: ImagejCopy = {
     color: 'Color',
     gray: 'Gray',
   },
+  steps: {
+    heading: 'Processing steps',
+    source: 'Source image',
+    empty: 'No processing steps yet',
+    add: 'Add step',
+    remove: 'Remove step',
+    insertBefore: 'Insert before',
+    insertAfter: 'Insert after',
+    channel: 'Channel',
+    needsGray: 'This step needs a grayscale image — add a “Convert to grayscale” step first.',
+    categories: { format: 'Format', adjust: 'Display', threshold: 'Threshold', filter: 'Filter', morphology: 'Morphology', geometry: 'Geometry', analysis: 'Analysis' },
+    ops: {
+      grayscale: 'Convert to grayscale', invert: 'Invert', levels: 'Brightness/contrast', threshold: 'Threshold', otsu: 'Auto Otsu threshold',
+      mean3x3: '3×3 mean', median3x3: '3×3 median', sharpen3x3: 'Sharpen', sobel: 'Sobel edges', minimum3x3: '3×3 minimum', maximum3x3: '3×3 maximum',
+      gaussian: 'Gaussian blur', erode: 'Erode', dilate: 'Dilate', open: 'Open', close: 'Close', fillHoles: 'Fill holes',
+      crop: 'Crop', flipH: 'Flip horizontal', flipV: 'Flip vertical', rotateCW: 'Rotate 90° CW', rotateCCW: 'Rotate 90° CCW',
+      measure: 'Measurements & histogram', particles: 'Particle analysis',
+    },
+    params: { brightness: 'Brightness', contrast: 'Contrast', level: 'Level', sigma: 'σ', minArea: 'Minimum area', x: 'X', y: 'Y', width: 'Width', height: 'Height' },
+  },
   roi: {
     draw: 'Rectangle ROI',
     clear: 'Clear ROI',
@@ -348,6 +402,26 @@ const jaJP: ImagejCopy = {
     display: '表示',
     color: 'カラー',
     gray: 'グレー',
+  },
+  steps: {
+    heading: '処理ステップ',
+    source: '元画像',
+    empty: '処理ステップがありません',
+    add: 'ステップを追加',
+    remove: 'ステップを削除',
+    insertBefore: 'この前に挿入',
+    insertAfter: 'この後に挿入',
+    channel: 'チャンネル',
+    needsGray: 'このステップにはグレースケール画像が必要です。先に「グレースケール変換」を追加してください。',
+    categories: { format: '形式', adjust: '表示', threshold: 'しきい値', filter: 'フィルタ', morphology: '形態学', geometry: '幾何', analysis: '解析' },
+    ops: {
+      grayscale: 'グレースケール変換', invert: '反転', levels: '明るさ/コントラスト', threshold: 'しきい値', otsu: 'Otsu 自動しきい値',
+      mean3x3: '3×3 平均', median3x3: '3×3 中央値', sharpen3x3: 'シャープ', sobel: 'Sobel エッジ', minimum3x3: '3×3 最小', maximum3x3: '3×3 最大',
+      gaussian: 'ガウスぼかし', erode: '収縮', dilate: '膨張', open: '開', close: '閉', fillHoles: '穴埋め',
+      crop: '切り抜き', flipH: '水平反転', flipV: '垂直反転', rotateCW: '時計回り 90°', rotateCCW: '反時計回り 90°',
+      measure: '測定とヒストグラム', particles: '粒子解析',
+    },
+    params: { brightness: '明るさ', contrast: 'コントラスト', level: 'しきい値', sigma: 'σ', minArea: '最小面積', x: 'X', y: 'Y', width: '幅', height: '高さ' },
   },
   roi: {
     draw: '矩形 ROI',
