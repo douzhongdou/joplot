@@ -754,8 +754,8 @@ export function ImageJApp() {
       <AppNavbar section="imagej" />
 
       <div className="grid min-h-0 min-w-0 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_340px] lg:overflow-hidden">
-        <main className="flex min-w-0 flex-col gap-4 bg-base-100 p-4 lg:h-full lg:overflow-y-auto">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+        <main className="flex min-h-0 min-w-0 flex-col gap-3 bg-base-100 p-3 lg:h-full lg:overflow-hidden">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <input
                 ref={fileInputRef}
@@ -834,7 +834,7 @@ export function ImageJApp() {
 
           {!hasImage ? (
             <div
-              className="grid min-h-72 place-items-center rounded-[calc(var(--radius-box)+0.25rem)] border border-dashed border-base-300 bg-muted/40 p-8 text-center"
+              className="grid min-h-72 flex-1 place-items-center rounded-[calc(var(--radius-box)+0.25rem)] border border-dashed border-base-300 bg-muted/40 p-8 text-center"
               onDragOver={(event) => event.preventDefault()}
               onDrop={(event) => {
                 event.preventDefault()
@@ -850,7 +850,7 @@ export function ImageJApp() {
               </div>
             </div>
           ) : current ? (
-            <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+            <section className="flex min-h-[60vh] min-w-0 flex-1 flex-col gap-2 lg:min-h-0">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold text-base-content">{copy.result}</h2>
                 <span className="truncate font-mono text-[11px] text-base-content/55">
@@ -894,82 +894,7 @@ export function ImageJApp() {
                   ) : null}
                 </div>
               </div>
-              <p className="text-[11px] text-base-content/50">{copy.viewer.pixelHint} · {copy.viewer.panHint}</p>
-            </section>
-          ) : null}
-
-          <section className="grid gap-3 rounded-[var(--radius-box)] border border-base-300 bg-base-100 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-base-content">{copy.stats.heading}</h2>
-              <span className="inline-flex rounded-[var(--radius-field)] bg-muted p-0.5">
-                {(['image', 'roi'] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={scope === value}
-                    disabled={value === 'roi' && !roi}
-                    className={`h-7 rounded-[calc(var(--radius-field)-2px)] px-3 text-xs font-medium transition disabled:opacity-40 ${
-                      scope === value ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
-                    }`}
-                    onClick={() => setScope(value)}
-                  >
-                    {value === 'image' ? copy.roi.scopeImage : copy.roi.scopeRoi}
-                  </button>
-                ))}
-              </span>
-            </div>
-
-            {stats ? (
-              <>
-                <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-                  {[
-                    [copy.stats.pixels, stats.count.toLocaleString()],
-                    [copy.stats.area, stats.area.toLocaleString()],
-                    [copy.stats.mean, stats.mean.toFixed(2)],
-                    [copy.stats.min, String(stats.min)],
-                    [copy.stats.max, String(stats.max)],
-                    [copy.stats.stdDev, stats.stdDev.toFixed(2)],
-                  ].map(([label, value]) => (
-                    <div key={label} className="rounded-[var(--radius-field)] bg-muted px-3 py-2">
-                      <dt className="text-[11px] text-base-content/55">{label}</dt>
-                      <dd className="font-mono text-sm font-semibold tabular-nums text-base-content">{value}</dd>
-                    </div>
-                  ))}
-                </dl>
-                <div>
-                  <div className="mb-1 flex items-center justify-between text-[11px] text-base-content/55">
-                    <span>{copy.stats.histogram}</span>
-                    <span>
-                      {copy.stats.thresholdMark}: {thresholdLevel}
-                    </span>
-                  </div>
-                  <canvas ref={histogramCanvasRef} className="block h-32 w-full rounded-[var(--radius-field)] bg-muted" />
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-base-content/55">
-                {scope === 'roi' && hasImage ? copy.roi.needRoi : copy.emptyDescription}
-              </p>
-            )}
-          </section>
-          {particles ? (
-            <section className="grid gap-2 rounded-[var(--radius-box)] border border-base-300 p-4">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold">{copy.binary.particles}: {particles.length}</h2>
-                <Button type="button" variant="outline" size="sm" onClick={exportParticlesCsv}>{copy.binary.exportCsv}</Button>
-              </div>
-              <div className="max-h-64 overflow-auto">
-                <table className="w-full min-w-[440px] text-left text-xs tabular-nums">
-                  <thead><tr className="border-b border-base-300"><th className="p-2">#</th><th className="p-2">{copy.stats.area}</th><th className="p-2">{copy.binary.perimeter}</th><th className="p-2">{copy.binary.circularity}</th><th className="p-2">{copy.binary.centroid}</th></tr></thead>
-                  <tbody>{particles.map((particle) => (
-                    <tr key={particle.id} className="border-b border-base-200">
-                      <td className="p-2">{particle.id}</td><td className="p-2">{particle.area}</td>
-                      <td className="p-2">{particle.perimeter}</td><td className="p-2">{particle.circularity.toFixed(3)}</td>
-                      <td className="p-2">({particle.centroidX.toFixed(1)}, {particle.centroidY.toFixed(1)})</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              </div>
+              <p className="shrink-0 text-[11px] text-base-content/50">{copy.viewer.pixelHint} · {copy.viewer.panHint}</p>
             </section>
           ) : null}
         </main>
@@ -1140,6 +1065,80 @@ export function ImageJApp() {
               <Button type="button" variant="outline" size="sm" disabled={!stack || stack.length < 2} onClick={() => downloadTiff(true)}>{copy.stack.exportAll}</Button>
             </div>
           </section>
+
+          <section className="grid gap-3 rounded-[var(--radius-box)] bg-muted/50 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-base-content/55">{copy.stats.heading}</h2>
+              <span className="inline-flex rounded-[var(--radius-field)] bg-base-200 p-0.5">
+                {(['image', 'roi'] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={scope === value}
+                    disabled={value === 'roi' && !roi}
+                    className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium transition disabled:opacity-40 ${
+                      scope === value ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
+                    }`}
+                    onClick={() => setScope(value)}
+                  >
+                    {value === 'image' ? copy.roi.scopeImage : copy.roi.scopeRoi}
+                  </button>
+                ))}
+              </span>
+            </div>
+
+            {stats ? (
+              <>
+                <dl className="grid grid-cols-2 gap-2">
+                  {[
+                    [copy.stats.pixels, stats.count.toLocaleString()],
+                    [copy.stats.area, stats.area.toLocaleString()],
+                    [copy.stats.mean, stats.mean.toFixed(2)],
+                    [copy.stats.min, String(stats.min)],
+                    [copy.stats.max, String(stats.max)],
+                    [copy.stats.stdDev, stats.stdDev.toFixed(2)],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-[var(--radius-field)] bg-base-100 px-3 py-2">
+                      <dt className="text-[11px] text-base-content/55">{label}</dt>
+                      <dd className="font-mono text-sm font-semibold tabular-nums text-base-content">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-[11px] text-base-content/55">
+                    <span>{copy.stats.histogram}</span>
+                    <span>{copy.stats.thresholdMark}: {thresholdLevel}</span>
+                  </div>
+                  <canvas ref={histogramCanvasRef} className="block h-28 w-full rounded-[var(--radius-field)] bg-base-100" />
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-base-content/55">
+                {scope === 'roi' && hasImage ? copy.roi.needRoi : copy.emptyDescription}
+              </p>
+            )}
+          </section>
+
+          {particles ? (
+            <section className="grid gap-2 rounded-[var(--radius-box)] bg-muted/50 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-base-content/55">{copy.binary.particles}: {particles.length}</h2>
+                <Button type="button" variant="outline" size="sm" onClick={exportParticlesCsv}>{copy.binary.exportCsv}</Button>
+              </div>
+              <div className="max-h-64 overflow-auto">
+                <table className="w-full min-w-[280px] text-left text-xs tabular-nums">
+                  <thead><tr className="border-b border-base-300"><th className="p-1.5">#</th><th className="p-1.5">{copy.stats.area}</th><th className="p-1.5">{copy.binary.perimeter}</th><th className="p-1.5">{copy.binary.circularity}</th><th className="p-1.5">{copy.binary.centroid}</th></tr></thead>
+                  <tbody>{particles.map((particle) => (
+                    <tr key={particle.id} className="border-b border-base-200">
+                      <td className="p-1.5">{particle.id}</td><td className="p-1.5">{particle.area}</td>
+                      <td className="p-1.5">{particle.perimeter}</td><td className="p-1.5">{particle.circularity.toFixed(3)}</td>
+                      <td className="p-1.5">({particle.centroidX.toFixed(1)}, {particle.centroidY.toFixed(1)})</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
 
           <p className="text-[11px] leading-relaxed text-base-content/45">{copy.localNote}</p>
 
