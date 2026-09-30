@@ -208,6 +208,7 @@ export const en = {
     function: 'Functions',
     superplot: 'super-plot',
     science: 'Science',
+    imagej: 'Images',
     more: 'More',
   },
   functionStudio: {

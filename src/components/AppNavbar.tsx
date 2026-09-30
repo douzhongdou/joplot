@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { Activity, ChevronDown, CircleHelp, FlaskConical, FunctionSquare, Languages, TableProperties } from 'lucide-react'
+import { Activity, ChevronDown, CircleHelp, FlaskConical, FunctionSquare, Image as ImageIcon, Languages, TableProperties } from 'lucide-react'
 import { HelpContent, HelpPopover } from './HelpPopover'
 import { SelectMenu } from './SelectMenu'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils'
 import {
   SUPPORTED_LANGUAGES,
   getFunctionStudioPath,
+  getImagejPath,
   getLanguagePath,
   getSuperPlotPath,
   getSciencePath,
@@ -28,7 +29,7 @@ import {
   type SupportedLanguage,
 } from '../i18n'
 
-export type AppSection = 'workbench' | 'function' | 'superplot' | 'science'
+export type AppSection = 'workbench' | 'function' | 'superplot' | 'science' | 'imagej'
 
 interface Props {
   section?: AppSection
@@ -36,7 +37,7 @@ interface Props {
   mobile?: boolean
   viewMode?: 'chart' | 'data'
   onChangeViewMode?: (mode: 'chart' | 'data') => void
-  /** 是否显示板块导航（数据 / 函数 / super-plot / 科学处理）；工具栏模式可关掉。 */
+  /** 是否显示板块导航（数据 / 函数 / super-plot / 科学处理 / 图像）；工具栏模式可关掉。 */
   showNav?: boolean
   /** 当前板块自己的工具按钮，渲染在导航与语言/帮助之间。 */
   toolbar?: ReactNode
@@ -163,6 +164,14 @@ export function AppNavbar({
           >
             <FlaskConical size={15} strokeWidth={2.1} aria-hidden="true" />
             <span>{t('nav.science')}</span>
+          </Link>
+          <Link
+            href={getImagejPath(language)}
+            aria-current={section === 'imagej' ? 'page' : undefined}
+            className={sectionLinkClass(section === 'imagej')}
+          >
+            <ImageIcon size={15} strokeWidth={2.1} aria-hidden="true" />
+            <span>{t('nav.imagej')}</span>
           </Link>
           </nav>
         ) : null}
