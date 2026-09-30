@@ -1,0 +1,6 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@joplot/ui/theme.css";
+
+/* 共享 UI 包在 node_modules 之外，需要显式告诉 Tailwind 扫描它的类名 */
+@source "../../../packages/ui/src";

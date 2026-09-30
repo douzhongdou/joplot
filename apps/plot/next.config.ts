@@ -1,0 +1,30 @@
+import type { NextConfig } from 'next'
+
+/**
+ * 同域多 zone：绘图工作台是主应用（域名根），图像工作台挂在 /[lang]/imagej。
+ * 部署时把 IMAGE_APP_ORIGIN 指向图像应用的部署源（例如 https://joplot-image.vercel.app），
+ * 这里就会把 /zh|en|ja/imagej* 反代过去；本地不配该项则走各自的 dev server。
+ */
+const imageAppOrigin = process.env.IMAGE_APP_ORIGIN?.replace(/\/+$/, '')
+
+const nextConfig: NextConfig = {
+  transpilePackages: ['@joplot/ui', '@joplot/i18n'],
+  async rewrites() {
+    if (!imageAppOrigin) {
+      return []
+    }
+
+    return [
+      {
+        source: '/:lang(zh|en|ja)/imagej',
+        destination: `${imageAppOrigin}/:lang/imagej`,
+      },
+      {
+        source: '/:lang(zh|en|ja)/imagej/:path*',
+        destination: `${imageAppOrigin}/:lang/imagej/:path*`,
+      },
+    ]
+  },
+}
+
+export default nextConfig

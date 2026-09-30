@@ -1,0 +1,38 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@joplot/ui/theme.css";
+
+/* 共享 UI 包在 node_modules 之外，需要显式告诉 Tailwind 扫描它的类名 */
+@source "../../../packages/ui/src";
+
+/* ---- 以下为本应用（绘图工作台）专属样式 ---- */
+
+.js-plotly-plot,
+.plot-container {
+  width: 100%;
+  height: 100%;
+}
+
+/* Hover tooltip rounded corners */
+.js-plotly-plot .hoverlayer .hovertext rect {
+  clip-path: inset(0 round 8px) !important;
+}
+
+/* File and More are one menu bar: hover changes the text, never the button's shape. */
+.app-menubar-trigger:hover,
+.app-menubar-trigger[data-state='open'],
+.app-menubar-trigger:focus-visible {
+  background-color: transparent !important;
+}
+
+.app-menubar-trigger:hover {
+  opacity: 0.7;
+}
+
+.app-menubar-trigger:focus-visible {
+  box-shadow: none !important;
+}
+
+:root[data-input-modality='keyboard'] .app-menubar-trigger:focus-visible {
+  font-weight: 700;
+}

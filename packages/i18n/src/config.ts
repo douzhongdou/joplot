@@ -1,0 +1,154 @@
+/**
+ * 语言与本地化路由的通用工具，不包含任何具体应用的板块（route segment）。
+ * 各应用用 `createLocalizedPath(segment)` 生成自己的 /zh/xxx、/en/xxx 路径。
+ */
+
+/** localStorage 里保存语言偏好的键。默认沿用历史键名，避免老用户丢失选择。 */
+export const LANGUAGE_STORAGE_KEY = 'plotnow-language'
+
+export const SUPPORTED_LANGUAGES = ['zh-CN', 'en', 'ja-JP'] as const
+export const ROUTE_LANGUAGES = ['zh', 'en', 'ja'] as const
+
+export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number]
+export type RouteLanguage = (typeof ROUTE_LANGUAGES)[number]
+
+export const LANGUAGE_PATHS: Record<SupportedLanguage, '/zh' | '/en' | '/ja'> = {
+  'zh-CN': '/zh',
+  en: '/en',
+  'ja-JP': '/ja',
+}
+
+export const ROUTE_LANGUAGE_TO_SUPPORTED_LANGUAGE: Record<RouteLanguage, SupportedLanguage> = {
+  zh: 'zh-CN',
+  en: 'en',
+  ja: 'ja-JP',
+}
+
+export const SUPPORTED_LANGUAGE_TO_ROUTE_LANGUAGE: Record<SupportedLanguage, RouteLanguage> = {
+  'zh-CN': 'zh',
+  en: 'en',
+  'ja-JP': 'ja',
+}
+
+export const LANGUAGE_HTML_LANG: Record<SupportedLanguage, string> = {
+  'zh-CN': 'zh-CN',
+  en: 'en',
+  'ja-JP': 'ja',
+}
+
+export function isRouteLanguage(value: string): value is RouteLanguage {
+  return ROUTE_LANGUAGES.includes(value as RouteLanguage)
+}
+
+function normalizePathname(pathname?: string | null): string | null {
+  if (!pathname) {
+    return null
+  }
+
+  const trimmed = pathname.trim()
+
+  if (!trimmed) {
+    return null
+  }
+
+  const normalized = trimmed.replace(/\/+$/, '')
+  return normalized === '' ? '/' : normalized.toLowerCase()
+}
+
+export function normalizeLanguage(input?: string | null): SupportedLanguage | null {
+  if (!input) {
+    return null
+  }
+
+  const normalized = input.trim().toLowerCase()
+
+  if (normalized.startsWith('zh')) {
+    return 'zh-CN'
+  }
+
+  if (normalized.startsWith('ja')) {
+    return 'ja-JP'
+  }
+
+  if (normalized.startsWith('en')) {
+    return 'en'
+  }
+
+  return null
+}
+
+export function resolveLanguageFromPath(pathname?: string | null): SupportedLanguage | null {
+  const normalizedPathname = normalizePathname(pathname)
+
+  if (!normalizedPathname) {
+    return null
+  }
+
+  const routeLanguage = extractRouteLanguage(normalizedPathname)
+
+  return routeLanguage ? ROUTE_LANGUAGE_TO_SUPPORTED_LANGUAGE[routeLanguage] : null
+}
+
+function extractRouteLanguage(normalizedPathname: string): RouteLanguage | null {
+  const firstSegment = normalizedPathname.split('/')[1] ?? ''
+
+  return isRouteLanguage(firstSegment) ? firstSegment : null
+}
+
+/**
+ * Swaps the language prefix of a localized path while keeping the rest of the
+ * route, e.g. `/zh/function` -> `/en/function`. Unprefixed paths resolve to the
+ * language root.
+ */
+export function replaceRouteLanguage(pathname: string, nextLanguage: SupportedLanguage): string {
+  const targetPath = LANGUAGE_PATHS[nextLanguage]
+  const normalized = pathname.trim().replace(/\/+$/, '') || '/'
+  const currentRoute = extractRouteLanguage(normalized.toLowerCase())
+
+  if (!currentRoute) {
+    return targetPath
+  }
+
+  const rest = normalized.slice(currentRoute.length + 1)
+
+  return `${targetPath}${rest}`
+}
+
+/** 生成某个应用板块的本地化路由构造器，例如 `createLocalizedPath('imagej')('/en') === '/en/imagej'`。 */
+export function createLocalizedPath(segment: string): (language: SupportedLanguage) => string {
+  const normalizedSegment = segment.replace(/^\/+|\/+$/g, '')
+  return (language) => `${LANGUAGE_PATHS[language]}/${normalizedSegment}`
+}
+
+export function resolveSupportedLanguageFromRouteLanguage(language: string): SupportedLanguage | null {
+  return isRouteLanguage(language) ? ROUTE_LANGUAGE_TO_SUPPORTED_LANGUAGE[language] : null
+}
+
+export function getLanguagePath(language: SupportedLanguage): string {
+  return LANGUAGE_PATHS[language]
+}
+
+export function getRouteLanguage(language: SupportedLanguage): RouteLanguage {
+  return SUPPORTED_LANGUAGE_TO_ROUTE_LANGUAGE[language]
+}
+
+export function getHtmlLang(language: SupportedLanguage): string {
+  return LANGUAGE_HTML_LANG[language]
+}
+
+export function resolveInitialLanguage(
+  pathname?: string | null,
+  storedLanguage?: string | null,
+  browserLanguage?: string | null,
+): SupportedLanguage {
+  if (browserLanguage === undefined && !pathname?.trim().startsWith('/')) {
+    return normalizeLanguage(pathname)
+      ?? normalizeLanguage(storedLanguage)
+      ?? 'en'
+  }
+
+  return resolveLanguageFromPath(pathname)
+    ?? normalizeLanguage(storedLanguage)
+    ?? normalizeLanguage(browserLanguage)
+    ?? 'en'
+}

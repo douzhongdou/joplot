@@ -8,6 +8,26 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
+# Repository layout
+
+pnpm workspace monorepo. Apps never import from each other; shared code lives in `packages/*`.
+
+- `apps/plot` — CSV / science plotting workbench (Next.js)
+- `apps/image` — ImageJ-style 8-bit image workbench (Next.js)
+- `packages/ui` — shared shadcn/ui primitives (`@joplot/ui`) and the design-token stylesheet
+- `packages/i18n` — shared language + localized-route helpers (`@joplot/i18n`)
+
+Common commands (from the repo root): `pnpm install`, `pnpm -r typecheck`, `pnpm -r test`,
+`pnpm dev:plot`, `pnpm dev:image`.
+
 # UI conventions
 
-This project uses shadcn/ui (new-york style, neutral base color). Reusable primitives live in `src/components/ui/` (button, select, switch, popover, dropdown-menu, sheet, label) — prefer them over hand-rolled controls. `cn()` is in `src/lib/utils.ts`; `@/*` maps to `./src/*`. Design tokens are in `src/index.css`: shadcn standard tokens plus legacy daisy-style aliases (`bg-base-100`, `text-base-content`, `--radius-field/box`, etc.) kept for existing markup.
+This project uses shadcn/ui (new-york style, neutral base color). Reusable primitives live in
+`packages/ui/src` and are imported as `@joplot/ui/<name>` (button, select, switch, popover,
+dropdown-menu, sheet, label, dialog, tooltip) — prefer them over hand-rolled controls.
+`cn()` is exported from `@joplot/ui/utils`. Design tokens are in `packages/ui/src/theme.css`:
+shadcn standard tokens plus legacy daisy-style aliases (`bg-base-100`, `text-base-content`,
+`--radius-field/box`, etc.). Each app imports the theme from its `globals.css` and adds
+`@source "../../../packages/ui/src"` so Tailwind scans the package for class names.
+Language plumbing lives in `@joplot/i18n`; each app supplies its own dictionaries and route
+segments.
