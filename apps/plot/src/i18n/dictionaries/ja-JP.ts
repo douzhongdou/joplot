@@ -209,7 +209,7 @@ export const jaJP = {
     superplot: 'super-plot',
     science: '科学処理',
     imagej: '画像',
-    more: 'その他',
+    menu: 'メニュー',
   },
   functionStudio: {
     heading: '関数プロッター',

@@ -209,7 +209,7 @@ export const en = {
     superplot: 'super-plot',
     science: 'Science',
     imagej: 'Images',
-    more: 'More',
+    menu: 'Menu',
   },
   functionStudio: {
     heading: 'Function plotter',

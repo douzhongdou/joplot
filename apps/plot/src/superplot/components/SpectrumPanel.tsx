@@ -8,6 +8,7 @@ import { extractNumericValues } from '../lib/columns.ts'
 import { getSuperPlotColor, withAlpha } from '../lib/colors.ts'
 import { resolveSuperPlotAxisColor, resolveSuperPlotGridColor, SUPER_PLOT_FONT_FAMILY } from '../lib/plotTheme.ts'
 import { formatAmplitude, formatCount, formatFrequency } from '../lib/format.ts'
+import { CHART_HOVERLABEL } from '../../lib/tooltipStyle.ts'
 import { PlotlyChart, type PlotlyChartHandle, type SuperPlotTrace } from './PlotlyChart.tsx'
 import { Field, NumberInput, SegmentedControl, SelectInput, Toggle } from './Controls.tsx'
 
@@ -148,7 +149,7 @@ export function SpectrumPlot({ copy, model, plotRef, className }: PlotProps) {
     const axisColor = resolveSuperPlotAxisColor()
 
     return {
-      margin: { l: 68, r: 16, t: 18, b: 46 },
+      margin: { l: 68, r: 16, t: 18, b: 58 },
       showlegend: false,
       xaxis: {
         title: { text: copy.spectrum.frequency, font: { size: 12 } },
@@ -164,6 +165,7 @@ export function SpectrumPlot({ copy, model, plotRef, className }: PlotProps) {
       paper_bgcolor: 'rgba(0,0,0,0)',
       plot_bgcolor: 'rgba(0,0,0,0)',
       hovermode: 'x unified' as const,
+      hoverlabel: CHART_HOVERLABEL,
       font: { family: SUPER_PLOT_FONT_FAMILY, size: 12 },
     }
   }, [amplitudeMode, copy.spectrum.amplitude, copy.spectrum.frequency, logFrequency])

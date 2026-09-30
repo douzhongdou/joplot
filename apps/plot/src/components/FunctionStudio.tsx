@@ -277,7 +277,7 @@ export function FunctionStudio() {
   }), [yRange])
 
   const plotLayout = useMemo<Partial<Layout>>(() => ({
-    margin: { l: 56, r: 20, t: 20, b: showLegend ? 76 : 48 },
+    margin: { l: 56, r: 20, t: 20, b: showLegend ? 82 : 52 },
     showlegend: showLegend,
     legend: { orientation: 'h', x: 0, y: -0.18, font: { size: 12 } },
     hovermode: 'x unified',

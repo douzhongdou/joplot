@@ -209,7 +209,7 @@ export const zhCN = {
     superplot: 'super-plot',
     science: '科学处理',
     imagej: '图像',
-    more: '更多',
+    menu: '菜单',
   },
   functionStudio: {
     heading: '函数画板',

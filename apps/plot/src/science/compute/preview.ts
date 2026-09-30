@@ -5,7 +5,7 @@
 
 import type { ScienceValue } from '../types.ts'
 import { createDense, values1d } from '../lib/dense.ts'
-import { downsamplePoints, minMaxEnvelope } from '../../superplot/lib/downsample.ts'
+import { downsamplePoints, minMaxEnvelope, sliceByRange } from '../../superplot/lib/downsample.ts'
 
 import { DEFAULT_PREVIEW_TARGET } from './protocol.ts'
 
@@ -54,6 +54,41 @@ function envelope(x: Float64Array, y: Float64Array, target: number): Float64Arra
   return [pair.x, pair.y]
 }
 
+/** Preserve narrow spectral lines near both ends of a linear or logarithmic frequency axis. */
+function spectrumEnvelope(x: Float64Array, y: Float64Array, target: number): Float64Array[] {
+  const n = Math.min(x.length, y.length)
+  if (n <= target) return [x, y]
+
+  const buckets = Math.max(1, Math.floor(target / 4))
+  const selected = new Set<number>([0, n - 1])
+  const firstPositive = x.findIndex((frequency) => frequency > 0)
+  const logMin = firstPositive >= 0 ? Math.log10(x[firstPositive]) : 0
+  const logSpan = firstPositive >= 0 ? Math.log10(x[n - 1]) - logMin : 0
+
+  for (const scale of ['linear', 'log'] as const) {
+    if (scale === 'log' && !(logSpan > 0)) continue
+    const minIndex = new Int32Array(buckets).fill(-1)
+    const maxIndex = new Int32Array(buckets).fill(-1)
+    for (let i = scale === 'log' ? firstPositive : 0; i < n; i += 1) {
+      if (!Number.isFinite(y[i])) continue
+      const position = scale === 'log'
+        ? (Math.log10(x[i]) - logMin) / logSpan
+        : (x[i] - x[0]) / (x[n - 1] - x[0])
+      if (!Number.isFinite(position)) continue
+      const bucket = Math.min(buckets - 1, Math.max(0, Math.floor(position * buckets)))
+      if (minIndex[bucket] < 0 || y[i] < y[minIndex[bucket]]) minIndex[bucket] = i
+      if (maxIndex[bucket] < 0 || y[i] > y[maxIndex[bucket]]) maxIndex[bucket] = i
+    }
+    for (let bucket = 0; bucket < buckets; bucket += 1) {
+      if (minIndex[bucket] >= 0) selected.add(minIndex[bucket])
+      if (maxIndex[bucket] >= 0) selected.add(maxIndex[bucket])
+    }
+  }
+
+  const indices = [...selected].sort((left, right) => left - right)
+  return [take(x, indices), take(y, indices)]
+}
+
 export function toPreview(value: ScienceValue, target = DEFAULT_PREVIEW_TARGET): ScienceValue {
   if (value.kind === 'series') {
     const x = values1d(value.x)
@@ -65,7 +100,7 @@ export function toPreview(value: ScienceValue, target = DEFAULT_PREVIEW_TARGET):
   if (value.kind === 'spectrum') {
     const frequency = values1d(value.frequency)
     const magnitude = values1d(value.magnitude)
-    const [pf, pm] = envelope(frequency, magnitude, target)
+    const [pf, pm] = spectrumEnvelope(frequency, magnitude, target)
     return {
       ...value,
       frequency: createDense(pf),
@@ -145,12 +180,13 @@ export function toPreviewInRange(
 
   if (value.kind === 'spectrum') {
     const frequency = values1d(value.frequency)
-    const sampled = downsamplePoints(frequency, values1d(value.magnitude), 'envelope', target, range)
+    const sliced = sliceByRange(frequency, values1d(value.magnitude), range.min, range.max)
+    const [pf, pm] = spectrumEnvelope(sliced.x, sliced.y, target)
     return {
       ...value,
-      frequency: createDense(sampled.x),
-      magnitude: createDense(sampled.y),
-      phase: value.phase ? createDense(alignedPhase(frequency, values1d(value.phase), sampled.x)) : null,
+      frequency: createDense(pf),
+      magnitude: createDense(pm),
+      phase: value.phase ? createDense(alignedPhase(frequency, values1d(value.phase), pf)) : null,
       pointCount: value.frequency.shape[0],
     }
   }

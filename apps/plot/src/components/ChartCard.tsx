@@ -376,7 +376,7 @@ export function ChartCard({
       }
     } else if (card.kind !== 'heatmap') {
       base.xaxis = {
-        title: { text: card.showAxes ? card.xColumn : '' },
+        title: { text: card.showAxes ? card.xColumn : '', automargin: true },
         automargin: true,
         showgrid: card.showGrid,
         gridcolor: gridColor,
@@ -393,6 +393,7 @@ export function ChartCard({
                   : (validSeries[0]?.series.yColumn ?? '')
               )
             : '',
+          automargin: true,
         },
         automargin: true,
         showgrid: card.showGrid,

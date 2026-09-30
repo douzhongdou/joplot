@@ -194,6 +194,28 @@
   }
 }
 
+/* Science workspace runs a denser top bar; opt in with data-navbar="compact". */
+[data-navbar='compact'] {
+  --navbar-height: 3rem;
+}
+
+@media (max-width: 639px) {
+  [data-navbar='compact'] {
+    --navbar-height: 2.75rem;
+  }
+}
+
+/* Science workspace runs a denser top bar; opt in with data-navbar="compact". */
+[data-navbar='compact'] {
+  --navbar-height: 3rem;
+}
+
+@media (max-width: 639px) {
+  [data-navbar='compact'] {
+    --navbar-height: 2.75rem;
+  }
+}
+
 @layer base {
   * {
     box-sizing: border-box;
