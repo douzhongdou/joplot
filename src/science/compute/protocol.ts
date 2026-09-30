@@ -1,5 +1,6 @@
 import type { DatasetMapping, DatasetSummary, ScienceValue, WorkspaceSource } from '../types.ts'
 import type { AnalysisStep } from '../lib/pipeline.ts'
+import type { DataTablePage } from '../lib/dataTable.ts'
 
 /**
  * 主线程 → Worker
@@ -48,6 +49,28 @@ export interface ExportRequest {
   valueId: string
 }
 
+export interface DatasetPageRequest {
+  type: 'dataset-page'
+  requestId: number
+  datasetId: string
+  offset: number
+  limit: number
+}
+
+export interface ValuePageRequest {
+  type: 'value-page'
+  requestId: number
+  valueId: string
+  offset: number
+  limit: number
+}
+
+export interface ExportDatasetRequest {
+  type: 'export-dataset'
+  requestId: number
+  datasetId: string
+}
+
 /** 独立驱逐：删除步骤后立即清 Worker 缓存，不依赖后续 run（autoRun 关闭时也要生效）。 */
 export interface EvictRequest {
   type: 'evict'
@@ -64,7 +87,7 @@ export interface PreviewRequest {
   target: number
 }
 
-export type WorkerRequest = RunRequest | MutateRequest | ExportRequest | PreviewRequest | EvictRequest
+export type WorkerRequest = RunRequest | MutateRequest | ExportRequest | ExportDatasetRequest | DatasetPageRequest | ValuePageRequest | PreviewRequest | EvictRequest
 
 /** Worker → 主线程 */
 export interface RunResultMessage {
@@ -111,6 +134,12 @@ export interface ExportResultMessage {
   blob: Blob
 }
 
+export interface DatasetPageResultMessage {
+  type: 'dataset-page-result'
+  requestId: number
+  page: DataTablePage
+}
+
 export interface PreviewResultMessage {
   type: 'preview-result'
   requestId: number
@@ -128,6 +157,7 @@ export type WorkerResponse =
   | ProgressMessage
   | ErrorMessage
   | ExportResultMessage
+  | DatasetPageResultMessage
   | PreviewResultMessage
   | EvictResultMessage
 

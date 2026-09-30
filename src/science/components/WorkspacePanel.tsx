@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, X } from 'lucide-react'
+import { ChevronDown, Table2, X } from 'lucide-react'
 import type { DatasetSummary, ScienceValue } from '../types.ts'
 import type { ScienceCopy } from '../lib/i18n.ts'
 import { SelectMenu } from '@/components/SelectMenu'
+import { Button } from '@/components/ui/button'
 import { vectorData, vectorFields, vectorId } from '../lib/vectors.ts'
 
 interface DatasetMapping {
@@ -37,6 +38,7 @@ export function WorkspacePanel({
   importing,
   onMappingChange,
   onRemoveDataset,
+  onInspectDataset,
 }: {
   values: ScienceValue[]
   selectedId: string
@@ -49,6 +51,7 @@ export function WorkspacePanel({
   importing: boolean
   onMappingChange: (datasetId: string, xColumn: string, yColumns: string[]) => void
   onRemoveDataset: (datasetId: string) => void
+  onInspectDataset: (datasetId: string) => void
 }) {
   // 数据集卡默认折叠；仅新导入的自动展开（恢复的旧数据集保持折叠）。
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set())
@@ -164,6 +167,17 @@ export function WorkspacePanel({
                   {dataset.rowCount.toLocaleString()} × {dataset.headers.length} · X: {mapping.xColumn || copy.rowIndex}
                 </span>
               </button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="size-6 shrink-0"
+                onClick={() => onInspectDataset(dataset.id)}
+                aria-label={`${copy.rawData}: ${dataset.fileName}`}
+                title={copy.rawData}
+              >
+                <Table2 size={14} aria-hidden="true" />
+              </Button>
               <button
                 type="button"
                 onClick={() => onRemoveDataset(dataset.id)}

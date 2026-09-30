@@ -24,7 +24,8 @@ import { readScienceDataset } from '../lib/readDataset.ts'
 import { dedupeDatasetId, removeDatasetById, resolveDatasetMutationBase } from '../lib/datasets.ts'
 import { loadScienceDatasets, saveScienceDatasets } from '../lib/persistence.ts'
 import { valueToCsv } from '../lib/export.ts'
-import { resolveValue, vectorParentId } from '../lib/vectors.ts'
+import { rawDatasetToCsv, readRawDatasetPage, readValuePage, readVectorPage } from '../lib/dataTable.ts'
+import { resolveValue, vectorParentId, type VectorField } from '../lib/vectors.ts'
 import { computeValues } from './engine.ts'
 import { toPreview, toPreviewInRange } from './preview.ts'
 import type { MutateRequest, RunRequest, WorkerRequest, WorkerResponse } from './protocol.ts'
@@ -191,6 +192,37 @@ function findValue(valueId: string): ScienceValue | undefined {
 
 scope.addEventListener('message', (event: MessageEvent) => {
   const request = event.data as WorkerRequest
+
+  if (request.type === 'value-page') {
+    try {
+      const parentId = vectorParentId(request.valueId)
+      const value = findValue(parentId)
+      if (!value) throw new Error(`Value "${request.valueId}" is unavailable`)
+      const page = parentId === request.valueId
+        ? readValuePage(value, request.offset, request.limit)
+        : readVectorPage(value, request.valueId.slice(parentId.length + 2) as VectorField, request.offset, request.limit)
+      if (!page) throw new Error(`Value "${request.valueId}" is unavailable`)
+      post({ type: 'dataset-page-result', requestId: request.requestId, page })
+    } catch (error) {
+      post({ type: 'error', requestId: request.requestId, message: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  if (request.type === 'dataset-page' || request.type === 'export-dataset') {
+    void hydrateIfNeeded('dataset').then(() => {
+      const dataset = datasets.find((candidate) => candidate.id === request.datasetId)
+      if (!dataset) throw new Error(`Dataset "${request.datasetId}" is unavailable`)
+      if (request.type === 'dataset-page') {
+        post({ type: 'dataset-page-result', requestId: request.requestId, page: readRawDatasetPage(dataset, request.offset, request.limit) })
+      } else {
+        post({ type: 'export-result', requestId: request.requestId, blob: rawDatasetToCsv(dataset) })
+      }
+    }).catch((error: unknown) => {
+      post({ type: 'error', requestId: request.requestId, message: error instanceof Error ? error.message : String(error) })
+    })
+    return
+  }
 
   if (request.type === 'export') {
     try {

@@ -11,6 +11,7 @@
 import { useEffect, useRef } from 'react'
 import type { DatasetMapping, DatasetSummary, ScienceValue, WorkspaceSource } from '../types.ts'
 import type { AnalysisStep } from '../lib/pipeline.ts'
+import type { DataTablePage } from '../lib/dataTable.ts'
 import {
   DEFAULT_PREVIEW_TARGET,
   type MutateKind,
@@ -57,6 +58,9 @@ export interface ComputeHost {
   run(steps: AnalysisStep[], options: RunOptions): Promise<ComputeResult>
   mutate(options: MutateOptions): Promise<MutateResult>
   exportValue(valueId: string): Promise<Blob>
+  datasetPage(datasetId: string, offset: number, limit?: number): Promise<DataTablePage>
+  valuePage(valueId: string, offset: number, limit?: number): Promise<DataTablePage>
+  exportDataset(datasetId: string): Promise<Blob>
   preview(valueIds: string[], xRange: { min: number; max: number } | null, target?: number): Promise<ScienceValue[]>
   /**
    * 独立驱逐产出自 Worker 缓存（与 run/mutate 同队列保序）。
@@ -74,7 +78,7 @@ export function createComputeHost(): ComputeHost {
   /** run/mutate 串行链：保证 Worker 侧状态变更按发出顺序执行，互不交错。 */
   let queue: Promise<unknown> = Promise.resolve()
   const pending = new Map<number, {
-    resolve: (result: ComputeResult | MutateResult | Blob | ScienceValue[] | undefined) => void
+    resolve: (result: ComputeResult | MutateResult | Blob | DataTablePage | ScienceValue[] | undefined) => void
     reject: (error: unknown) => void
   }>()
 
@@ -122,6 +126,8 @@ export function createComputeHost(): ComputeHost {
         })
       } else if (message.type === 'export-result') {
         entry.resolve(message.blob)
+      } else if (message.type === 'dataset-page-result') {
+        entry.resolve(message.page)
       } else if (message.type === 'preview-result') {
         entry.resolve(message.values)
       } else if (message.type === 'evict-result') {
@@ -200,6 +206,36 @@ export function createComputeHost(): ComputeHost {
       return new Promise<Blob>((resolve, reject) => {
         pending.set(requestId, { resolve: (result) => resolve(result as Blob), reject })
         instance.postMessage({ type: 'export', requestId, valueId } satisfies WorkerRequest)
+      })
+    },
+    datasetPage(datasetId, offset, limit = 100) {
+      return enqueue(() => {
+        const instance = ensureWorker()
+        const requestId = (sequence += 1)
+        return new Promise<DataTablePage>((resolve, reject) => {
+          pending.set(requestId, { resolve: (result) => resolve(result as DataTablePage), reject })
+          instance.postMessage({ type: 'dataset-page', requestId, datasetId, offset, limit } satisfies WorkerRequest)
+        })
+      })
+    },
+    valuePage(valueId, offset, limit = 100) {
+      return enqueue(() => {
+        const instance = ensureWorker()
+        const requestId = (sequence += 1)
+        return new Promise<DataTablePage>((resolve, reject) => {
+          pending.set(requestId, { resolve: (result) => resolve(result as DataTablePage), reject })
+          instance.postMessage({ type: 'value-page', requestId, valueId, offset, limit } satisfies WorkerRequest)
+        })
+      })
+    },
+    exportDataset(datasetId) {
+      return enqueue(() => {
+        const instance = ensureWorker()
+        const requestId = (sequence += 1)
+        return new Promise<Blob>((resolve, reject) => {
+          pending.set(requestId, { resolve: (result) => resolve(result as Blob), reject })
+          instance.postMessage({ type: 'export-dataset', requestId, datasetId } satisfies WorkerRequest)
+        })
       })
     },
     preview(valueIds, xRange, target = DEFAULT_PREVIEW_TARGET) {

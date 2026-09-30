@@ -19,6 +19,11 @@ export interface ScienceCopy {
   rowIndex: string
   exportCsv: string
   exportShort: string
+  rawData: string
+  viewData: string
+  exportRawCsv: string
+  loadingData: string
+  emptyData: string
   runActions: string
   noNumeric: string
   storageError: string
@@ -51,6 +56,12 @@ export interface ScienceCopy {
   categories: Record<string, string>
   labels: Record<string, string>
   kinds: Record<string, string>
+  view: {
+    /** 视图切换控件的分组无障碍标签。 */
+    label: string
+    plot: string
+    table: string
+  }
   plot: {
     timeDomain: string
     dataDomain: string
@@ -233,6 +244,11 @@ const ZH: ScienceCopy = {
   lastRun: '上次运行',
   runActions: '运行控制',
   exportShort: '导出 CSV',
+  rawData: '查看原始数据',
+  viewData: '查看所选数据',
+  exportRawCsv: '导出完整 CSV',
+  loadingData: '正在读取数据…',
+  emptyData: '没有数据行',
   fileMenu: '文件',
   input: '输入',
   secondInput: '第二输入',
@@ -261,6 +277,7 @@ const ZH: ScienceCopy = {
   categories: { signal: '信号', math: '数学', spectral: '频谱', fit: '拟合', stats: '统计' },
   labels: ZH_LABELS,
   kinds: { series: '序列', spectrum: '频谱', fit: '拟合', stats: '统计' },
+  view: { label: '视图切换', plot: '图表', table: '表格' },
   plot: {
     timeDomain: '时域',
     dataDomain: '数据曲线',
@@ -328,6 +345,11 @@ const EN: ScienceCopy = {
   lastRun: 'Last run',
   runActions: 'Run controls',
   exportShort: 'Export CSV',
+  rawData: 'View raw data',
+  viewData: 'View selected data',
+  exportRawCsv: 'Export full CSV',
+  loadingData: 'Loading data…',
+  emptyData: 'No data rows',
   fileMenu: 'File',
   input: 'Input',
   secondInput: 'Second input',
@@ -356,6 +378,7 @@ const EN: ScienceCopy = {
   categories: { signal: 'Signal', math: 'Math', spectral: 'Spectral', fit: 'Fit', stats: 'Stats' },
   labels: EN_LABELS,
   kinds: { series: 'Series', spectrum: 'Spectrum', fit: 'Fit', stats: 'Stats' },
+  view: { label: 'View switch', plot: 'Plot', table: 'Table' },
   plot: {
     timeDomain: 'Time domain',
     dataDomain: 'Data plot',
@@ -424,6 +447,11 @@ const JA: ScienceCopy = {
   lastRun: '前回',
   runActions: '実行操作',
   exportShort: 'CSV 出力',
+  rawData: '元データを見る',
+  viewData: '選択データを見る',
+  exportRawCsv: '全件 CSV 出力',
+  loadingData: 'データを読み込み中…',
+  emptyData: 'データ行がありません',
   fileMenu: 'ファイル',
   input: '入力',
   secondInput: '第 2 入力',
@@ -451,6 +479,7 @@ const JA: ScienceCopy = {
     zscore: 'Z スコア', std: '標準偏差', rms: 'RMS', median: '中央値',
   },
   kinds: { series: '系列', spectrum: 'スペクトル', fit: 'フィット', stats: '統計' },
+  view: { label: '表示切替', plot: 'プロット', table: 'テーブル' },
   plot: { timeDomain: '時間領域', dataDomain: 'データ曲線', frequencyDomain: '周波数領域', residual: '残差', fit: 'フィット', data: 'データ', peak: 'ピーク', magnitude: '振幅', phase: '位相 (rad)', phaseUnavailable: 'Welch 法はパワースペクトルを平均するため、一意の位相はありません。位相を表示するには分割数を 1 にしてください。' },
   fit: { rSquared: 'R²', rmse: 'RMSE', iterations: '反復回数', converged: '収束', yes: 'はい', no: 'いいえ', params: 'パラメータ', stopReason: '停止理由', reasons: { converged: 'ステップ収束', maxIterations: '最大反復', stalled: '改善不能' } },
   stats: {

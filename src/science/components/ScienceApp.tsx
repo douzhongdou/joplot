@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, Download, Play, UploadCloud, X } from 'lucide-react'
+import { ChevronDown, Download, Play, Table2, UploadCloud, X } from 'lucide-react'
 import type { DatasetMapping, DatasetSummary, ScienceValue, WorkspaceSource } from '../types.ts'
 import { values1d } from '../lib/dense.ts'
 import { resolveValue, vectorParentId } from '../lib/vectors.ts'
@@ -23,6 +23,7 @@ import { Switch } from '@/components/ui/switch'
 import { Plot, type AxisRange, type PlotApi, type ScienceTrace, type TraceUpdate } from './Plot.tsx'
 import { PlotToolbar, type PlotCopyState } from '../../components/PlotToolbar.tsx'
 import { WorkspacePanel } from './WorkspacePanel.tsx'
+import { DataTable, type DataTableSource } from './DataTable.tsx'
 
 type RunStatus = 'idle' | 'running' | 'ready' | 'error'
 
@@ -172,6 +173,10 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   const [mappings, setMappings] = useState<Record<string, DatasetMapping>>({})
   const [importing, setImporting] = useState(false)
   const [importDialogOpen, setImportDialogOpen] = useState(false)
+  /** 主区域视图：图表（绘图）或表格（数据表）。 */
+  const [view, setView] = useState<'plot' | 'table'>('plot')
+  /** 表格视图锁定的数据集 id（点数据集的表格按钮时指定）；null 表格跟随左侧选中的结果变量。 */
+  const [tableDatasetId, setTableDatasetId] = useState<string | null>(null)
   const [importError, setImportError] = useState('')
   const [hydrated, setHydrated] = useState(false)
   const [persistenceError, setPersistenceError] = useState(false)
@@ -509,6 +514,12 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
     })
   }
 
+  /** 左侧选中变量：表格视图随即跟随新的选择。 */
+  const handleSelectValue = (id: string) => {
+    setSelectedId(id)
+    setTableDatasetId(null)
+  }
+
   // 挂载时从 IndexedDB 恢复配方；数据集由 Worker 从 IndexedDB 水合。
   useEffect(() => {
     let active = true
@@ -573,6 +584,15 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   const selected = resolveValue(values, selectedId) ?? values[0]
 
   const hasDatasets = datasets.length > 0
+  /** 表格视图的数据源：锁定的数据集优先，否则展示当前选中结果（数据集已删除则回退）。 */
+  const lockedDataset = tableDatasetId
+    ? datasets.find((candidate) => candidate.id === tableDatasetId)
+    : undefined
+  const tableSource: DataTableSource | null = lockedDataset
+    ? { kind: 'dataset', dataset: lockedDataset }
+    : selected
+      ? { kind: 'value', value: selected }
+      : null
   const selectedDatasetId = selected?.kind === 'series' && selected.id.startsWith('ds:')
     ? datasetPrefix(selected.id).slice(3, -1)
     : null
@@ -597,6 +617,24 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
       const link = document.createElement('a')
       link.href = url
       link.download = `${selected.name.replace(/[^\w\u4e00-\u9fff.-]+/g, '_') || 'result'}.csv`
+      link.click()
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (error) {
+      setStatus('error')
+      setErrorText(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  /** 表格锁定在某个原始数据集时，导出该数据集的完整 CSV（表格本身不放导出按钮）。 */
+  const exportRawDataset = async () => {
+    if (!lockedDataset) return
+    try {
+      const blob = await host.exportDataset(lockedDataset.id)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      const base = lockedDataset.fileName.replace(/\.(csv|tsv|txt|xlsx|xls)$/i, '').replace(/[\\/:*?"<>|]/g, '_')
+      link.download = `${base || 'data'}.csv`
       link.click()
       setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch (error) {
@@ -809,10 +847,20 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
             <UploadCloud size={15} aria-hidden="true" />
             {copy.importData}
           </DropdownMenuItem>
+          <DropdownMenuItem disabled={!canExport} onSelect={() => { setTableDatasetId(null); setView('table') }}>
+            <Table2 size={15} aria-hidden="true" />
+            {copy.viewData}
+          </DropdownMenuItem>
           <DropdownMenuItem disabled={!canExport} onSelect={() => void exportSelected()}>
             <Download size={15} aria-hidden="true" />
             {copy.exportShort}
           </DropdownMenuItem>
+          {lockedDataset ? (
+            <DropdownMenuItem onSelect={() => void exportRawDataset()}>
+              <Download size={15} aria-hidden="true" />
+              {copy.exportRawCsv}
+            </DropdownMenuItem>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
       <ImportDialog
@@ -829,7 +877,25 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   )
 
   const toolbar = (
-    <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:min-w-max sm:gap-3">
+    <div className="flex min-w-0 flex-1 items-center justify-between gap-2 sm:min-w-max sm:gap-3">
+      {/* 主区视图切换：贴在「文件」菜单之后，运行控件保持靠右 */}
+      <div role="group" aria-label={copy.view.label} className="inline-flex shrink-0 rounded-[var(--radius-field)] bg-muted p-0.5">
+        {(['plot', 'table'] as const).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            aria-pressed={view === mode}
+            className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2.5 text-xs font-medium transition ${
+              view === mode ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
+            }`}
+            onClick={() => setView(mode)}
+          >
+            {mode === 'plot' ? copy.view.plot : copy.view.table}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
       <div className="flex items-center gap-1.5 sm:gap-3" role="group" aria-label={copy.runActions}>
         <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap text-xs font-medium text-base-content/75">
           <Switch checked={autoRun} onCheckedChange={setAutoRun} aria-label={copy.auto} className="h-5" />
@@ -865,6 +931,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
           </span>
         ) : null}
       </div>
+      </div>
     </div>
   )
 
@@ -877,7 +944,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
           values={values}
           selectedId={selected?.id ?? ''}
           copy={copy}
-          onSelect={setSelectedId}
+          onSelect={handleSelectValue}
           datasets={datasets}
           mappings={mappings}
           importError={importError}
@@ -885,42 +952,62 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
           importing={importing}
           onMappingChange={updateMapping}
           onRemoveDataset={removeDataset}
+          onInspectDataset={(id) => {
+            setTableDatasetId(id)
+            setView('table')
+          }}
         />
 
-        <main className="flex min-w-0 flex-col gap-4 p-4 lg:h-full lg:overflow-y-auto">
-        <section className="flex min-w-0 flex-col gap-2 rounded-[calc(var(--radius-box)+0.25rem)] bg-base-100 p-4 shadow-sm">
-          <div className="flex items-center gap-2">
-            <span className="size-2.5 rounded-full bg-primary" />
-            <h2 className="text-sm font-semibold text-base-content">{hasDatasets ? copy.plot.dataDomain : copy.plot.timeDomain}</h2>
-            <span className="font-mono text-[11px] text-base-content/45">{selected?.name ?? '—'}</span>
-            {selected?.kind === 'series' && (
-              <span className="ml-auto inline-flex rounded-[var(--radius-field)] bg-muted p-0.5">
-                {(['line', 'markers', 'line+markers'] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    aria-pressed={waveMode === mode}
-                    className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium transition ${
-                      waveMode === mode ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
-                    }`}
-                    onClick={() => setWaveMode(mode)}
-                  >
-                    {mode === 'line' ? copy.waveModeLine : mode === 'markers' ? copy.waveModeMarkers : copy.waveModeBoth}
-                  </button>
-                ))}
-              </span>
-            )}
-            {wave.traces.length > 0 && (
-              <span className={selected?.kind === 'series' ? '' : 'ml-auto'}>
-                <PlotToolbar
-                  copyState={waveCopyState}
-                  onAutorange={() => void wavePlotRef.current?.autorange()}
-                  onCopyImage={() => void copyPlotImage(wavePlotRef.current, setWaveCopyState)}
-                  onDownloadImage={() => void wavePlotRef.current?.downloadImage()}
-                />
-              </span>
-            )}
-          </div>
+        <main className={view === 'table'
+          ? 'flex min-w-0 flex-col bg-base-100 lg:h-full lg:overflow-hidden'
+          : 'flex min-w-0 flex-col gap-4 bg-base-100 lg:h-full lg:overflow-y-auto'}>
+        {view === 'table' ? (
+          tableSource ? (
+            <DataTable
+              key={tableSource.kind === 'dataset' ? `dataset:${tableSource.dataset.id}` : `value:${tableSource.value.id}`}
+              source={tableSource}
+              host={host}
+              copy={copy}
+              revision={result}
+            />
+          ) : (
+            <p className="grid flex-1 place-items-center p-6 text-center text-xs text-base-content/40">{copy.empty}</p>
+          )
+        ) : (
+          <>
+        <section className="flex min-w-0 flex-col gap-1">
+          <h2 className="sr-only">{hasDatasets ? copy.plot.dataDomain : copy.plot.timeDomain}</h2>
+          {selected?.kind === 'series' || wave.traces.length > 0 ? (
+            <div className="flex items-center justify-end gap-2">
+              {selected?.kind === 'series' && (
+                <span className="inline-flex rounded-[var(--radius-field)] bg-muted p-0.5">
+                  {(['line', 'markers', 'line+markers'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      aria-pressed={waveMode === mode}
+                      className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium transition ${
+                        waveMode === mode ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
+                      }`}
+                      onClick={() => setWaveMode(mode)}
+                    >
+                      {mode === 'line' ? copy.waveModeLine : mode === 'markers' ? copy.waveModeMarkers : copy.waveModeBoth}
+                    </button>
+                  ))}
+                </span>
+              )}
+              {wave.traces.length > 0 && (
+                <span>
+                  <PlotToolbar
+                    copyState={waveCopyState}
+                    onAutorange={() => void wavePlotRef.current?.autorange()}
+                    onCopyImage={() => void copyPlotImage(wavePlotRef.current, setWaveCopyState)}
+                    onDownloadImage={() => void wavePlotRef.current?.downloadImage()}
+                  />
+                </span>
+              )}
+            </div>
+          ) : null}
           {wave.traces.length > 0 ? (
             <Plot
               ref={wavePlotRef}
@@ -938,12 +1025,11 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
         </section>
 
         {hasSpectrumStep ? (
-          <section className="flex min-w-0 flex-col gap-2 rounded-[calc(var(--radius-box)+0.25rem)] bg-base-100 p-4 shadow-sm">
-            <div className="flex items-center gap-2">
-              <span className="size-2.5 rounded-full bg-secondary" />
-              <h2 className="text-sm font-semibold text-base-content">{copy.plot.frequencyDomain}</h2>
-              {spectrum.length > 0 && (
-                <span className="ml-auto">
+          <section className="flex min-w-0 flex-col gap-1 border-t border-base-300 pt-4">
+            <h2 className="sr-only">{copy.plot.frequencyDomain}</h2>
+            {spectrum.length > 0 ? (
+              <div className="flex items-center justify-end gap-2">
+                <span>
                   <PlotToolbar
                     copyState={spectrumCopyState}
                     onAutorange={() => void spectrumPlotRef.current?.autorange()}
@@ -951,8 +1037,8 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
                     onDownloadImage={() => void spectrumPlotRef.current?.downloadImage()}
                   />
                 </span>
-              )}
-            </div>
+              </div>
+            ) : null}
             {spectrum.length > 0 ? (
               <Plot
                 ref={spectrumPlotRef}
@@ -971,6 +1057,8 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
             ) : null}
           </section>
         ) : null}
+          </>
+        )}
       </main>
 
       <div className="flex min-h-0 flex-col border-t border-base-300 bg-base-100 lg:h-full lg:overflow-y-auto lg:border-l lg:border-t-0">
