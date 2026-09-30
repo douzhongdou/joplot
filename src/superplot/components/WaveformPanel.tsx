@@ -9,6 +9,7 @@ import { downsamplePoints } from '../lib/downsample.ts'
 import { getSuperPlotColorForSeries } from '../lib/colors.ts'
 import { resolveSuperPlotAxisColor, resolveSuperPlotGridColor, SUPER_PLOT_FONT_FAMILY } from '../lib/plotTheme.ts'
 import { formatAmplitude, formatCount } from '../lib/format.ts'
+import { CHART_HOVERLABEL } from '../../lib/tooltipStyle.ts'
 import { PlotlyChart, type AxisRange, type PlotlyChartHandle, type SuperPlotTrace } from './PlotlyChart.tsx'
 import { Button, Field, SelectInput } from './Controls.tsx'
 
@@ -93,7 +94,7 @@ export function WaveformPlot({ dataset, xColumn, series, mode, target, plotRef, 
     const axisColor = resolveSuperPlotAxisColor()
 
     return {
-      margin: { l: 64, r: 16, t: 18, b: 42 },
+      margin: { l: 64, r: 16, t: 18, b: 54 },
       showlegend: series.length > 1,
       legend: { orientation: 'h', x: 0, y: 1.14, font: { size: 11 } },
       xaxis: {
@@ -114,6 +115,7 @@ export function WaveformPlot({ dataset, xColumn, series, mode, target, plotRef, 
       plot_bgcolor: 'rgba(0,0,0,0)',
       dragmode: 'pan' as const,
       hovermode: 'x unified' as const,
+      hoverlabel: CHART_HOVERLABEL,
       font: { family: SUPER_PLOT_FONT_FAMILY, size: 12 },
     }
   }, [series, xColumn])

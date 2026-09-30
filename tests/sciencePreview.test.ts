@@ -103,3 +103,24 @@ test('spectrum previews keep phase paired with selected magnitude bins', () => {
     for (let index = 0; index < x.length; index += 1) assert.equal(y[index], x[index] / 100)
   }
 })
+
+test('spectrum preview retains a narrow low-frequency line beside a strong DC bin', () => {
+  const frequency = Float64Array.from({ length: 100_000 }, (_, index) => index)
+  const magnitude = new Float64Array(frequency.length).fill(1)
+  magnitude[0] = 1000
+  magnitude[12] = 100
+  magnitude[89_123] = 50
+  const spectrum: SpectrumValue = {
+    id: 'fft1', name: 'fft1', kind: 'spectrum',
+    frequency: createDense(frequency), magnitude: createDense(magnitude), phase: null,
+    peaks: [], sampleRate: 200_000, provenance: 'test',
+  }
+  for (const preview of [toPreview(spectrum, 400), toPreviewInRange(spectrum, { min: 0, max: 100_000 }, 400)]) {
+    assert.equal(preview.kind, 'spectrum')
+    if (preview.kind !== 'spectrum') continue
+    const x = values1d(preview.frequency)
+    assert.ok(x.includes(12), 'the logarithmic low-frequency buckets retain the line')
+    assert.ok(x.includes(89_123), 'the linear buckets retain the high-frequency line')
+    assert.ok(x.length <= 402)
+  }
+})

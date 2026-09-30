@@ -262,29 +262,6 @@ export const PlotCanvas = forwardRef<PlotCanvasApi, Props>(function PlotCanvas(
     }
   }, [])
 
-  // Round hover tooltip corners (Plotly doesn't support this natively)
-  useEffect(() => {
-    const graphDiv = containerRef.current
-    if (!graphDiv) return
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function handleHover() {
-      if (!graphDiv) return
-      const rect = graphDiv.querySelector<SVGRectElement>('.hoverlayer .hovertext rect')
-      if (rect) {
-        rect.setAttribute('rx', '8')
-        rect.setAttribute('ry', '8')
-      }
-    }
-
-    graphDiv.addEventListener('plotly_hover', handleHover)
-    graphDiv.addEventListener('plotly_unhover', handleHover)
-    return () => {
-      graphDiv.removeEventListener('plotly_hover', handleHover)
-      graphDiv.removeEventListener('plotly_unhover', handleHover)
-    }
-  }, [])
-
   useEffect(() => {
     if (!containerRef.current) {
       return

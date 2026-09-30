@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { Activity, ChevronDown, CircleHelp, FlaskConical, FunctionSquare, Languages, TableProperties } from 'lucide-react'
-import { HelpContent, HelpPopover } from './HelpPopover'
+import { HelpButton, HelpDialog } from './HelpDialog'
 import { SelectMenu } from './SelectMenu'
 import { Button, buttonVariants } from '@/components/ui/button'
 import {
@@ -12,6 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -40,8 +41,13 @@ interface Props {
   showNav?: boolean
   /** 当前板块自己的工具按钮，渲染在导航与语言/帮助之间。 */
   toolbar?: ReactNode
-  /** 工具页左侧菜单；提供时将语言和帮助归入同一个“更多”菜单。 */
-  menu?: ReactNode
+  /**
+   * logo 下拉菜单里的自定义分组（例如科学处理的文件操作）。
+   * 提供时 logo 旁出现收起按钮，语言与帮助也一并并入该菜单；否则语言与帮助留在右侧。
+   */
+  logoMenu?: ReactNode
+  /** logo 菜单关闭时的焦点守卫（例如导入对话框正在打开，焦点应留给对话框）。 */
+  onLogoMenuCloseAutoFocus?: (event: Event) => void
 }
 
 export function AppNavbar({
@@ -52,10 +58,11 @@ export function AppNavbar({
   onChangeViewMode,
   showNav = true,
   toolbar,
-  menu,
+  logoMenu,
+  onLogoMenuCloseAutoFocus,
 }: Props) {
   const { language, setLanguage, t } = useI18n()
-  const [helpExpanded, setHelpExpanded] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
 
   const languageOptions = SUPPORTED_LANGUAGES.map((option) => ({
     value: option,
@@ -71,64 +78,75 @@ export function AppNavbar({
     )
   }
 
+  const logoImage = (
+    <div className={cn('shrink-0 overflow-hidden rounded-lg', section === 'science' ? 'h-5 sm:h-7' : 'h-7 sm:h-9 sm:rounded-xl')}>
+      <img src="/navbar-icon.webp" alt="joplot" className="block size-full object-contain" />
+    </div>
+  )
+
+  const languageSubmenu = (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <Languages size={15} aria-hidden="true" />
+        {t('language.label')}
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="min-w-36">
+        <DropdownMenuRadioGroup value={language} onValueChange={(value) => {
+          const selected = SUPPORTED_LANGUAGES.find((option) => option === value)
+          if (selected) setLanguage(selected)
+        }}>
+          {languageOptions.map((option) => (
+            <DropdownMenuRadioItem key={option.value} value={option.value}>
+              {option.label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  )
+
+  const helpMenuItem = (
+    <DropdownMenuItem onSelect={() => setHelpOpen(true)}>
+      <CircleHelp size={15} aria-hidden="true" />
+      {t('help.label')}
+    </DropdownMenuItem>
+  )
+
   return (
     <header className={cn('flex min-h-[var(--navbar-height)] min-w-0 items-center justify-between border-b border-base-300 bg-base-100 py-1 sm:gap-3 sm:px-5 sm:py-2', section === 'science' ? 'gap-1.5 px-2' : 'gap-2 px-3')}>
       <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-        <div className={cn('shrink-0 overflow-hidden rounded-lg', section === 'science' ? 'h-5 sm:h-7' : 'h-7 sm:h-9 sm:rounded-xl')}>
-          <img src="/navbar-icon.webp" alt="joplot" className="block size-full object-contain" />
-        </div>
-
-        {menu ? (
-          <nav className="flex shrink-0 items-center gap-0.5 border-l border-base-300 pl-1 sm:pl-3" aria-label={t('nav.science')}>
-            {menu}
-            <DropdownMenu onOpenChange={(open) => {
-              if (!open) setHelpExpanded(false)
-            }}>
+        {logoMenu ? (
+          <DropdownMenu>
+            <div className="flex shrink-0 items-center gap-0.5">
+              {logoImage}
               <DropdownMenuTrigger asChild>
-                <Button type="button" variant="ghost" size="sm" className="app-menubar-trigger h-7 gap-1 px-1.5 text-xs sm:px-2">
-                  {t('nav.more')}
-                  <ChevronDown size={12} className="hidden sm:block" aria-hidden="true" />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t('nav.menu')}
+                  className="size-7 shrink-0 rounded-md text-base-content/55 hover:text-base-content"
+                >
+                  <ChevronDown size={15} strokeWidth={2.4} aria-hidden="true" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className={helpExpanded ? 'w-72' : 'min-w-40'}>
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
-                    <Languages size={15} aria-hidden="true" />
-                    {t('language.label')}
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="min-w-36">
-                    <DropdownMenuRadioGroup value={language} onValueChange={(value) => {
-                      const selected = SUPPORTED_LANGUAGES.find((option) => option === value)
-                      if (selected) setLanguage(selected)
-                    }}>
-                      {languageOptions.map((option) => (
-                        <DropdownMenuRadioItem key={option.value} value={option.value}>
-                          {option.label}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-                <DropdownMenuItem
-                  aria-expanded={helpExpanded}
-                  onSelect={(event) => {
-                    event.preventDefault()
-                    setHelpExpanded((expanded) => !expanded)
-                  }}
-                >
-                    <CircleHelp size={15} aria-hidden="true" />
-                    {t('help.label')}
-                    <ChevronDown size={14} className={cn('ml-auto transition-transform', helpExpanded && 'rotate-180')} aria-hidden="true" />
-                </DropdownMenuItem>
-                {helpExpanded ? (
-                  <div className="mt-1 border-t border-base-300 p-3">
-                    <HelpContent />
-                  </div>
-                ) : null}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </nav>
-        ) : null}
+            </div>
+            <DropdownMenuContent
+              align="start"
+              className="min-w-48"
+              onCloseAutoFocus={(event) => {
+                // 菜单项打开的弹窗（导入 / 帮助）需要自己接管焦点。
+                if (helpOpen) event.preventDefault()
+                onLogoMenuCloseAutoFocus?.(event)
+              }}
+            >
+              {logoMenu}
+              <DropdownMenuSeparator />
+              {languageSubmenu}
+              {helpMenuItem}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : logoImage}
 
         {showNav ? (
           <nav className="ml-1 flex min-w-0 items-center gap-0.5 overflow-x-auto sm:ml-3" aria-label={t('nav.sectionsLabel')}>
@@ -203,7 +221,7 @@ export function AppNavbar({
         </div>
       ) : null}
 
-      {!menu ? <div className="flex items-center gap-1">
+      {!logoMenu ? <div className="flex items-center gap-1">
         <div className="min-w-0">
           <SelectMenu<SupportedLanguage>
             value={language}
@@ -225,8 +243,10 @@ export function AppNavbar({
             )}
           />
         </div>
-        <HelpPopover />
+        <HelpButton />
       </div> : null}
+
+      <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </header>
   )
 }

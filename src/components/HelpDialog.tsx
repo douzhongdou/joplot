@@ -1,3 +1,6 @@
+'use client'
+
+import { useState } from 'react'
 import {
   CircleHelp,
   Mouse,
@@ -7,7 +10,7 @@ import {
 } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { Button } from '@/components/ui/button'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 export function HelpContent() {
   const { t } = useI18n()
@@ -57,19 +60,41 @@ export function HelpContent() {
   )
 }
 
-export function HelpPopover() {
+/** 操作说明弹窗；开关由外部控制（例如从菜单项打开）。 */
+export function HelpDialog({ open, onOpenChange }: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
   const { t } = useI18n()
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={t('help.label')}>
-          <CircleHelp size={17} strokeWidth={2.1} />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-72">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>{t('help.label')}</DialogTitle>
+        </DialogHeader>
         <HelpContent />
-      </PopoverContent>
-    </Popover>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** 顶栏帮助图标按钮：点击打开操作说明弹窗。 */
+export function HelpButton() {
+  const { t } = useI18n()
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label={t('help.label')}
+        onClick={() => setOpen(true)}
+      >
+        <CircleHelp size={17} strokeWidth={2.1} />
+      </Button>
+      <HelpDialog open={open} onOpenChange={setOpen} />
+    </>
   )
 }

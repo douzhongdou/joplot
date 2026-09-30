@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, Download, Play, Table2, UploadCloud, X } from 'lucide-react'
+import { CircleHelp, Download, Play, Table2, UploadCloud, X } from 'lucide-react'
 import type { DatasetMapping, DatasetSummary, ScienceValue, WorkspaceSource } from '../types.ts'
 import { values1d } from '../lib/dense.ts'
 import { resolveValue, vectorParentId } from '../lib/vectors.ts'
@@ -9,6 +9,7 @@ import { reconcileSteps, sanitizeMapping } from '../lib/base.ts'
 import { datasetKey, loadScienceWorkspace, saveScienceRecipe, type ScienceRecipe } from '../lib/persistence.ts'
 import { SCIENCE_COLORS } from '../lib/colors.ts'
 import { createScienceCopy, type ScienceLanguage } from '../lib/i18n.ts'
+import { spectrumReference, toRelativeDb } from '../lib/spectrumDisplay.ts'
 import { getOperator, insertAnalysisStep, type AnalysisStep, type OpKind, type StepInsertPosition } from '../lib/pipeline.ts'
 import { computeDirtySteps } from '../lib/dirty.ts'
 import { forgetSentEvictions, novelEvictions, selectionAfterRemoval, snapshotStillCurrent } from '../lib/coordination.ts'
@@ -18,8 +19,9 @@ import { AnalysisPanel, type StepStatus } from './AnalysisPanel.tsx'
 import { ImportDialog } from './ImportDialog.tsx'
 import { AppNavbar } from '../../components/AppNavbar.tsx'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Plot, type AxisRange, type PlotApi, type ScienceTrace, type TraceUpdate } from './Plot.tsx'
 import { PlotToolbar, type PlotCopyState } from '../../components/PlotToolbar.tsx'
 import { WorkspacePanel } from './WorkspacePanel.tsx'
@@ -28,6 +30,8 @@ import { DataTable, type DataTableSource } from './DataTable.tsx'
 type RunStatus = 'idle' | 'running' | 'ready' | 'error'
 
 type WaveMode = 'line' | 'markers' | 'line+markers'
+type SpectrumScale = 'db' | 'linear'
+type FrequencyScale = 'log' | 'linear'
 
 const WAVE_MODE_PLOTLY: Record<WaveMode, 'lines' | 'markers' | 'lines+markers'> = {
   line: 'lines',
@@ -128,7 +132,7 @@ function buildWaveTraces(values: ScienceValue[], selected: ScienceValue, copy: R
   return { traces, sources, hasResidual }
 }
 
-function buildSpectrumTraces(values: ScienceValue[], selected: ScienceValue, copy: ReturnType<typeof createScienceCopy>): ScienceTrace[] {
+function buildSpectrumTraces(values: ScienceValue[], selected: ScienceValue, copy: ReturnType<typeof createScienceCopy>, scale: SpectrumScale): ScienceTrace[] {
   const spectrum = selected.kind === 'spectrum'
     ? selected
     : [...values].reverse().find((value) => value.kind === 'spectrum')
@@ -137,11 +141,15 @@ function buildSpectrumTraces(values: ScienceValue[], selected: ScienceValue, cop
     return []
   }
 
+  const magnitude = values1d(spectrum.magnitude)
+  const reference = spectrumReference(magnitude)
+  const displayMagnitude = scale === 'db' ? toRelativeDb(magnitude, reference) : magnitude
+  const peakMagnitude = spectrum.peaks.map((peak) => peak.magnitude)
   return [
-    seriesTrace(copy.plot.magnitude, values1d(spectrum.frequency), values1d(spectrum.magnitude), SCIENCE_COLORS.spectrum, 1.6),
+    seriesTrace(scale === 'db' ? copy.plot.magnitudeDb : copy.plot.magnitude, values1d(spectrum.frequency), displayMagnitude, SCIENCE_COLORS.spectrum, 1.6),
     {
       x: spectrum.peaks.map((peak) => peak.frequency),
-      y: spectrum.peaks.map((peak) => peak.magnitude),
+      y: scale === 'db' ? toRelativeDb(peakMagnitude, reference) : peakMagnitude,
       name: 'peaks',
       color: SCIENCE_COLORS.peak,
       mode: 'markers',
@@ -183,6 +191,11 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   const [waveCopyState, setWaveCopyState] = useState<PlotCopyState>('idle')
   const [spectrumCopyState, setSpectrumCopyState] = useState<PlotCopyState>('idle')
   const [waveMode, setWaveMode] = useState<WaveMode>('line')
+  /** 整页拖放状态：dragenter/leave 会随子元素冒泡，用计数器判断是否真的离开窗口。 */
+  const [dragActive, setDragActive] = useState(false)
+  const dragDepthRef = useRef(0)
+  const [spectrumScale, setSpectrumScale] = useState<SpectrumScale>('db')
+  const [frequencyScale, setFrequencyScale] = useState<FrequencyScale>('log')
 
   const wavePlotRef = useRef<PlotApi>(null)
   const spectrumPlotRef = useRef<PlotApi>(null)
@@ -191,6 +204,9 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   const refineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastRangeKeyRef = useRef('')
   const previewSeqRef = useRef(0)
+  const spectrumRefineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const spectrumPreviewSeqRef = useRef(0)
+  const lastSpectrumRangeKeyRef = useRef('')
 
   const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve())
   const needsResetRef = useRef(true)
@@ -449,6 +465,39 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
     void runMutate({ kind: 'reset-sample', source: 'sample', mappings: {}, steps: sample.steps })
   }
 
+  /** 整页拖放：只看文件拖拽，忽略了拖拽文字/元素的情况。 */
+  const EVENT_HAS_FILES = (event: { dataTransfer?: DataTransfer | null }) =>
+    Array.from(event.dataTransfer?.types ?? []).includes('Files')
+
+  const handlePageDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!EVENT_HAS_FILES(event)) return
+    event.preventDefault()
+    dragDepthRef.current += 1
+    setDragActive(true)
+  }
+
+  const handlePageDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!EVENT_HAS_FILES(event)) return
+    // 必须 preventDefault，否则浏览器会用自己的方式打开文件。
+    event.preventDefault()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+  }
+
+  const handlePageDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!EVENT_HAS_FILES(event)) return
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) setDragActive(false)
+  }
+
+  const handlePageDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!EVENT_HAS_FILES(event)) return
+    event.preventDefault()
+    dragDepthRef.current = 0
+    setDragActive(false)
+    const files = Array.from(event.dataTransfer?.files ?? [])
+    if (files.length > 0) void importFiles(files)
+  }
+
   const importFiles = async (files: File[]) => {
     if (files.length === 0) return
     importingRef.current = true
@@ -658,8 +707,8 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   waveRef.current = wave
   statusRef.current = status
   const spectrum = useMemo(
-    () => (selected ? buildSpectrumTraces(values, selected, copy) : []),
-    [values, selected, copy],
+    () => (selected ? buildSpectrumTraces(values, selected, copy, spectrumScale) : []),
+    [values, selected, copy, spectrumScale],
   )
 
   // 视野联动：缩放后按可见范围向 Worker 要更密的降采样，restyle 就地刷新（不打断缩放）。
@@ -716,6 +765,45 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   const spectrumValue = selected?.kind === 'spectrum'
     ? selected
     : [...values].reverse().find((value) => value.kind === 'spectrum')
+  const spectrumReferenceValue = spectrumValue?.kind === 'spectrum'
+    ? spectrumReference(values1d(spectrumValue.magnitude))
+    : 1
+
+  useEffect(() => {
+    spectrumPreviewSeqRef.current += 1
+    lastSpectrumRangeKeyRef.current = ''
+    if (spectrumRefineTimerRef.current) clearTimeout(spectrumRefineTimerRef.current)
+  }, [spectrumValue, spectrumScale, frequencyScale])
+
+  const refineSpectrum = useCallback(async (range: AxisRange | null) => {
+    if (!range || statusRef.current !== 'ready' || spectrumValue?.kind !== 'spectrum') return
+    const key = `${spectrumValue.id}|${spectrumScale}|${frequencyScale}|${spectrumReferenceValue}|${range.min.toPrecision(12)}|${range.max.toPrecision(12)}`
+    if (key === lastSpectrumRangeKeyRef.current) return
+    lastSpectrumRangeKeyRef.current = key
+    const seq = ++spectrumPreviewSeqRef.current
+    try {
+      const [preview] = await host.preview([spectrumValue.id], range)
+      if (seq !== spectrumPreviewSeqRef.current || preview?.kind !== 'spectrum') return
+      const x = values1d(preview.frequency)
+      const magnitude = values1d(preview.magnitude)
+      const updates: TraceUpdate[] = [{
+        index: 0,
+        x,
+        y: spectrumScale === 'db' ? toRelativeDb(magnitude, spectrumReferenceValue) : magnitude,
+      }]
+      if (preview.phase) updates.push({ index: 2, x, y: values1d(preview.phase) })
+      spectrumPlotRef.current?.restyleTraces(updates)
+    } catch {
+      lastSpectrumRangeKeyRef.current = ''
+    }
+  }, [host, spectrumValue, spectrumScale, frequencyScale, spectrumReferenceValue])
+
+  const handleSpectrumRangeChange = useCallback(() => {
+    if (spectrumRefineTimerRef.current) clearTimeout(spectrumRefineTimerRef.current)
+    spectrumRefineTimerRef.current = setTimeout(() => {
+      void refineSpectrum(spectrumPlotRef.current?.getAxisRange() ?? null)
+    }, 140)
+  }, [refineSpectrum])
   // 只有分析栈里配了产出频谱的步骤时才显示频域区块，否则整块隐藏。
   const hasSpectrumStep = steps.some((step) => getOperator(step.op)?.output === 'spectrum')
 
@@ -827,52 +915,27 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
         ? 'bg-base-content/30'
         : 'bg-success'
 
+  /** logo 下拉菜单里的文件操作；语言与帮助由 AppNavbar 追加在同一菜单里。 */
   const fileMenu = (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button type="button" variant="ghost" size="sm" className="app-menubar-trigger h-7 gap-1 px-1.5 text-xs sm:px-2">
-            {copy.fileMenu}
-            <ChevronDown size={12} className="hidden sm:block" aria-hidden="true" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="start"
-          className="min-w-44"
-          onCloseAutoFocus={(event) => {
-            if (importDialogOpen) event.preventDefault()
-          }}
-        >
-          <DropdownMenuItem disabled={importing || !hydrated} onSelect={() => setImportDialogOpen(true)}>
-            <UploadCloud size={15} aria-hidden="true" />
-            {copy.importData}
-          </DropdownMenuItem>
-          <DropdownMenuItem disabled={!canExport} onSelect={() => { setTableDatasetId(null); setView('table') }}>
-            <Table2 size={15} aria-hidden="true" />
-            {copy.viewData}
-          </DropdownMenuItem>
-          <DropdownMenuItem disabled={!canExport} onSelect={() => void exportSelected()}>
-            <Download size={15} aria-hidden="true" />
-            {copy.exportShort}
-          </DropdownMenuItem>
-          {lockedDataset ? (
-            <DropdownMenuItem onSelect={() => void exportRawDataset()}>
-              <Download size={15} aria-hidden="true" />
-              {copy.exportRawCsv}
-            </DropdownMenuItem>
-          ) : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <ImportDialog
-        hideTrigger
-        open={importDialogOpen}
-        onOpenChange={setImportDialogOpen}
-        copy={copy}
-        importing={importing}
-        restoring={!hydrated}
-        onImport={(files) => void importFiles(files)}
-        onLoadSample={reload}
-      />
+      <DropdownMenuItem disabled={importing || !hydrated} onSelect={() => setImportDialogOpen(true)}>
+        <UploadCloud size={15} aria-hidden="true" />
+        {copy.importData}
+      </DropdownMenuItem>
+      <DropdownMenuItem disabled={!canExport} onSelect={() => { setTableDatasetId(null); setView('table') }}>
+        <Table2 size={15} aria-hidden="true" />
+        {copy.viewData}
+      </DropdownMenuItem>
+      <DropdownMenuItem disabled={!canExport} onSelect={() => void exportSelected()}>
+        <Download size={15} aria-hidden="true" />
+        {copy.exportShort}
+      </DropdownMenuItem>
+      {lockedDataset ? (
+        <DropdownMenuItem onSelect={() => void exportRawDataset()}>
+          <Download size={15} aria-hidden="true" />
+          {copy.exportRawCsv}
+        </DropdownMenuItem>
+      ) : null}
     </>
   )
 
@@ -936,8 +999,46 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
   )
 
   return (
-    <div className="grid h-full grid-rows-[var(--navbar-height)_minmax(0,1fr)] bg-base-200">
-      <AppNavbar section="science" showNav={false} menu={fileMenu} toolbar={toolbar} />
+    <div className="grid h-full grid-rows-[var(--navbar-height)_minmax(0,1fr)] bg-base-200" data-navbar="compact">
+      <AppNavbar
+        section="science"
+        showNav={false}
+        logoMenu={fileMenu}
+        onLogoMenuCloseAutoFocus={(event) => {
+          if (importDialogOpen) event.preventDefault()
+        }}
+        toolbar={toolbar}
+      />
+
+      <ImportDialog
+        hideTrigger
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        copy={copy}
+        importing={importing}
+        restoring={!hydrated}
+        onImport={(files) => void importFiles(files)}
+        onLoadSample={reload}
+      />
+
+      <div
+        className="relative grid min-h-0 min-w-0"
+        onDragEnter={handlePageDragEnter}
+        onDragOver={handlePageDragOver}
+        onDragLeave={handlePageDragLeave}
+        onDrop={handlePageDrop}
+      >
+        {dragActive ? (
+          <div className="pointer-events-none absolute inset-3 z-40 grid place-items-center rounded-[calc(var(--radius-box)+0.25rem)] border-2 border-dashed border-primary/60 bg-primary/5 backdrop-blur-[1px]">
+            <div className="grid gap-2 text-center">
+              <span className="mx-auto grid size-12 place-items-center rounded-full bg-primary/10 text-primary">
+                <UploadCloud size={24} strokeWidth={2.2} />
+              </span>
+              <strong className="text-sm font-semibold text-base-content">{copy.dropFiles}</strong>
+              <span className="text-xs text-base-content/55">{copy.dropFilesHint}</span>
+            </div>
+          </div>
+        ) : null}
 
       <div className="grid min-h-0 min-w-0 grid-cols-1 overflow-y-auto lg:grid-cols-[260px_minmax(0,1fr)_330px] lg:overflow-hidden">
         <WorkspacePanel
@@ -1028,7 +1129,25 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
           <section className="flex min-w-0 flex-col gap-1 border-t border-base-300 pt-4">
             <h2 className="sr-only">{copy.plot.frequencyDomain}</h2>
             {spectrum.length > 0 ? (
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <div className="flex items-center gap-0.5 rounded-md border border-base-300 p-0.5" role="group" aria-label={copy.plot.spectrumScale}>
+                  <Button type="button" size="sm" variant={spectrumScale === 'db' ? 'secondary' : 'ghost'} className="h-6 px-2 text-[11px]" aria-pressed={spectrumScale === 'db'} onClick={() => setSpectrumScale('db')}>{copy.plot.dbScale}</Button>
+                  <Button type="button" size="sm" variant={spectrumScale === 'linear' ? 'secondary' : 'ghost'} className="h-6 px-2 text-[11px]" aria-pressed={spectrumScale === 'linear'} onClick={() => setSpectrumScale('linear')}>{copy.plot.linearScale}</Button>
+                </div>
+                <div className="flex items-center gap-0.5 rounded-md border border-base-300 p-0.5" role="group" aria-label={copy.plot.frequencyScale}>
+                  {frequencyScale === 'log' ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button type="button" size="sm" variant="ghost" aria-label={copy.plot.dcHiddenOnLogFrequency} className="size-6 px-0 text-base-content/45">
+                          <CircleHelp size={13} strokeWidth={2.2} />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{copy.plot.dcHiddenOnLogFrequency}</TooltipContent>
+                    </Tooltip>
+                  ) : null}
+                  <Button type="button" size="sm" variant={frequencyScale === 'log' ? 'secondary' : 'ghost'} className="h-6 px-2 text-[11px]" aria-pressed={frequencyScale === 'log'} onClick={() => setFrequencyScale('log')}>{copy.plot.logFrequency}</Button>
+                  <Button type="button" size="sm" variant={frequencyScale === 'linear' ? 'secondary' : 'ghost'} className="h-6 px-2 text-[11px]" aria-pressed={frequencyScale === 'linear'} onClick={() => setFrequencyScale('linear')}>{copy.plot.linearFrequency}</Button>
+                </div>
                 <span>
                   <PlotToolbar
                     copyState={spectrumCopyState}
@@ -1045,15 +1164,17 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
                 traces={spectrum}
                 exportTitle="spectrum"
                 xTitle={`frequency (${spectrumValue?.kind === 'spectrum' ? spectrumValue.frequencyUnit ?? 'Hz' : 'Hz'})`}
-                yTitle={copy.plot.magnitude}
+                yTitle={spectrumScale === 'db' ? copy.plot.magnitudeDb : copy.plot.magnitude}
                 y2Title={spectrumValue?.kind === 'spectrum' && spectrumValue.phase ? copy.plot.phase : undefined}
-                height={240}
+                logX={frequencyScale === 'log'}
+                height={300}
+                onRangeChange={handleSpectrumRangeChange}
               />
             ) : (
               <p className="p-6 text-center text-xs text-base-content/40">{copy.empty}</p>
             )}
             {spectrumValue?.kind === 'spectrum' && !spectrumValue.phase ? (
-              <p className="text-[11px] text-base-content/55">{copy.plot.phaseUnavailable}</p>
+              <p className="pl-13 text-[11px] text-base-content/55">{copy.plot.phaseUnavailable}</p>
             ) : null}
           </section>
         ) : null}
@@ -1076,6 +1197,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
           onRemove={removeStep}
           onRunStep={runToStep}
         />
+      </div>
       </div>
       </div>
     </div>

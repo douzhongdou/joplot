@@ -5,7 +5,6 @@ export interface ScienceCopy {
   loadSample: string
   derived: string
   importData: string
-  fileMenu: string
   dropFiles: string
   dropFilesHint: string
   openFile: string
@@ -71,6 +70,14 @@ export interface ScienceCopy {
     data: string
     peak: string
     magnitude: string
+    magnitudeDb: string
+    spectrumScale: string
+    dbScale: string
+    linearScale: string
+    frequencyScale: string
+    logFrequency: string
+    linearFrequency: string
+    dcHiddenOnLogFrequency: string
     phase: string
     phaseUnavailable: string
   }
@@ -249,7 +256,6 @@ const ZH: ScienceCopy = {
   exportRawCsv: '导出完整 CSV',
   loadingData: '正在读取数据…',
   emptyData: '没有数据行',
-  fileMenu: '文件',
   input: '输入',
   secondInput: '第二输入',
   remove: '删除',
@@ -287,6 +293,14 @@ const ZH: ScienceCopy = {
     data: '数据',
     peak: '峰值',
     magnitude: '幅度',
+    magnitudeDb: '相对幅度 (dB)',
+    spectrumScale: '频谱纵轴',
+    dbScale: 'dB',
+    linearScale: '线性',
+    frequencyScale: '频率横轴',
+    logFrequency: '对数频率',
+    linearFrequency: '线性频率',
+    dcHiddenOnLogFrequency: '对数频率轴从第一个非零频点开始；切换到线性频率可查看 0 Hz 直流分量。',
     phase: '相位 (rad)',
     phaseUnavailable: 'Welch 分段平均的是功率谱，没有唯一相位。将分段数设为 1 可查看 FFT 相位。',
   },
@@ -350,7 +364,6 @@ const EN: ScienceCopy = {
   exportRawCsv: 'Export full CSV',
   loadingData: 'Loading data…',
   emptyData: 'No data rows',
-  fileMenu: 'File',
   input: 'Input',
   secondInput: 'Second input',
   remove: 'Remove',
@@ -388,6 +401,14 @@ const EN: ScienceCopy = {
     data: 'Data',
     peak: 'Peak',
     magnitude: 'Magnitude',
+    magnitudeDb: 'Relative magnitude (dB)',
+    spectrumScale: 'Spectrum scale',
+    dbScale: 'dB',
+    linearScale: 'Linear',
+    frequencyScale: 'Frequency scale',
+    logFrequency: 'Log frequency',
+    linearFrequency: 'Linear frequency',
+    dcHiddenOnLogFrequency: 'The log frequency axis starts at the first nonzero bin. Switch to linear frequency to view DC at 0 Hz.',
     phase: 'Phase (rad)',
     phaseUnavailable: 'Welch averages power across segments, so there is no unique phase. Set segments to 1 to view FFT phase.',
   },
@@ -452,7 +473,6 @@ const JA: ScienceCopy = {
   exportRawCsv: '全件 CSV 出力',
   loadingData: 'データを読み込み中…',
   emptyData: 'データ行がありません',
-  fileMenu: 'ファイル',
   input: '入力',
   secondInput: '第 2 入力',
   remove: '削除',
@@ -480,7 +500,7 @@ const JA: ScienceCopy = {
   },
   kinds: { series: '系列', spectrum: 'スペクトル', fit: 'フィット', stats: '統計' },
   view: { label: '表示切替', plot: 'プロット', table: 'テーブル' },
-  plot: { timeDomain: '時間領域', dataDomain: 'データ曲線', frequencyDomain: '周波数領域', residual: '残差', fit: 'フィット', data: 'データ', peak: 'ピーク', magnitude: '振幅', phase: '位相 (rad)', phaseUnavailable: 'Welch 法はパワースペクトルを平均するため、一意の位相はありません。位相を表示するには分割数を 1 にしてください。' },
+  plot: { timeDomain: '時間領域', dataDomain: 'データ曲線', frequencyDomain: '周波数領域', residual: '残差', fit: 'フィット', data: 'データ', peak: 'ピーク', magnitude: '振幅', magnitudeDb: '相対振幅 (dB)', spectrumScale: 'スペクトル縦軸', dbScale: 'dB', linearScale: '線形', frequencyScale: '周波数軸', logFrequency: '対数周波数', linearFrequency: '線形周波数', dcHiddenOnLogFrequency: '対数周波数軸は最初の非ゼロ周波数から表示します。0 Hz の直流成分は線形周波数で確認できます。', phase: '位相 (rad)', phaseUnavailable: 'Welch 法はパワースペクトルを平均するため、一意の位相はありません。位相を表示するには分割数を 1 にしてください。' },
   fit: { rSquared: 'R²', rmse: 'RMSE', iterations: '反復回数', converged: '収束', yes: 'はい', no: 'いいえ', params: 'パラメータ', stopReason: '停止理由', reasons: { converged: 'ステップ収束', maxIterations: '最大反復', stalled: '改善不能' } },
   stats: {
     count: '標本数', mean: '平均', std: '標準偏差', min: '最小', max: '最大', median: '中央値',

@@ -5,6 +5,7 @@ import { loadPlotly } from '../lib/plotly.ts'
 import { resolveAxisColor, resolveFontFamily, resolveGridColor } from '../lib/plotTheme.ts'
 import { buildChartExportOptions } from '../../lib/chartExport.ts'
 import { copyPngDataUrlToClipboard, type ClipboardPort } from '../../lib/clipboard.ts'
+import { CHART_HOVERLABEL } from '../../lib/tooltipStyle.ts'
 
 export interface ScienceTrace {
   x: ArrayLike<number>
@@ -45,6 +46,7 @@ export interface PlotProps {
   xTitle: string
   yTitle: string
   y2Title?: string
+  logX?: boolean
   logY?: boolean
   height?: number
   exportTitle?: string
@@ -52,7 +54,7 @@ export interface PlotProps {
 }
 
 export const Plot = forwardRef<PlotApi, PlotProps>(function Plot(
-  { traces, xTitle, yTitle, y2Title, logY = false, height = 260, exportTitle, onRangeChange },
+  { traces, xTitle, yTitle, y2Title, logX = false, logY = false, height = 260, exportTitle, onRangeChange },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -72,7 +74,11 @@ export const Plot = forwardRef<PlotApi, PlotProps>(function Plot(
       return null
     }
 
-    return { min: Math.min(range[0], range[1]), max: Math.max(range[0], range[1]) }
+    const lower = Math.min(range[0], range[1])
+    const upper = Math.max(range[0], range[1])
+    return fullLayout.xaxis.type === 'log'
+      ? { min: 10 ** lower, max: 10 ** upper }
+      : { min: lower, max: upper }
   }
 
   /** 把 trace 数据恢复为 props 里的全量预览（refine 后图上只有窗口切片），再 autorange。 */
@@ -210,17 +216,20 @@ export const Plot = forwardRef<PlotApi, PlotProps>(function Plot(
 
       const layout: Record<string, unknown> = {
         height,
-        margin: { l: 52, r: y2Title ? 48 : 16, t: 14, b: 34 },
+        // b 要给 x 轴标题留出位置：标题行高约 14px，34 会把它压到容器底边被裁掉。
+        margin: { l: 52, r: y2Title ? 48 : 16, t: 14, b: 48 },
         paper_bgcolor: 'rgba(0,0,0,0)',
         plot_bgcolor: 'rgba(0,0,0,0)',
         font: { family: resolveFontFamily(), size: 11, color: axis },
         showlegend: traces.length > 1,
         legend: { orientation: 'h', y: 1.12, x: 0, font: { size: 10 } },
         hovermode: 'x unified',
+        hoverlabel: CHART_HOVERLABEL,
         // Keep the user's viewport across data updates (restyle/refine).
-        uirevision: 'science-plot',
+        uirevision: `science-plot|${xTitle}|${yTitle}|${logX}`,
         xaxis: {
           title: { text: xTitle, font: { size: 11 } },
+          type: logX ? 'log' : 'linear',
           gridcolor: grid,
           zerolinecolor: grid,
           linecolor: grid,
@@ -253,7 +262,7 @@ export const Plot = forwardRef<PlotApi, PlotProps>(function Plot(
     return () => {
       cancelled = true
     }
-  }, [traces, xTitle, yTitle, y2Title, logY, height])
+  }, [traces, xTitle, yTitle, y2Title, logX, logY, height])
 
   useEffect(() => {
     const element = containerRef.current

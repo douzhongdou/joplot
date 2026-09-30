@@ -187,6 +187,17 @@
   }
 }
 
+/* Science workspace runs a denser top bar; opt in with data-navbar="compact". */
+[data-navbar='compact'] {
+  --navbar-height: 3rem;
+}
+
+@media (max-width: 639px) {
+  [data-navbar='compact'] {
+    --navbar-height: 2.75rem;
+  }
+}
+
 @layer base {
   * {
     box-sizing: border-box;
@@ -227,9 +238,17 @@
   height: 100%;
 }
 
-/* Hover tooltip rounded corners */
+/* Hover tooltip card. Plotly has no radius option and renders the unified hover
+   label as a legend group (`rect.bg`); older builds use `.hovertext`. */
+.js-plotly-plot .hoverlayer .legend > rect.bg,
 .js-plotly-plot .hoverlayer .hovertext rect {
-  clip-path: inset(0 round 8px) !important;
+  rx: 8px;
+  ry: 8px;
+}
+
+/* Plotly hard-codes 3px of text padding around hover labels. */
+.js-plotly-plot .hoverlayer .legend .scrollbox {
+  transform: translate(7px, 7px);
 }
 
 /* Visible keyboard focus for all interactive elements */
@@ -247,25 +266,6 @@
 
 :root[data-input-modality='pointer'] :where(button, input[type='button'], input[type='submit'], input[type='reset'], [role='button'], [data-slot='button']):focus-visible {
   box-shadow: none !important;
-}
-
-/* File and More are one menu bar: hover changes the text, never the button's shape. */
-.app-menubar-trigger:hover,
-.app-menubar-trigger[data-state='open'],
-.app-menubar-trigger:focus-visible {
-  background-color: transparent !important;
-}
-
-.app-menubar-trigger:hover {
-  opacity: 0.7;
-}
-
-.app-menubar-trigger:focus-visible {
-  box-shadow: none !important;
-}
-
-:root[data-input-modality='keyboard'] .app-menubar-trigger:focus-visible {
-  font-weight: 700;
 }
 
 /* Menu/listbox items already highlight their active row; don't draw a second frame. */
