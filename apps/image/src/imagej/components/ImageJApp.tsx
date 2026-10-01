@@ -9,6 +9,7 @@ import { createImagejCopy } from '../lib/i18n'
 import { MOCK_REGISTRY, defaultParams } from '../lib/engineRegistry.mock'
 import type { OperatorSpec, ParticleRow, RecipeStep, StepParamValue, StepResult } from '../lib/engineTypes'
 import { StepPanel } from './StepPanel'
+import { ImageJSidebar } from './ImageJSidebar'
 
 /**
  * 图像工作台的 UI 外壳。
@@ -358,7 +359,7 @@ export function ImageJApp() {
             </Button>
 
             <span className="ml-auto hidden shrink-0 truncate pl-2 font-mono text-[11px] text-base-content/55 md:inline">
-              {probe ? `(${probe.x}, ${probe.y}) = ${probe.value} · ` : ''}{sourceLabel}
+              {probe ? `(${probe.x}, ${probe.y}) = ${probe.value} · ` : ''}{status ? `${status} · ` : ''}{sourceLabel}
             </span>
           </>
         }
@@ -419,8 +420,8 @@ export function ImageJApp() {
           ) : null}
         </main>
 
-        <aside className="flex min-h-0 flex-col gap-4 border-t border-base-300 bg-base-100 p-4 lg:h-full lg:overflow-y-auto lg:border-l lg:border-t-0">
-          <StepPanel
+        <aside className="min-h-0 border-t border-base-300 bg-base-100 lg:h-full lg:border-l lg:border-t-0">
+          <ImageJSidebar language={language} copy={copy} registry={registry} onAdd={(operator) => addStep(operator, steps.length)} stepsPanel={<StepPanel
             copy={copy}
             registry={registry}
             sourceName={source?.name ?? ''}
@@ -433,13 +434,7 @@ export function ImageJApp() {
             onRemove={removeStep}
             onParam={updateParam}
             onExportParticles={exportParticles}
-          />
-
-          <p className="text-[11px] leading-relaxed text-base-content/45">{copy.localNote}</p>
-
-          <div role="status" aria-live="polite" className="text-xs text-base-content/60">
-            {status}
-          </div>
+          />} />
         </aside>
       </div>
     </div>
