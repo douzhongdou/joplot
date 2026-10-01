@@ -37,6 +37,7 @@ export interface ImagejCopy {
     insertBefore: string
     insertAfter: string
     channel: string
+    pendingHint: string
     needsGray: string
     categories: Record<string, string>
     ops: Record<string, string>
@@ -166,6 +167,7 @@ const zhCN: ImagejCopy = {
     insertBefore: '在此之前插入',
     insertAfter: '在此之后插入',
     channel: '通道',
+    pendingHint: '步骤栈已就绪；执行与结果由计算引擎接入后生效。',
     needsGray: '此步骤需要灰度图，请先添加「转灰度」步骤。',
     categories: { format: '格式', adjust: '显示', threshold: '阈值', filter: '滤波', morphology: '形态学', geometry: '几何', analysis: '分析' },
     ops: {
@@ -289,6 +291,7 @@ const en: ImagejCopy = {
     insertBefore: 'Insert before',
     insertAfter: 'Insert after',
     channel: 'Channel',
+    pendingHint: 'The step stack is ready; execution and results appear once the compute engine is connected.',
     needsGray: 'This step needs a grayscale image — add a “Convert to grayscale” step first.',
     categories: { format: 'Format', adjust: 'Display', threshold: 'Threshold', filter: 'Filter', morphology: 'Morphology', geometry: 'Geometry', analysis: 'Analysis' },
     ops: {
@@ -412,6 +415,7 @@ const jaJP: ImagejCopy = {
     insertBefore: 'この前に挿入',
     insertAfter: 'この後に挿入',
     channel: 'チャンネル',
+    pendingHint: 'ステップスタックは準備完了です。実行と結果は計算エンジンの接続後に有効になります。',
     needsGray: 'このステップにはグレースケール画像が必要です。先に「グレースケール変換」を追加してください。',
     categories: { format: '形式', adjust: '表示', threshold: 'しきい値', filter: 'フィルタ', morphology: '形態学', geometry: '幾何', analysis: '解析' },
     ops: {
