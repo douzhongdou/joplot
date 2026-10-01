@@ -102,6 +102,7 @@ export interface ImagejCopy {
     redo: string
   }
   exportPng: string
+  close: string
   stack: { page: string; exportCurrent: string; exportAll: string; geometryUnavailable: string }
   stats: {
     heading: string
@@ -226,6 +227,7 @@ const zhCN: ImagejCopy = {
     redo: '重做',
   },
   exportPng: '导出 PNG',
+  close: '关闭',
   stack: { page: '切片', exportCurrent: '导出当前 TIFF', exportAll: '导出整个 TIFF 栈', geometryUnavailable: '多页栈暂不支持改变切片尺寸的操作' },
   stats: {
     heading: '测量与直方图',
@@ -350,6 +352,7 @@ const en: ImagejCopy = {
     redo: 'Redo',
   },
   exportPng: 'Export PNG',
+  close: 'Close',
   stack: { page: 'Slice', exportCurrent: 'Export current TIFF', exportAll: 'Export TIFF stack', geometryUnavailable: 'Size-changing operations are unavailable for multi-page stacks' },
   stats: {
     heading: 'Measurements & histogram',
@@ -474,6 +477,7 @@ const jaJP: ImagejCopy = {
     redo: 'やり直す',
   },
   exportPng: 'PNG を書き出す',
+  close: '閉じる',
   stack: { page: 'スライス', exportCurrent: '現在の TIFF を出力', exportAll: 'TIFF スタックを出力', geometryUnavailable: '複数ページのスタックではサイズを変える操作はできません' },
   stats: {
     heading: '測定とヒストグラム',

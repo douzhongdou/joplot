@@ -7,6 +7,7 @@ import {
   Redo2,
   Sparkles,
   Undo2,
+  X,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
@@ -14,7 +15,6 @@ import { AppNavbar } from '../../components/AppNavbar'
 import { useI18n } from '../../i18n'
 import { Button } from '@joplot/ui/button'
 import { Label } from '@joplot/ui/label'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@joplot/ui/dialog'
 import { createImagejCopy, type ImagejCopy } from '../lib/i18n'
 import { analyzeParticles, closeBinary, dilate, erode, fillHoles, openBinary, type Particle } from '../lib/binary'
 import { decodeTiff, encodeTiff } from '../lib/tiff'
@@ -50,12 +50,11 @@ import {
 } from '../lib/processor'
 
 /**
- * 图像工作台：菜单式侧栏 + 点命令直接执行（无步骤排队）。
+ * 图像工作台：左右双栏（左「处理」右「分析」），点命令直接执行。
  *
- * - 右侧 ImageJSidebar 按 ImageJ 菜单（Image / Process / Analyze）列出命令，
- *   点击即调用 processor 立即执行并进撤销历史。
- * - 带参数的命令（亮度对比度 / 阈值 / 高斯）弹参数对话框，实时预览后应用。
- * - 测量、直方图、粒子结果渲染在「分析」页顶部的结果区。
+ * - 左栏：处理命令目录 + 参数面板（非模态内联展开，调参时可同时看图与右栏直方图）。
+ * - 右栏：统计 / 直方图 / 粒子结果常驻显示 + 导出。
+ * - 命令点击即调用 processor 执行并进撤销历史；图像居中显示。
  */
 
 /** 浏览器 Canvas 支持的最大边长，超过则拒绝导入，避免解码时崩溃。 */
@@ -138,8 +137,8 @@ type StatsScope = 'image' | 'roi'
 
 type ViewerTool = 'pan' | 'roi'
 
-/** 带参数的命令，以对话框收集参数。 */
-type ParamDialog = 'levels' | 'threshold' | 'gaussian'
+/** 带参数的命令：在左栏顶部内联展开参数面板（非模态）。 */
+type ParamPanel = 'levels' | 'threshold' | 'gaussian'
 
 interface DragState {
   mode: 'draw' | 'move' | 'pan'
@@ -186,9 +185,8 @@ export function ImageJApp() {
   const [probe, setProbe] = useState<{ x: number; y: number; value: number } | null>(null)
   const [tool, setTool] = useState<ViewerTool>('pan')
   const [spaceHeld, setSpaceHeld] = useState(false)
-  /** 「分析」页结果区是否展开（执行测量 / 粒子后打开）。 */
-  const [showResults, setShowResults] = useState(false)
-  const [paramDialog, setParamDialog] = useState<ParamDialog | null>(null)
+  /** 左栏顶部展开的参数面板（亮度 / 阈值 / 高斯）。 */
+  const [paramPanel, setParamPanel] = useState<ParamPanel | null>(null)
 
   const syncHistory = useCallback(() => {
     setHistoryFlags({
@@ -226,8 +224,7 @@ export function ImageJApp() {
     const token = ++importTokenRef.current
     setError('')
     setStatus(copy.status.loading)
-    setParamDialog(null)
-    setShowResults(false)
+    setParamPanel(null)
 
     if (/\.tiff?$/i.test(file.name) || file.type === 'image/tiff') {
       try {
@@ -528,7 +525,6 @@ export function ImageJApp() {
     }
     try {
       setParticles(analyzeParticles(image, minParticleArea))
-      setShowResults(true)
     } catch (analysisError) {
       setError(toErrorText(analysisError, copy))
     }
@@ -570,9 +566,9 @@ export function ImageJApp() {
       case 'invert':
         return run(invert)
       case 'levels':
-        return setParamDialog('levels')
+        return setParamPanel('levels')
       case 'threshold':
-        return setParamDialog('threshold')
+        return setParamPanel('threshold')
       case 'otsu':
         return applyOtsu()
       case 'mean3x3':
@@ -588,7 +584,7 @@ export function ImageJApp() {
       case 'maximum3x3':
         return runAdvanced(maximum3x3)
       case 'gaussian':
-        return setParamDialog('gaussian')
+        return setParamPanel('gaussian')
       case 'erode':
         return runAdvanced(erode)
       case 'dilate':
@@ -612,13 +608,16 @@ export function ImageJApp() {
       case 'rotateCCW':
         if (!guardStackSize()) return
         return run((image) => rotate90(image, 'ccw'), { resetRoi: true, roiMode: 'whole' })
-      case 'measure':
-        return setShowResults(true)
-      case 'particles':
-        return analyzeCurrentParticles()
       default:
         return
     }
+  }
+
+  /** 关闭参数面板：亮度/对比度复位即撤掉实时预览（不写入历史）。 */
+  const closeParamPanel = () => {
+    setBrightness(0)
+    setContrast(50)
+    setParamPanel(null)
   }
 
   /* ---------------- 画布绘制 ---------------- */
@@ -687,8 +686,7 @@ export function ImageJApp() {
     const markerX = (thresholdLevel / 255) * width
     context.fillStyle = 'rgba(239, 68, 68, 0.9)'
     context.fillRect(markerX, 0, 2, height)
-    // showResults 参与依赖：结果区是后挂载的，画布出现时要补画一次。
-  }, [stats, thresholdLevel, showResults])
+  }, [stats, thresholdLevel])
 
   /* ---------------- 视口交互：缩放 / 平移 / ROI ---------------- */
 
@@ -879,13 +877,14 @@ export function ImageJApp() {
   const hasImage = Boolean(current)
   const roiLabel = roi ? `${roi.width}×${roi.height} @ (${roi.x}, ${roi.y})` : '—'
 
-  /* ---------------- 「分析」页结果区 ---------------- */
+  /* ---------------- 右栏「分析」区 ---------------- */
 
-  const resultsPanel = showResults && hasImage ? (
-    <div className="grid gap-4 rounded-[calc(var(--radius-box)+0.25rem)] bg-muted/50 p-4">
-      <section className="grid gap-2">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{copy.stats.heading}</h3>
+  /** 统计 + 直方图：图像加载后常驻（左栏调参时可同屏观察）。 */
+  const statsSection = (
+    <section className="grid gap-2 rounded-[calc(var(--radius-box)+0.25rem)] bg-muted/50 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{copy.stats.heading}</h3>
+        {hasImage ? (
           <span className="inline-flex rounded-[var(--radius-field)] bg-base-200 p-0.5">
             {(['image', 'roi'] as const).map((value) => (
               <button
@@ -902,79 +901,83 @@ export function ImageJApp() {
               </button>
             ))}
           </span>
-        </div>
+        ) : null}
+      </div>
 
-        {stats ? (
-          <>
-            <dl className="grid grid-cols-2 gap-2">
-              {[
-                [copy.stats.pixels, stats.count.toLocaleString()],
-                [copy.stats.area, stats.area.toLocaleString()],
-                [copy.stats.mean, stats.mean.toFixed(2)],
-                [copy.stats.min, String(stats.min)],
-                [copy.stats.max, String(stats.max)],
-                [copy.stats.stdDev, stats.stdDev.toFixed(2)],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-[var(--radius-field)] bg-base-100 px-3 py-2">
-                  <dt className="text-[11px] text-base-content/55">{label}</dt>
-                  <dd className="font-mono text-sm font-semibold tabular-nums text-base-content">{value}</dd>
-                </div>
-              ))}
-            </dl>
-            <div>
-              <div className="mb-1 flex items-center justify-between text-[11px] text-base-content/55">
-                <span>{copy.stats.histogram}</span>
-                <span>{copy.stats.thresholdMark}: {thresholdLevel}</span>
+      {!hasImage ? (
+        <p className="text-sm text-base-content/55">{copy.emptyDescription}</p>
+      ) : stats ? (
+        <>
+          <dl className="grid grid-cols-2 gap-2">
+            {[
+              [copy.stats.pixels, stats.count.toLocaleString()],
+              [copy.stats.area, stats.area.toLocaleString()],
+              [copy.stats.mean, stats.mean.toFixed(2)],
+              [copy.stats.min, String(stats.min)],
+              [copy.stats.max, String(stats.max)],
+              [copy.stats.stdDev, stats.stdDev.toFixed(2)],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-[var(--radius-field)] bg-base-100 px-3 py-2">
+                <dt className="text-[11px] text-base-content/55">{label}</dt>
+                <dd className="font-mono text-sm font-semibold tabular-nums text-base-content">{value}</dd>
               </div>
-              <canvas ref={histogramCanvasRef} className="block h-28 w-full rounded-[var(--radius-field)] bg-base-100" />
+            ))}
+          </dl>
+          <div>
+            <div className="mb-1 flex items-center justify-between text-[11px] text-base-content/55">
+              <span>{copy.stats.histogram}</span>
+              <span>{copy.stats.thresholdMark}: {thresholdLevel}</span>
             </div>
-          </>
-        ) : (
-          <p className="text-sm text-base-content/55">
-            {scope === 'roi' && hasImage ? copy.roi.needRoi : copy.emptyDescription}
-          </p>
-        )}
-      </section>
+            <canvas ref={histogramCanvasRef} className="block h-28 w-full rounded-[var(--radius-field)] bg-base-100" />
+          </div>
+        </>
+      ) : (
+        <p className="text-sm text-base-content/55">{copy.roi.needRoi}</p>
+      )}
+      <Button type="button" variant="secondary" size="sm" className="h-8 w-full" disabled={!hasImage} onClick={analyzeCurrentParticles}>
+        {copy.binary.analyze}
+      </Button>
+    </section>
+  )
 
-      {particles ? (
-        <section className="grid gap-2">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{copy.binary.particles}: {particles.length}</h3>
-            <Button type="button" variant="outline" size="sm" onClick={exportParticlesCsv}>{copy.binary.exportCsv}</Button>
-          </div>
-          <div className="flex items-end gap-2">
-            <div className="grid gap-1">
-              <Label htmlFor="imagej-particle-min-area" className="text-xs">{copy.binary.minArea}</Label>
-              <input
-                id="imagej-particle-min-area"
-                type="number"
-                min={1}
-                max={4_000_000}
-                step={1}
-                value={minParticleArea}
-                onChange={(event) => setMinParticleArea(Math.max(1, Math.min(4_000_000, Math.round(Number(event.target.value) || 1))))}
-                className="h-8 w-28 rounded-md border border-base-300 bg-base-100 px-2 text-sm"
-              />
-            </div>
-            <Button type="button" variant="secondary" size="sm" className="h-8" onClick={analyzeCurrentParticles}>
-              {copy.binary.analyze}
-            </Button>
-          </div>
-          <div className="max-h-56 overflow-auto rounded-[var(--radius-field)] bg-base-100">
-            <table className="w-full min-w-[280px] text-left text-xs tabular-nums">
-              <thead><tr className="border-b border-base-300"><th className="p-1.5">#</th><th className="p-1.5">{copy.stats.area}</th><th className="p-1.5">{copy.binary.perimeter}</th><th className="p-1.5">{copy.binary.circularity}</th><th className="p-1.5">{copy.binary.centroid}</th></tr></thead>
-              <tbody>{particles.map((particle) => (
-                <tr key={particle.id} className="border-b border-base-200">
-                  <td className="p-1.5">{particle.id}</td><td className="p-1.5">{particle.area}</td>
-                  <td className="p-1.5">{particle.perimeter}</td><td className="p-1.5">{particle.circularity.toFixed(3)}</td>
-                  <td className="p-1.5">({particle.centroidX.toFixed(1)}, {particle.centroidY.toFixed(1)})</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        </section>
-      ) : null}
-    </div>
+  /** 粒子结果：点「分析粒子」后出现（含最小面积重分析与 CSV 导出）。 */
+  const particlesSection = particles ? (
+    <section className="grid gap-2 rounded-[calc(var(--radius-box)+0.25rem)] bg-muted/50 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{copy.binary.particles}: {particles.length}</h3>
+        <Button type="button" variant="outline" size="sm" onClick={exportParticlesCsv}>{copy.binary.exportCsv}</Button>
+      </div>
+      <div className="flex items-end gap-2">
+        <div className="grid gap-1">
+          <Label htmlFor="imagej-particle-min-area" className="text-xs">{copy.binary.minArea}</Label>
+          <input
+            id="imagej-particle-min-area"
+            type="number"
+            min={1}
+            max={4_000_000}
+            step={1}
+            value={minParticleArea}
+            onChange={(event) => setMinParticleArea(Math.max(1, Math.min(4_000_000, Math.round(Number(event.target.value) || 1))))}
+            className="h-8 w-28 rounded-md border border-base-300 bg-base-100 px-2 text-sm"
+          />
+        </div>
+        <Button type="button" variant="secondary" size="sm" className="h-8" onClick={analyzeCurrentParticles}>
+          {copy.binary.analyze}
+        </Button>
+      </div>
+      <div className="max-h-56 overflow-auto rounded-[var(--radius-field)] bg-base-100">
+        <table className="w-full min-w-[280px] text-left text-xs tabular-nums">
+          <thead><tr className="border-b border-base-300"><th className="p-1.5">#</th><th className="p-1.5">{copy.stats.area}</th><th className="p-1.5">{copy.binary.perimeter}</th><th className="p-1.5">{copy.binary.circularity}</th><th className="p-1.5">{copy.binary.centroid}</th></tr></thead>
+          <tbody>{particles.map((particle) => (
+            <tr key={particle.id} className="border-b border-base-200">
+              <td className="p-1.5">{particle.id}</td><td className="p-1.5">{particle.area}</td>
+              <td className="p-1.5">{particle.perimeter}</td><td className="p-1.5">{particle.circularity.toFixed(3)}</td>
+              <td className="p-1.5">({particle.centroidX.toFixed(1)}, {particle.centroidY.toFixed(1)})</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+    </section>
   ) : null
 
   /* ---------------- 渲染 ---------------- */
@@ -1079,8 +1082,113 @@ export function ImageJApp() {
         }
       />
 
-      <div className="grid min-h-0 min-w-0 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_340px] lg:overflow-hidden">
-        <main className="relative min-h-[60vh] min-w-0 bg-base-100 lg:min-h-0">
+      <div className="grid min-h-0 min-w-0 grid-cols-1 overflow-y-auto lg:grid-cols-[300px_minmax(0,1fr)_340px] lg:overflow-hidden">
+        {/* 左栏「处理」：参数面板（内联展开）+ 命令目录 + 撤销 / 状态 */}
+        <aside className="order-2 flex min-h-0 flex-col border-b border-base-300 bg-base-100 lg:order-none lg:h-full lg:border-b-0 lg:border-r">
+          {paramPanel === 'levels' ? (
+            <section className="shrink-0 border-b border-base-300 px-3 py-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-base-content/60">{copy.adjust.brightness} / {copy.adjust.contrast}</h3>
+                <button type="button" aria-label={copy.close} onClick={closeParamPanel} className="rounded-[var(--radius-field)] p-1 text-base-content/50 hover:bg-muted hover:text-base-content">
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="grid gap-2.5">
+                <div className="grid gap-1">
+                  <Label htmlFor="imagej-brightness" className="justify-between text-xs">
+                    <span>{copy.adjust.brightness}</span>
+                    <span className="font-mono tabular-nums text-base-content/60">{brightness}</span>
+                  </Label>
+                  <input id="imagej-brightness" type="range" min={-127} max={127} step={1} value={brightness} disabled={!hasImage}
+                    onChange={(event) => setBrightness(Number(event.target.value))} className="w-full accent-primary" />
+                </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="imagej-contrast" className="justify-between text-xs">
+                    <span>{copy.adjust.contrast}</span>
+                    <span className="font-mono tabular-nums text-base-content/60">{contrast}</span>
+                  </Label>
+                  <input id="imagej-contrast" type="range" min={1} max={100} step={1} value={contrast} disabled={!hasImage}
+                    onChange={(event) => setContrast(Number(event.target.value))} className="w-full accent-primary" />
+                </div>
+                <Button type="button" size="sm" className="h-8" disabled={!hasImage || !levelsActive} onClick={applyCurrentLevels}>
+                  {copy.adjust.applyLevels}
+                </Button>
+              </div>
+            </section>
+          ) : null}
+
+          {paramPanel === 'threshold' ? (
+            <section className="shrink-0 border-b border-base-300 px-3 py-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-base-content/60">{copy.adjust.threshold}</h3>
+                <button type="button" aria-label={copy.close} onClick={closeParamPanel} className="rounded-[var(--radius-field)] p-1 text-base-content/50 hover:bg-muted hover:text-base-content">
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="grid gap-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="imagej-threshold-level" className="text-xs">{copy.adjust.threshold}</Label>
+                  <span className="font-mono text-xs tabular-nums text-base-content/70">{thresholdLevel}</span>
+                </div>
+                <input id="imagej-threshold-level" type="range" min={0} max={255} step={1} value={thresholdLevel} disabled={!hasImage}
+                  aria-label={copy.adjust.threshold} onChange={(event) => setThresholdLevel(Number(event.target.value))} className="w-full accent-primary" />
+                <div className="grid grid-cols-2 gap-2">
+                  <Button type="button" size="sm" className="h-8" disabled={!hasImage} onClick={applyCurrentThreshold}>
+                    {copy.adjust.thresholdApply}
+                  </Button>
+                  <Button type="button" variant="secondary" size="sm" className="h-8" disabled={!hasImage} onClick={applyOtsu}>
+                    <Sparkles size={14} />
+                    {copy.adjust.otsu}
+                  </Button>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {paramPanel === 'gaussian' ? (
+            <section className="shrink-0 border-b border-base-300 px-3 py-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-base-content/60">{copy.filters.gaussian}</h3>
+                <button type="button" aria-label={copy.close} onClick={closeParamPanel} className="rounded-[var(--radius-field)] p-1 text-base-content/50 hover:bg-muted hover:text-base-content">
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="grid gap-2.5">
+                <div className="grid gap-1">
+                  <Label htmlFor="imagej-gaussian-sigma" className="justify-between text-xs">
+                    <span>{copy.filters.sigma}</span>
+                    <span className="font-mono tabular-nums text-base-content/60">{gaussianSigma.toFixed(1)}</span>
+                  </Label>
+                  <input id="imagej-gaussian-sigma" type="range" min={0.5} max={5} step={0.1} value={gaussianSigma} disabled={!hasImage}
+                    onChange={(event) => setGaussianSigma(Number(event.target.value))} className="w-full accent-primary" />
+                </div>
+                <Button type="button" size="sm" className="h-8" disabled={!hasImage} onClick={() => runAdvanced((image) => gaussianBlur(image, gaussianSigma))}>
+                  {copy.filters.gaussian}
+                </Button>
+              </div>
+            </section>
+          ) : null}
+
+          <div className="min-h-0 flex-1">
+            <ImageJSidebar language={language} registry={MOCK_REGISTRY} onRun={runCommand} />
+          </div>
+
+          <footer className="shrink-0 border-t border-base-300 px-3 py-2.5">
+            <div className="flex items-center gap-1.5">
+              <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.history.undo} disabled={!historyFlags.canUndo} onClick={undo}>
+                <Undo2 size={15} />
+              </Button>
+              <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.history.redo} disabled={!historyFlags.canRedo} onClick={redo}>
+                <Redo2 size={15} />
+              </Button>
+            </div>
+            <div role="status" aria-live="polite" className="mt-1.5 min-h-4 text-xs text-base-content/60">
+              {status}
+            </div>
+          </footer>
+        </aside>
+
+        <main className="order-1 relative min-h-[60vh] min-w-0 bg-base-100 lg:order-none lg:min-h-0">
           {error ? (
             <p role="alert" className="absolute left-3 right-3 top-3 z-10 rounded-[var(--radius-box)] border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
@@ -1146,164 +1254,29 @@ export function ImageJApp() {
           ) : null}
         </main>
 
-        <aside className="flex min-h-0 flex-col border-t border-base-300 bg-base-100 lg:h-full lg:border-l lg:border-t-0">
-          <div className="min-h-0 flex-1">
-            <ImageJSidebar
-              language={language}
-              copy={copy}
-              registry={MOCK_REGISTRY}
-              onRun={runCommand}
-              resultsPanel={resultsPanel}
-            />
+        {/* 右栏「分析」：统计 / 直方图 / 粒子 + 导出 */}
+        <aside className="order-3 flex min-h-0 flex-col border-t border-base-300 bg-base-100 lg:order-none lg:h-full lg:border-t-0 lg:border-l">
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <div className="grid gap-4">
+              {statsSection}
+              {particlesSection}
+            </div>
           </div>
 
           <footer className="shrink-0 border-t border-base-300 px-3 py-2.5">
-            <div className="flex items-center gap-1.5">
-              <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.history.undo} disabled={!historyFlags.canUndo} onClick={undo}>
-                <Undo2 size={15} />
-              </Button>
-              <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.history.redo} disabled={!historyFlags.canRedo} onClick={redo}>
-                <Redo2 size={15} />
-              </Button>
-              <Button type="button" variant="outline" size="sm" className="h-8 flex-1" disabled={!hasImage} onClick={exportPng}>
+            <div className="grid gap-1.5">
+              <Button type="button" variant="outline" size="sm" className="h-8" disabled={!hasImage} onClick={exportPng}>
                 <Download size={14} />
                 {copy.exportPng}
               </Button>
-            </div>
-            <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-              <Button type="button" variant="outline" size="sm" className="h-8" disabled={!hasImage} onClick={() => downloadTiff(false)}>{copy.stack.exportCurrent}</Button>
-              <Button type="button" variant="outline" size="sm" className="h-8" disabled={!stack || stack.length < 2} onClick={() => downloadTiff(true)}>{copy.stack.exportAll}</Button>
-            </div>
-            <div role="status" aria-live="polite" className="mt-1.5 min-h-4 text-xs text-base-content/60">
-              {status}
+              <div className="grid grid-cols-2 gap-1.5">
+                <Button type="button" variant="outline" size="sm" className="h-8" disabled={!hasImage} onClick={() => downloadTiff(false)}>{copy.stack.exportCurrent}</Button>
+                <Button type="button" variant="outline" size="sm" className="h-8" disabled={!stack || stack.length < 2} onClick={() => downloadTiff(true)}>{copy.stack.exportAll}</Button>
+              </div>
             </div>
           </footer>
         </aside>
       </div>
-
-      {/* 亮度 / 对比度：滑杆实时预览（display 计算），应用后写入历史并复位。 */}
-      <Dialog
-        open={paramDialog === 'levels'}
-        onOpenChange={(open) => {
-          if (!open) {
-            setBrightness(0)
-            setContrast(50)
-            setParamDialog(null)
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
-          <DialogHeader>
-            <DialogTitle>{copy.adjust.brightness} / {copy.adjust.contrast}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <div className="grid gap-1">
-              <Label htmlFor="imagej-brightness" className="justify-between text-xs">
-                <span>{copy.adjust.brightness}</span>
-                <span className="font-mono tabular-nums text-base-content/60">{brightness}</span>
-              </Label>
-              <input
-                id="imagej-brightness"
-                type="range"
-                min={-127}
-                max={127}
-                step={1}
-                value={brightness}
-                disabled={!hasImage}
-                onChange={(event) => setBrightness(Number(event.target.value))}
-                className="w-full accent-primary"
-              />
-            </div>
-            <div className="grid gap-1">
-              <Label htmlFor="imagej-contrast" className="justify-between text-xs">
-                <span>{copy.adjust.contrast}</span>
-                <span className="font-mono tabular-nums text-base-content/60">{contrast}</span>
-              </Label>
-              <input
-                id="imagej-contrast"
-                type="range"
-                min={1}
-                max={100}
-                step={1}
-                value={contrast}
-                disabled={!hasImage}
-                onChange={(event) => setContrast(Number(event.target.value))}
-                className="w-full accent-primary"
-              />
-            </div>
-            <Button type="button" size="sm" className="h-8" disabled={!hasImage || !levelsActive} onClick={applyCurrentLevels}>
-              {copy.adjust.applyLevels}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* 阈值：应用写入二值图；自动阈值走 Otsu。 */}
-      <Dialog open={paramDialog === 'threshold'} onOpenChange={(open) => { if (!open) setParamDialog(null) }}>
-        <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
-          <DialogHeader>
-            <DialogTitle>{copy.adjust.threshold}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <div className="flex items-center justify-between gap-2">
-              <Label htmlFor="imagej-threshold-level" className="text-xs">{copy.adjust.threshold}</Label>
-              <span className="font-mono text-xs tabular-nums text-base-content/70">{thresholdLevel}</span>
-            </div>
-            <input
-              id="imagej-threshold-level"
-              type="range"
-              min={0}
-              max={255}
-              step={1}
-              value={thresholdLevel}
-              disabled={!hasImage}
-              aria-label={copy.adjust.threshold}
-              onChange={(event) => setThresholdLevel(Number(event.target.value))}
-              className="w-full accent-primary"
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <Button type="button" size="sm" className="h-8" disabled={!hasImage} onClick={applyCurrentThreshold}>
-                {copy.adjust.thresholdApply}
-              </Button>
-              <Button type="button" variant="secondary" size="sm" className="h-8" disabled={!hasImage} onClick={applyOtsu}>
-                <Sparkles size={14} />
-                {copy.adjust.otsu}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* 高斯模糊：sigma 实时可调，应用写入历史。 */}
-      <Dialog open={paramDialog === 'gaussian'} onOpenChange={(open) => { if (!open) setParamDialog(null) }}>
-        <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
-          <DialogHeader>
-            <DialogTitle>{copy.filters.gaussian}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <div className="grid gap-1">
-              <Label htmlFor="imagej-gaussian-sigma" className="justify-between text-xs">
-                <span>{copy.filters.sigma}</span>
-                <span className="font-mono tabular-nums text-base-content/60">{gaussianSigma.toFixed(1)}</span>
-              </Label>
-              <input
-                id="imagej-gaussian-sigma"
-                type="range"
-                min={0.5}
-                max={5}
-                step={0.1}
-                value={gaussianSigma}
-                disabled={!hasImage}
-                onChange={(event) => setGaussianSigma(Number(event.target.value))}
-                className="w-full accent-primary"
-              />
-            </div>
-            <Button type="button" size="sm" className="h-8" disabled={!hasImage} onClick={() => runAdvanced((image) => gaussianBlur(image, gaussianSigma))}>
-              {copy.filters.gaussian}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
