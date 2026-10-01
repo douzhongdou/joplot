@@ -867,6 +867,25 @@ export class ImageHistory {
   }
 }
 
+/**
+ * Plot Profile：沿 (x0,y0)→(x1,y1) 直线采样灰度。
+ * 采样数 = 线段长度取整 + 1，最近邻取像素；端点越界时钳制在图像内。
+ */
+export function profileLine(image: GrayImage, x0: number, y0: number, x1: number, y1: number): number[] {
+  const distance = Math.hypot(x1 - x0, y1 - y0)
+  const steps = Math.max(1, Math.round(distance))
+  const samples = new Array<number>(steps + 1)
+  const maxX = image.width - 1
+  const maxY = image.height - 1
+  for (let i = 0; i <= steps; i += 1) {
+    const t = i / steps
+    const x = Math.min(maxX, Math.max(0, Math.round(x0 + (x1 - x0) * t)))
+    const y = Math.min(maxY, Math.max(0, Math.round(y0 + (y1 - y0) * t)))
+    samples[i] = image.data[y * image.width + x]
+  }
+  return samples
+}
+
 /* ------------------------------------------------------------------ *
  * 导出
  * ------------------------------------------------------------------ */

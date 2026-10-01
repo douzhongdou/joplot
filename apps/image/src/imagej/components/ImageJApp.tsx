@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import {
+  Check,
   Download,
   Image as ImageIcon,
+  Plus,
   Redo2,
   Sparkles,
   Undo2,
@@ -14,6 +16,7 @@ import {
 import { AppNavbar } from '../../components/AppNavbar'
 import { useI18n } from '../../i18n'
 import { Button } from '@joplot/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@joplot/ui/dropdown-menu'
 import { Label } from '@joplot/ui/label'
 import { createImagejCopy, type ImagejCopy } from '../lib/i18n'
 import { analyzeParticles, closeBinary, dilate, erode, fillHoles, openBinary, type Particle } from '../lib/binary'
@@ -39,6 +42,7 @@ import {
   median3x3,
   measure,
   otsuThreshold,
+  profileLine,
   rotate90,
   sharpen3x3,
   sobelEdges,
@@ -140,6 +144,13 @@ type ViewerTool = 'pan' | 'roi'
 /** 带参数的命令：在左栏顶部内联展开参数面板（非模态）。 */
 type ParamPanel = 'levels' | 'threshold' | 'gaussian'
 
+/** 右栏视图卡片：一个卡片 = 一个分析可视化视图。 */
+type ViewType = 'measurement' | 'histogram' | 'profile' | 'particles'
+interface ViewCard { id: number; type: ViewType }
+
+/** 「添加视图」下拉里的可选视图（顺序即展示顺序）。 */
+const VIEW_TYPES: ViewType[] = ['measurement', 'histogram', 'profile', 'particles']
+
 interface DragState {
   mode: 'draw' | 'move' | 'pan'
   anchorX: number
@@ -147,6 +158,26 @@ interface DragState {
   start: Rect
   startScrollLeft: number
   startScrollTop: number
+}
+
+/**
+ * 图表画布按 devicePixelRatio 放大、坐标系换算回 CSS 像素——高分屏上不发虚。
+ * 返回可绘制的 2D 上下文与 CSS 宽度；无上下文时返回 null。
+ */
+function prepareChartCanvas(
+  canvas: HTMLCanvasElement,
+  cssHeight: number,
+): { context: CanvasRenderingContext2D; width: number } | null {
+  const cssWidth = Math.max(1, Math.round(canvas.clientWidth || canvas.parentElement?.clientWidth || 300))
+  const dpr = Math.max(1, window.devicePixelRatio || 1)
+  canvas.width = Math.round(cssWidth * dpr)
+  canvas.height = Math.round(cssHeight * dpr)
+  canvas.style.height = `${cssHeight}px`
+  const context = canvas.getContext('2d')
+  if (!context) return null
+  context.setTransform(dpr, 0, 0, dpr, 0, 0)
+  context.clearRect(0, 0, cssWidth, cssHeight)
+  return { context, width: cssWidth }
 }
 
 export function ImageJApp() {
@@ -158,6 +189,7 @@ export function ImageJApp() {
   const resultCanvasRef = useRef<HTMLCanvasElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
   const histogramCanvasRef = useRef<HTMLCanvasElement>(null)
+  const profileCanvasRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<DragState | null>(null)
   const importTokenRef = useRef(0)
 
@@ -187,6 +219,9 @@ export function ImageJApp() {
   const [spaceHeld, setSpaceHeld] = useState(false)
   /** 左栏顶部展开的参数面板（亮度 / 阈值 / 高斯）。 */
   const [paramPanel, setParamPanel] = useState<ParamPanel | null>(null)
+  /** 右栏卡片列表（载入图像时若为空则播种默认视图）。 */
+  const [views, setViews] = useState<ViewCard[]>([])
+  const viewsIdRef = useRef(1)
 
   const syncHistory = useCallback(() => {
     setHistoryFlags({
@@ -218,6 +253,27 @@ export function ImageJApp() {
     }
   }, [current, roi, scope])
 
+  /** Plot Profile：ROI 水平中线（无选区时为图像中线）上的灰度采样。 */
+  const profileData = useMemo<number[] | null>(() => {
+    if (!current) return null
+    const y = roi ? Math.min(roi.y + Math.floor(roi.height / 2), current.height - 1) : Math.floor(current.height / 2)
+    const x0 = roi ? roi.x : 0
+    const x1 = roi ? Math.min(roi.x + roi.width - 1, current.width - 1) : current.width - 1
+    try {
+      return profileLine(current, x0, y, x1, y)
+    } catch {
+      return null
+    }
+  }, [current, roi])
+
+  /** 首次载入（或视图被清空后）播种默认视图：统计测量 + 直方图。 */
+  const seedDefaultViews = () => {
+    setViews((cards) => (cards.length ? cards : [
+      { id: viewsIdRef.current++, type: 'measurement' },
+      { id: viewsIdRef.current++, type: 'histogram' },
+    ]))
+  }
+
   /* ---------------- 文件导入 ---------------- */
 
   const loadFile = useCallback(async (file: File) => {
@@ -245,6 +301,7 @@ export function ImageJApp() {
         historyRef.current.clear()
         syncHistory()
         setStatus(copy.status.ready)
+        seedDefaultViews()
       } catch (loadError) {
         if (token !== importTokenRef.current) return
         setStatus('')
@@ -299,6 +356,7 @@ export function ImageJApp() {
       historyRef.current.clear()
       syncHistory()
       setStatus(copy.status.ready)
+      seedDefaultViews()
     } catch (loadError) {
       if (token !== importTokenRef.current) return
       setStatus('')
@@ -548,6 +606,29 @@ export function ImageJApp() {
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
   }
 
+  /* ---------------- 右栏视图卡片 ---------------- */
+
+  /** 「添加视图」下拉项：已添加的类型置灰（粒子卡带结果计数）。 */
+  const viewTitle = (type: ViewType): string => {
+    switch (type) {
+      case 'measurement':
+        return copy.views.measurement
+      case 'histogram':
+        return copy.views.histogram
+      case 'profile':
+        return copy.views.profile
+      case 'particles':
+        return particles ? `${copy.views.particles} · ${particles.length}` : copy.views.particles
+    }
+  }
+
+  const addView = (type: ViewType) => {
+    setViews((cards) => (cards.some((card) => card.type === type) ? cards : [...cards, { id: viewsIdRef.current++, type }]))
+    if (type === 'particles' && current) analyzeCurrentParticles()
+  }
+
+  const removeView = (id: number) => setViews((cards) => cards.filter((card) => card.id !== id))
+
   /* ---------------- 命令分发（侧栏点一下直接执行） ---------------- */
 
   /** 多页栈上不允许改变切片尺寸的操作。 */
@@ -650,43 +731,190 @@ export function ImageJApp() {
     }
   }, [])
 
+  // 直方图卡片：按 devicePixelRatio 重绘，带坐标轴/刻度/峰值标注与阈值虚线标记。
   useEffect(() => {
     const canvas = histogramCanvasRef.current
     if (!canvas) return
-    const context = canvas.getContext('2d')
-    if (!context) return
 
-    const width = 640
-    const height = 160
-    canvas.width = width
-    canvas.height = height
-    context.clearRect(0, 0, width, height)
-    context.fillStyle = 'rgba(0,0,0,0.04)'
-    context.fillRect(0, 0, width, height)
+    const draw = () => {
+      const prepared = prepareChartCanvas(canvas, 112)
+      if (!prepared) return
+      const { context, width: cssWidth } = prepared
+      const cssHeight = 112
+      const padLeft = 6
+      const padRight = 6
+      const padTop = 14
+      const padBottom = 16
+      const plotWidth = cssWidth - padLeft - padRight
+      const plotHeight = cssHeight - padTop - padBottom
+      const styles = getComputedStyle(canvas)
+      const foreground = styles.getPropertyValue('--foreground').trim() || '#111111'
+      const primary = styles.getPropertyValue('--primary').trim() || '#3b82f6'
+      const destructive = styles.getPropertyValue('--destructive').trim() || '#ef4444'
 
-    if (!stats) {
-      return
+      // 水平网格线（100% / 50% / 0）
+      context.strokeStyle = foreground
+      context.lineWidth = 1
+      for (const fraction of [0, 0.5, 1]) {
+        const y = Math.round(padTop + plotHeight * fraction) + 0.5
+        context.globalAlpha = 0.1
+        context.beginPath()
+        context.moveTo(padLeft, y)
+        context.lineTo(padLeft + plotWidth, y)
+        context.stroke()
+      }
+      // 基线
+      const baseY = Math.round(padTop + plotHeight) + 0.5
+      context.globalAlpha = 0.25
+      context.beginPath()
+      context.moveTo(padLeft, baseY)
+      context.lineTo(padLeft + plotWidth, baseY)
+      context.stroke()
+      context.globalAlpha = 1
+
+      // x 轴刻度：0 / 128 / 255
+      context.font = '9px ui-monospace, SFMono-Regular, monospace'
+      context.fillStyle = foreground
+      context.globalAlpha = 0.55
+      context.textAlign = 'left'
+      context.fillText('0', padLeft, cssHeight - 5)
+      context.textAlign = 'center'
+      context.fillText('128', padLeft + plotWidth / 2, cssHeight - 5)
+      context.textAlign = 'right'
+      context.fillText('255', padLeft + plotWidth, cssHeight - 5)
+
+      if (stats) {
+        const bins = stats.histogram
+        let maxCount = 0
+        for (let i = 0; i < bins.length; i += 1) {
+          if (bins[i] > maxCount) maxCount = bins[i]
+        }
+        if (maxCount > 0) {
+          // 峰值计数标注
+          context.fillText(String(maxCount), padLeft + plotWidth, padTop - 5)
+
+          const barWidth = plotWidth / bins.length
+          context.fillStyle = primary
+          context.globalAlpha = 0.85
+          for (let i = 0; i < bins.length; i += 1) {
+            const barHeight = (bins[i] / maxCount) * plotHeight
+            if (barHeight <= 0) continue
+            const x = padLeft + i * barWidth
+            context.fillRect(x, padTop + plotHeight - barHeight, Math.max(1, barWidth - 0.5), barHeight)
+          }
+          context.globalAlpha = 1
+
+          // 阈值标记：虚线贯穿
+          const markerX = padLeft + (thresholdLevel / 255) * plotWidth
+          context.strokeStyle = destructive
+          context.globalAlpha = 0.9
+          context.lineWidth = 1.5
+          context.setLineDash([4, 3])
+          context.beginPath()
+          context.moveTo(markerX, padTop - 3)
+          context.lineTo(markerX, padTop + plotHeight)
+          context.stroke()
+          context.setLineDash([])
+          context.globalAlpha = 1
+        }
+      }
+      context.globalAlpha = 1
     }
 
-    const bins = stats.histogram
-    let maxCount = 0
-    for (let i = 0; i < bins.length; i += 1) {
-      if (bins[i] > maxCount) maxCount = bins[i]
-    }
-    if (maxCount === 0) return
+    draw()
+    const observer = new ResizeObserver(draw)
+    observer.observe(canvas)
+    return () => observer.disconnect()
+  }, [stats, thresholdLevel, views])
 
-    const barWidth = width / bins.length
-    context.fillStyle = 'rgba(59, 130, 246, 0.75)'
-    for (let i = 0; i < bins.length; i += 1) {
-      const barHeight = (bins[i] / maxCount) * (height - 8)
-      if (barHeight <= 0) continue
-      context.fillRect(i * barWidth, height - barHeight, Math.max(1, barWidth - 0.4), barHeight)
+  // 剖面图卡片：ROI 水平中线（无选区时为图像中线）上的灰度曲线。
+  useEffect(() => {
+    const canvas = profileCanvasRef.current
+    if (!canvas) return
+
+    const draw = () => {
+      const prepared = prepareChartCanvas(canvas, 112)
+      if (!prepared) return
+      const { context, width: cssWidth } = prepared
+      const cssHeight = 112
+      const padLeft = 6
+      const padRight = 6
+      const padTop = 14
+      const padBottom = 16
+      const plotWidth = cssWidth - padLeft - padRight
+      const plotHeight = cssHeight - padTop - padBottom
+      const styles = getComputedStyle(canvas)
+      const foreground = styles.getPropertyValue('--foreground').trim() || '#111111'
+      const primary = styles.getPropertyValue('--primary').trim() || '#3b82f6'
+
+      // y 轴网格 255 / 128 / 0
+      context.strokeStyle = foreground
+      context.lineWidth = 1
+      for (const value of [255, 128, 0]) {
+        const y = Math.round(padTop + plotHeight * (1 - value / 255)) + 0.5
+        context.globalAlpha = value === 128 ? 0.1 : 0.16
+        context.beginPath()
+        context.moveTo(padLeft, y)
+        context.lineTo(padLeft + plotWidth, y)
+        context.stroke()
+      }
+      context.globalAlpha = 1
+
+      context.font = '9px ui-monospace, SFMono-Regular, monospace'
+      context.fillStyle = foreground
+      context.globalAlpha = 0.55
+      context.textAlign = 'right'
+      context.fillText('255', padLeft + plotWidth, padTop - 5)
+      context.fillText('0', padLeft + plotWidth, cssHeight - 5)
+
+      const values = profileData
+      if (values && values.length >= 2) {
+        const stepX = plotWidth / (values.length - 1)
+        const pointX = (index: number) => padLeft + index * stepX
+        const pointY = (value: number) => padTop + plotHeight * (1 - value / 255)
+
+        // 面积填充
+        context.beginPath()
+        context.moveTo(pointX(0), padTop + plotHeight)
+        for (let i = 0; i < values.length; i += 1) context.lineTo(pointX(i), pointY(values[i]))
+        context.lineTo(pointX(values.length - 1), padTop + plotHeight)
+        context.closePath()
+        context.fillStyle = primary
+        context.globalAlpha = 0.12
+        context.fill()
+        context.globalAlpha = 1
+
+        // 曲线
+        context.beginPath()
+        for (let i = 0; i < values.length; i += 1) {
+          const x = pointX(i)
+          const y = pointY(values[i])
+          if (i === 0) context.moveTo(x, y)
+          else context.lineTo(x, y)
+        }
+        context.strokeStyle = primary
+        context.lineWidth = 1.5
+        context.lineJoin = 'round'
+        context.stroke()
+
+        // 峰值与线长标注
+        let peak = 0
+        for (const value of values) if (value > peak) peak = value
+        context.fillStyle = foreground
+        context.globalAlpha = 0.55
+        context.textAlign = 'left'
+        context.fillText(String(peak), padLeft, padTop - 5)
+        context.textAlign = 'center'
+        context.fillText(`${values.length} px`, padLeft + plotWidth / 2, cssHeight - 5)
+      }
+      context.globalAlpha = 1
     }
 
-    const markerX = (thresholdLevel / 255) * width
-    context.fillStyle = 'rgba(239, 68, 68, 0.9)'
-    context.fillRect(markerX, 0, 2, height)
-  }, [stats, thresholdLevel])
+    draw()
+    const observer = new ResizeObserver(draw)
+    observer.observe(canvas)
+    return () => observer.disconnect()
+  }, [profileData, views])
 
   /* ---------------- 视口交互：缩放 / 平移 / ROI ---------------- */
 
@@ -877,108 +1105,114 @@ export function ImageJApp() {
   const hasImage = Boolean(current)
   const roiLabel = roi ? `${roi.width}×${roi.height} @ (${roi.x}, ${roi.y})` : '—'
 
-  /* ---------------- 右栏「分析」区 ---------------- */
+  /* ---------------- 右栏：卡片式视图（一个卡片 = 一个可视化） ---------------- */
 
-  /** 统计 + 直方图：图像加载后常驻（左栏调参时可同屏观察）。 */
-  const statsSection = (
-    <section className="grid gap-2 rounded-[calc(var(--radius-box)+0.25rem)] bg-muted/50 p-4">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{copy.stats.heading}</h3>
-        {hasImage ? (
-          <span className="inline-flex rounded-[var(--radius-field)] bg-base-200 p-0.5">
-            {(['image', 'roi'] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={scope === value}
-                disabled={value === 'roi' && !roi}
-                className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium transition disabled:opacity-40 ${
-                  scope === value ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
-                }`}
-                onClick={() => setScope(value)}
-              >
-                {value === 'image' ? copy.roi.scopeImage : copy.roi.scopeRoi}
-              </button>
-            ))}
-          </span>
-        ) : null}
-      </div>
-
-      {!hasImage ? (
-        <p className="text-sm text-base-content/55">{copy.emptyDescription}</p>
-      ) : stats ? (
-        <>
-          <dl className="grid grid-cols-2 gap-2">
-            {[
-              [copy.stats.pixels, stats.count.toLocaleString()],
-              [copy.stats.area, stats.area.toLocaleString()],
-              [copy.stats.mean, stats.mean.toFixed(2)],
-              [copy.stats.min, String(stats.min)],
-              [copy.stats.max, String(stats.max)],
-              [copy.stats.stdDev, stats.stdDev.toFixed(2)],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-[var(--radius-field)] bg-base-100 px-3 py-2">
-                <dt className="text-[11px] text-base-content/55">{label}</dt>
-                <dd className="font-mono text-sm font-semibold tabular-nums text-base-content">{value}</dd>
-              </div>
-            ))}
-          </dl>
-          <div>
-            <div className="mb-1 flex items-center justify-between text-[11px] text-base-content/55">
-              <span>{copy.stats.histogram}</span>
-              <span>{copy.stats.thresholdMark}: {thresholdLevel}</span>
-            </div>
-            <canvas ref={histogramCanvasRef} className="block h-28 w-full rounded-[var(--radius-field)] bg-base-100" />
+  const viewCards = views.length ? (
+    <div className="grid gap-4">
+      {views.map((card) => (
+        <section key={card.id} className="grid gap-2 rounded-[calc(var(--radius-box)+0.25rem)] bg-muted/50 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{viewTitle(card.type)}</h3>
+            <button
+              type="button"
+              aria-label={copy.close}
+              onClick={() => removeView(card.id)}
+              className="rounded-[var(--radius-field)] p-1 text-base-content/50 transition hover:bg-base-200 hover:text-base-content"
+            >
+              <X size={14} />
+            </button>
           </div>
-        </>
-      ) : (
-        <p className="text-sm text-base-content/55">{copy.roi.needRoi}</p>
-      )}
-      <Button type="button" variant="secondary" size="sm" className="h-8 w-full" disabled={!hasImage} onClick={analyzeCurrentParticles}>
-        {copy.binary.analyze}
-      </Button>
-    </section>
-  )
 
-  /** 粒子结果：点「分析粒子」后出现（含最小面积重分析与 CSV 导出）。 */
-  const particlesSection = particles ? (
-    <section className="grid gap-2 rounded-[calc(var(--radius-box)+0.25rem)] bg-muted/50 p-4">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{copy.binary.particles}: {particles.length}</h3>
-        <Button type="button" variant="outline" size="sm" onClick={exportParticlesCsv}>{copy.binary.exportCsv}</Button>
-      </div>
-      <div className="flex items-end gap-2">
-        <div className="grid gap-1">
-          <Label htmlFor="imagej-particle-min-area" className="text-xs">{copy.binary.minArea}</Label>
-          <input
-            id="imagej-particle-min-area"
-            type="number"
-            min={1}
-            max={4_000_000}
-            step={1}
-            value={minParticleArea}
-            onChange={(event) => setMinParticleArea(Math.max(1, Math.min(4_000_000, Math.round(Number(event.target.value) || 1))))}
-            className="h-8 w-28 rounded-md border border-base-300 bg-base-100 px-2 text-sm"
-          />
-        </div>
-        <Button type="button" variant="secondary" size="sm" className="h-8" onClick={analyzeCurrentParticles}>
-          {copy.binary.analyze}
-        </Button>
-      </div>
-      <div className="max-h-56 overflow-auto rounded-[var(--radius-field)] bg-base-100">
-        <table className="w-full min-w-[280px] text-left text-xs tabular-nums">
-          <thead><tr className="border-b border-base-300"><th className="p-1.5">#</th><th className="p-1.5">{copy.stats.area}</th><th className="p-1.5">{copy.binary.perimeter}</th><th className="p-1.5">{copy.binary.circularity}</th><th className="p-1.5">{copy.binary.centroid}</th></tr></thead>
-          <tbody>{particles.map((particle) => (
-            <tr key={particle.id} className="border-b border-base-200">
-              <td className="p-1.5">{particle.id}</td><td className="p-1.5">{particle.area}</td>
-              <td className="p-1.5">{particle.perimeter}</td><td className="p-1.5">{particle.circularity.toFixed(3)}</td>
-              <td className="p-1.5">({particle.centroidX.toFixed(1)}, {particle.centroidY.toFixed(1)})</td>
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
-    </section>
-  ) : null
+          {card.type === 'measurement' ? (
+            !hasImage ? (
+              <p className="text-sm text-base-content/55">{copy.emptyDescription}</p>
+            ) : stats ? (
+              <dl className="grid grid-cols-2 gap-2">
+                {[
+                  [copy.stats.pixels, stats.count.toLocaleString()],
+                  [copy.stats.area, stats.area.toLocaleString()],
+                  [copy.stats.mean, stats.mean.toFixed(2)],
+                  [copy.stats.min, String(stats.min)],
+                  [copy.stats.max, String(stats.max)],
+                  [copy.stats.stdDev, stats.stdDev.toFixed(2)],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-[var(--radius-field)] bg-base-100 px-3 py-2">
+                    <dt className="text-[11px] text-base-content/55">{label}</dt>
+                    <dd className="font-mono text-sm font-semibold tabular-nums text-base-content">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="text-sm text-base-content/55">{copy.roi.needRoi}</p>
+            )
+          ) : null}
+
+          {card.type === 'histogram' ? (
+            <div className="grid gap-1">
+              <div className="flex justify-end text-[11px] text-base-content/55">
+                <span>{copy.stats.thresholdMark}: {thresholdLevel}</span>
+              </div>
+              <canvas ref={histogramCanvasRef} className="block w-full rounded-[var(--radius-field)] bg-base-100" style={{ height: 112 }} />
+            </div>
+          ) : null}
+
+          {card.type === 'profile' ? (
+            <div className="grid gap-1">
+              <canvas ref={profileCanvasRef} className="block w-full rounded-[var(--radius-field)] bg-base-100" style={{ height: 112 }} />
+              <p className="text-[11px] text-base-content/55">{copy.views.profileNote}</p>
+            </div>
+          ) : null}
+
+          {card.type === 'particles' ? (
+            particles ? (
+              <>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="grid gap-1">
+                    <Label htmlFor="imagej-particle-min-area" className="text-xs">{copy.binary.minArea}</Label>
+                    <input
+                      id="imagej-particle-min-area"
+                      type="number"
+                      min={1}
+                      max={4_000_000}
+                      step={1}
+                      value={minParticleArea}
+                      onChange={(event) => setMinParticleArea(Math.max(1, Math.min(4_000_000, Math.round(Number(event.target.value) || 1))))}
+                      className="h-8 w-24 rounded-md border border-base-300 bg-base-100 px-2 text-sm"
+                    />
+                  </div>
+                  <Button type="button" variant="secondary" size="sm" className="h-8" onClick={analyzeCurrentParticles}>
+                    {copy.binary.analyze}
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="h-8" onClick={exportParticlesCsv}>{copy.binary.exportCsv}</Button>
+                </div>
+                <div className="max-h-56 overflow-auto rounded-[var(--radius-field)] bg-base-100">
+                  <table className="w-full min-w-[280px] text-left text-xs tabular-nums">
+                    <thead><tr className="border-b border-base-300"><th className="p-1.5">#</th><th className="p-1.5">{copy.stats.area}</th><th className="p-1.5">{copy.binary.perimeter}</th><th className="p-1.5">{copy.binary.circularity}</th><th className="p-1.5">{copy.binary.centroid}</th></tr></thead>
+                    <tbody>{particles.map((particle) => (
+                      <tr key={particle.id} className="border-b border-base-200">
+                        <td className="p-1.5">{particle.id}</td><td className="p-1.5">{particle.area}</td>
+                        <td className="p-1.5">{particle.perimeter}</td>
+                        <td className="p-1.5">{particle.circularity.toFixed(3)}</td>
+                        <td className="p-1.5">({particle.centroidX.toFixed(1)}, {particle.centroidY.toFixed(1)})</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <Button type="button" variant="secondary" size="sm" className="h-8 w-full" disabled={!hasImage} onClick={analyzeCurrentParticles}>
+                {copy.binary.analyze}
+              </Button>
+            )
+          ) : null}
+        </section>
+      ))}
+    </div>
+  ) : (
+    <p className="rounded-[calc(var(--radius-box)+0.25rem)] bg-muted/50 p-4 text-sm text-base-content/55">
+      {hasImage ? copy.views.empty : copy.emptyDescription}
+    </p>
+  )
 
   /* ---------------- 渲染 ---------------- */
 
@@ -1254,14 +1488,50 @@ export function ImageJApp() {
           ) : null}
         </main>
 
-        {/* 右栏「分析」：统计 / 直方图 / 粒子 + 导出 */}
+        {/* 右栏「分析」：卡片式视图（一个卡片一个可视化）+ 导出 */}
         <aside className="order-3 flex min-h-0 flex-col border-t border-base-300 bg-base-100 lg:order-none lg:h-full lg:border-t-0 lg:border-l">
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            <div className="grid gap-4">
-              {statsSection}
-              {particlesSection}
-            </div>
-          </div>
+          <header className="flex shrink-0 items-center justify-between gap-2 border-b border-base-300 px-3 py-2">
+            {hasImage ? (
+              <span className="inline-flex rounded-[var(--radius-field)] bg-base-200 p-0.5">
+                {(['image', 'roi'] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={scope === value}
+                    disabled={value === 'roi' && !roi}
+                    className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium transition disabled:opacity-40 ${
+                      scope === value ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
+                    }`}
+                    onClick={() => setScope(value)}
+                  >
+                    {value === 'image' ? copy.roi.scopeImage : copy.roi.scopeRoi}
+                  </button>
+                ))}
+              </span>
+            ) : <span />}
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" size="sm" className="h-7" disabled={!hasImage}>
+                  <Plus size={14} />
+                  {copy.views.add}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {VIEW_TYPES.map((type) => {
+                  const added = views.some((card) => card.type === type)
+                  return (
+                    <DropdownMenuItem key={type} disabled={!hasImage || added} onSelect={() => addView(type)}>
+                      <span className="flex-1">{viewTitle(type)}</span>
+                      {added ? <Check size={14} /> : null}
+                    </DropdownMenuItem>
+                  )
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </header>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">{viewCards}</div>
 
           <footer className="shrink-0 border-t border-base-300 px-3 py-2.5">
             <div className="grid gap-1.5">

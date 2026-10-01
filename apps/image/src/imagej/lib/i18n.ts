@@ -116,6 +116,15 @@ export interface ImagejCopy {
     thresholdMark: string
     pixel: string
   }
+  views: {
+    add: string
+    measurement: string
+    histogram: string
+    profile: string
+    particles: string
+    empty: string
+    profileNote: string
+  }
   status: {
     ready: string
     loading: string
@@ -240,6 +249,15 @@ const zhCN: ImagejCopy = {
     histogram: '直方图',
     thresholdMark: '阈值',
     pixel: '像素',
+  },
+  views: {
+    add: '添加视图',
+    measurement: '统计测量',
+    histogram: '直方图',
+    profile: '剖面图',
+    particles: '粒子分析',
+    empty: '还没有视图——点右上「添加视图」新建',
+    profileNote: '沿 ROI（无选区时为图像）的水平中线采样',
   },
   status: {
     ready: '就绪',
@@ -366,6 +384,15 @@ const en: ImagejCopy = {
     thresholdMark: 'Threshold',
     pixel: 'Pixel',
   },
+  views: {
+    add: 'Add view',
+    measurement: 'Measurement',
+    histogram: 'Histogram',
+    profile: 'Plot profile',
+    particles: 'Particle analysis',
+    empty: 'No views yet — use “Add view” above',
+    profileNote: 'Sampled along the horizontal midline of the ROI (or image)',
+  },
   status: {
     ready: 'Ready',
     loading: 'Loading…',
@@ -490,6 +517,15 @@ const jaJP: ImagejCopy = {
     histogram: 'ヒストグラム',
     thresholdMark: 'しきい値',
     pixel: 'ピクセル',
+  },
+  views: {
+    add: 'ビューを追加',
+    measurement: '測定',
+    histogram: 'ヒストグラム',
+    profile: 'プロファイル',
+    particles: '粒子解析',
+    empty: 'ビューがありません。右上の「ビューを追加」から追加してください',
+    profileNote: 'ROI（なければ画像）の水平中心線に沿ってサンプリング',
   },
   status: {
     ready: '準備完了',

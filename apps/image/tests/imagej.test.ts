@@ -23,6 +23,7 @@ import {
   median3x3,
   measure,
   otsuThreshold,
+  profileLine,
   rotate90,
   sharpen3x3,
   sobelEdges,
@@ -357,6 +358,23 @@ test('单像素 / 常量图的标准差为 0', () => {
   const flat = image(3, 3, new Array(9).fill(77))
   assert.equal(measure(flat).stdDev, 0)
   assert.equal(measure(flat).mean, 77)
+})
+
+test('profileLine 沿水平线逐像素采样，越界端点钳制在图内', () => {
+  const image = createImage(4, 3)
+  for (let y = 0; y < 3; y += 1) {
+    for (let x = 0; x < 4; x += 1) {
+      image.data[y * 4 + x] = y * 10 + x
+    }
+  }
+  // 长度 3 → 3 步 → 4 个采样点，逐像素取值
+  assert.deepEqual(profileLine(image, 0, 1, 3, 1), [10, 11, 12, 13])
+  // 端点越界：首尾都钳制在图像范围内
+  const clamped = profileLine(image, -5, 1, 10, 1)
+  assert.equal(clamped[0], 10)
+  assert.equal(clamped[clamped.length - 1], 13)
+  // 零长度线至少返回 2 个采样
+  assert.equal(profileLine(image, 2, 2, 2, 2).length, 2)
 })
 
 test('ImageHistory 支持撤销 / 重做与内存预算淘汰', () => {
