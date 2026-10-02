@@ -108,12 +108,12 @@ ip = fo.openProcessor();            // 按 info[n-1].getOffset() 定位
 
 ## 3 ImageJ 不可照抄之处
 
-| # | ImageJ 行为 | 证据 | 必须修改的原因 |
+| # | ImageJ 行为 | 证据 | 状态 |
 | --- | --- | --- | --- |
-| 1 | 拒绝 tiled TIFF | `ij/io/TiffDecoder.java:538-540` `error("ImageJ cannot open tiled TIFFs...")` | 显微镜与扫描仪产出的文件普遍为 tiled。这是功能性缺口，不是优化空间 |
-| 2 | 不支持 BigTIFF | 偏移以 `getInt()` 读取，如 `:398`、`:829` | 超过 4 GiB 的文件直接越界。本项目 `engine/tiff.ts:19-20` 的写出侧已明确拒绝 >4 GiB 并要求 BigTIFF，若读取侧不支持将无法读回自己格式支持的数据 |
-| 3 | 无缓存 | 三类栈均无 cache 字段 | 来回翻页重复读文件 |
-| 4 | 不支持“一个 IFD 多页” | `TiffDecoder.java:833-834` `if (fi.nImages>1) ifdOffset = 0L; // ignore extra IFDs in ImageJ and NIH Image stacks` | NIH Image 等格式将多页放入单个 IFD，直接忽略后续 IFD 会丢页 |
+| 1 | 拒绝 tiled TIFF | `ij/io/TiffDecoder.java:538-540` `error("ImageJ cannot open tiled TIFFs...")` | tile 属 WSI 管线（§6），本期 stack 不需要。但 `indexer.ts` 仍能识别并索引 tile，避免静默产出错误像素 |
+| 2 | 不支持 BigTIFF | 偏移以 `getInt()` 读取，如 `:398`、`:829` | **已补齐**。本项目 `engine/tiff.ts:19-20` 的写出侧已明确拒绝 >4 GiB 并要求 BigTIFF，若读取侧不支持将无法读回自己格式支持的数据 |
+| 3 | 无缓存 | 三类栈均无 cache 字段 | **待补齐**，见 §6.3 的 L2 |
+| 4 | 不支持「一个 IFD 多页」 | `TiffDecoder.java:833-834` `if (fi.nImages>1) ifdOffset = 0L; // ignore extra IFDs in ImageJ and NIH Image stacks` | **已补齐**，多帧数记入 `frames` |
 
 ## 4 Napari 的做法
 
@@ -155,33 +155,54 @@ match ndisplay, shape:
 分块（chunk）是 Zarr 的原生设计，适配随机访问；但它的前提是数据以 Zarr 存储。
 面对来源不可控的第三方 TIFF，业界做法仍是建立索引后按需读取。
 
-## 6 融合方案
+## 6 范围界定：Stack 与 WSI 是两套管线
 
-ImageJ 因不支持 tile 而停留在 stripped-only，Napari 因分块而需要 Zarr 式存储。
-二者之间存在一个结合点：**把 strip 与 tile 统一抽象为分段索引（segment index），
-让同一份索引同时服务读取与渲染。**
+Stack（Z/T 栈浏览）与 WSI（全切片影像）在数据形态与随机访问粒度上差异很大，本项目明确分开：
 
-| 用途 | 用法 | 收益 |
+| | Stack（本期） | WSI（不在本期） |
 | --- | --- | --- |
-| 读取 | 按页读该页全部分段的字节 | 不读整个 stack |
-| 渲染 | 只上传可见区域覆盖的分段到 GPU | 高倍缩放时可见区域远小于全图 |
+| 典型文件 | 多页 / 多 IFD TIFF，单页 1–16 MP | 单页超大 tiled TIFF，可达 100 GP |
+| 分段粒度 | 多为整页一条带 | 固定 tile（如 256×256、512×512） |
+| 随机访问粒度 | 随机页 | 页内随机 ROI |
+| 管线 | 本期 | 另立一套 |
 
-第二项直接针对第 2.6 节的结论：4K dpr=2 超预算并非光栅化不够快，
-而是需要上传与处理的像素过多。缩放到 8× 时可见区域约为全图的 1/64，
-只传可见分段可把需要处理的数据量降低一到两个数量级。
-这一收益与“选 Canvas 还是 WebGL”无关，读取层与渲染层都受益。
+### 6.1 关键事实：strip 的分段粒度通常就是整页
 
-据此确定五层实现顺序：
+本项目的两个 TIFF 写出器都写 `RowsPerStrip = height`
+（`engine/tiff.ts:27`、`lib/tiff.ts:19`），即单页只有一条分段。
+ImageJ 的写出行为相同。这意味着 Stack 场景下的"只上传可见区域覆盖的分段"**无从谈起** ——
+没有比整页更细的分段可用。
+
+因此 Stack 的正确路径是：
+
+1. 按页读整页字节。这是数据量决定的下限，无法绕过。
+2. 整页上传为一张 GPU 纹理。
+3. 缩放、平移、window/level 全部在 GPU 完成；翻页后不再重新读取或重算。
+
+以 4096×4096 uint16 为例，单页 33.5 MB，约合 256 MB 缓存预算下的 7.5 页。
+成本集中在「每页一次的读取与上传」，而非逐像素光栅化 ——
+后者交给 GPU 后不再是瓶颈（见 §2.6 的 CPU 实测）。
+
+这也修正了 §2.6 的结论：4K dpr=2 超预算的根因是 **CPU 逐像素处理**，
+而不是数据量本身过大。数据量只需承担每页一次的成本。
+
+### 6.2 关于 tiled TIFF 的处理
+
+`engine/tiff/indexer.ts` 保留了对 tile 的识别与索引能力，
+目的是遇到 tiled 文件时能正确索引、或明确报错，而不是静默产出错误像素。
+但本期不为 tile 做任何渲染层面的优化，其分段裁剪能力属于 WSI 管线的范畴。
+
+### 6.3 实现顺序
 
 | 层 | 内容 | 依据 |
 | --- | --- | --- |
-| L0 | `TiffIndexer`：IFD 链式遍历，输出 `PageIndex[]`，每页含统一 `segments`；支持 strip + tile + BigTIFF | §2.1 已验证的零像素读索引，补齐 §3 的三项缺口 |
-| L1 | `PageSource.readPage(n, region?)`：按索引只读所需字节，压缩解码委托 ITK-Wasm | §2.2 的按页读，补齐 tile 与区域读取 |
+| L0 | `TiffIndexer`：IFD 链式遍历，输出 `PageIndex[]`，每页含统一 `segments`；支持 strip、BigTIFF、多帧 IFD | §2.1 已验证的零像素读索引，补齐 §3 的缺口 |
+| L1 | `PageSource.readPage(n)`：按索引读该页字节；`segmentsInRegion` 支持按区域取分段 | §2.2 的按页读 |
 | L2 | 字节预算 LRU 缓存 + 邻页预取 | 现有 `engine/scheduler/cache.ts`；ImageJ 无此能力（§2.3） |
-| L3 | WebGL2 主渲染（只传可见区域分段）/ `rasterizeViewport` + LUT 回退 | §4 的 GPU 路线 + §2.6 的 LUT 思路 |
+| L3 | GPU 渲染：整页上传为纹理，window/level 与采样在着色器内完成 / `rasterizeViewport` + LUT 回退 | §4 的 GPU 路线 + §2.6 的 LUT 思路 |
 | L4 | `encodeTiffStack` 增加多分辨率金字塔 | §5 的金字塔思路 |
 
-L1、L2 是栈浏览的地基，与 L3 的渲染后端选型正交，可以先行实现。
+L0 已完成。L1、L2 是栈浏览的地基，与 L3 的渲染后端选型正交。
 
 ## 7 与既有文档的关系
 
@@ -193,9 +214,12 @@ L1、L2 是栈浏览的地基，与 L3 的渲染后端选型正交，可以先�
 
 ## 8 未验证事项
 
-- 压缩 TIFF 的分段级随机读取未验证。压缩数据必须整段解压，
-  因此 `readPage` 对压缩页只能整页读，无法按可见区域部分读。压缩页的渲染收益因此受限。
-- 页面文件的 `TIFFTAG_PAGE_NUMBER` 与 SubIFDs（多页嵌套在单一 IFD 内）未纳入索引，
-  仅覆盖“一个 IFD 一页”与“一个 IFD 多页（nImages）”两种情形。
+- 压缩 TIFF 未纳入索引层之外的任何处理。压缩数据必须整段解压，因此对压缩页只能整页读，
+  无法按分段部分读。按 §6.1，整页读本就是 Stack 的正常路径，故此限制不构成额外约束；
+  但压缩页的读取成本会高于同尺寸的无压缩页。
+- `TIFFTAG_PAGE_NUMBER` 与 SubIFDs（多页嵌套在单一 IFD 内）未纳入索引，
+  仅覆盖「一个 IFD 一页」与「一个 IFD 多帧（nImages）」两种情形。
 - IFD 链式遍历在 IFD 全部前置、像素数据后置的常见布局下已由 ImageJ 验证；
-  但像素数据与 IFD 交错排布的文件中，索引仍只读 IFD 区域，不受影响。
+  像素数据与 IFD 交错排布的文件中，索引仍只读 IFD 区域，不受影响。
+- 单页 33.5 MB 整页上传 GPU 的实际耗时未实测。这决定 L3 的渲染后端选型，
+  需在浏览器中测量后回填。
