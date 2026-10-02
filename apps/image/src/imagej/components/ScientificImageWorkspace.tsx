@@ -94,6 +94,9 @@ export function ScientificImageWorkspace() {
   const current = image ? { width: image.shape[image.axes.indexOf('x')]!, height: image.shape[image.axes.indexOf('y')]!, data: image.data } : null
   const sourceName = state.dataset?.source.name ?? ''
   const busy = state.status === 'importing' || state.status === 'running' || exporting
+  // 切片切换后新像素就绪前，视口里仍是上一帧。此时不显示新页码，
+  // 也不接受探查与 ROI，避免把旧页像素当成新页使用（架构方案第 1 节）。
+  const stale = Boolean(state.imageStale && state.image)
   const error = uiError || state.error || ''
   const historyFlags = { canUndo: runtime.canUndo() || colorPreview.length > 0, canRedo: runtime.canRedo() }
   const slices = (['t', 'c', 'z'] as const).map((axis) => ({ axis, length: state.dataset?.shape[state.dataset.axes.indexOf(axis)] ?? 1, index: state.selection[axis] ?? 0 }))
@@ -548,7 +551,7 @@ export function ScientificImageWorkspace() {
             {slices.map((entry) => <span key={entry.axis} className="inline-flex shrink-0 items-center gap-1">
               <span className="text-[11px] uppercase text-base-content/55">{entry.axis}</span>
               <Button type="button" variant="outline" size="icon-sm" disabled={busy || entry.index === 0} aria-label={`${entry.axis} previous slice`} onClick={() => selectAxis(entry.axis, entry.index - 1)}>←</Button>
-              <span className="text-[11px] tabular-nums">{entry.index + 1} / {entry.length}</span>
+              <span className="text-[11px] tabular-nums">{stale ? '…' : entry.index + 1} / {entry.length}</span>
               <Button type="button" variant="outline" size="icon-sm" disabled={busy || entry.index + 1 >= entry.length} aria-label={`${entry.axis} next slice`} onClick={() => selectAxis(entry.axis, entry.index + 1)}>→</Button>
               <input type="range" min={0} max={entry.length - 1} value={entry.index} disabled={busy} onChange={(event) => selectAxis(entry.axis, Number(event.target.value))} aria-label={`${entry.axis} ${copy.stack.page}`} className="w-20 accent-primary" />
             </span>)}
@@ -617,7 +620,26 @@ export function ScientificImageWorkspace() {
               </div>
             </div>
           ) : displayBlock ? (
-            <ImageViewport ref={viewportRef} block={displayBlock} windowLevel={displayWindow} options={rasterOptions} tool={tool} roi={roi} onRoi={setRoi} onProbe={setProbe} onZoom={setZoom} />
+            <>
+              <ImageViewport
+                ref={viewportRef}
+                block={displayBlock}
+                windowLevel={displayWindow}
+                options={rasterOptions}
+                tool={tool}
+                roi={roi}
+                onRoi={(rect) => { if (!stale) setRoi(rect) }}
+                onProbe={(value) => setProbe(stale ? null : value)}
+                onZoom={setZoom}
+              />
+              {stale && (
+                <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-base-100/50">
+                  <span className="rounded-[var(--radius-box)] bg-base-200 px-2 py-1 text-[11px] text-base-content/70">
+                    {copy.status.loading}
+                  </span>
+                </div>
+              )}
+            </>
           ) : null}
         </main>
 

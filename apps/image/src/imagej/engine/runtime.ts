@@ -23,6 +23,14 @@ export interface RuntimeState {
   /** 当前查看到的步骤（不改变图像流）。 */
   throughStepId?: string
   image: ImageBlock | null
+  /**
+   * 当前 `image` 是否已与 `selection` 失配。
+   *
+   * 切片切换是「先改 selection、异步再产出 image」，若 UI 不加区分就会出现
+   * 新页码配旧像素。架构方案第 1 节明确禁止该状态，故在此显式暴露，
+   * 由 UI 决定是清空还是标注为加载中。
+   */
+  imageStale: boolean
   results: StepOutcomeWire[]
   stats?: ChannelStats[]
   table?: ParticleRow[]
@@ -72,6 +80,7 @@ export class ImageRuntime {
       selection: {},
       recipe: null,
       image: null,
+      imageStale: false,
       results: [],
       status: 'empty',
       estimatedBytes: 0,
@@ -119,6 +128,7 @@ export class ImageRuntime {
         recipe: this.history.current(),
         throughStepId: undefined,
         image: null,
+        imageStale: false,
         results: [],
         stats: undefined,
         table: undefined,
@@ -135,7 +145,9 @@ export class ImageRuntime {
     const dataset = this.state.dataset
     if (!dataset) return
     const selection = { ...this.state.selection, ...patch }
-    this.emit({ selection })
+    // 切片实际变化才标记 image 过期：重复设置同一页不应把画面清空。
+    const changed = selectionKey(selection) !== selectionKey(this.state.selection)
+    this.emit({ selection, imageStale: changed ? true : this.state.imageStale })
     void this.run()
   }
 
@@ -251,7 +263,7 @@ export class ImageRuntime {
     const cached = this.cache.get(key)
     if (cached) {
       this.cache.pin(key)
-      this.emit({ image: cached.image, results: cached.results, stats: cached.stats, table: cached.table, lastRunMs: cached.ms, estimatedBytes: cached.estimatedBytes, status: 'ready' })
+      this.emit({ image: cached.image, imageStale: false, results: cached.results, stats: cached.stats, table: cached.table, lastRunMs: cached.ms, estimatedBytes: cached.estimatedBytes, status: 'ready' })
       this.schedulePrefetch()
       return
     }
@@ -269,6 +281,7 @@ export class ImageRuntime {
       }
       this.emit({
         image: result.image,
+        imageStale: false,
         results: result.results,
         stats: result.stats,
         table: result.table,

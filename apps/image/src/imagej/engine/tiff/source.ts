@@ -47,8 +47,13 @@ export interface TiffFrame {
   segmentCount: number
 }
 
-/** 由位深与 SampleFormat 映射到本项目支持的 dtype。 */
-function dtypeOf(page: TiffPage): Dtype | undefined {
+/**
+ * 由位深与 SampleFormat 映射到本项目支持的 dtype。
+ *
+ * 导出供导入层使用：`createDataset` 的 `dtype` 必须与实际读出的页一致，
+ * 否则 window/level 的取值范围与下游计算都会错。
+ */
+export function dtypeOf(page: TiffPage): Dtype | undefined {
   const { bitsPerSample: bits, sampleFormat: format } = page
   if (format === 1) return bits === 8 ? 'uint8' : bits === 16 ? 'uint16' : undefined
   if (format === 2) return bits === 16 ? 'int16' : undefined
