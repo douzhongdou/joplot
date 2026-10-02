@@ -55,6 +55,7 @@ interface ItkImport {
   axes: Dataset['axes']
   shape: number[]
   channels: ChannelInfo[]
+  componentKind: 'scalar' | 'rgb'
   data: PixelArray
   spacing: [number, number, number]
   origin: [number, number, number]
@@ -97,6 +98,7 @@ function normalizeItkImage(image: ItkImage): ItkImport {
     const shape = dimension === 3 ? [depth, height, width] : [height, width]
     return {
       dtype, axes, shape, channels: [{ index: 0, name: 'Channel 1', kind: 'other' }],
+      componentKind: 'scalar',
       data, spacing: spacingOf(image), origin: originOf(image), warnings,
     }
   }
@@ -116,7 +118,7 @@ function normalizeItkImage(image: ItkImage): ItkImport {
     }
     const axes: Dataset['axes'] = dimension === 3 ? ['c', 'z', 'y', 'x'] : ['c', 'y', 'x']
     const shape = dimension === 3 ? [3, depth, height, width] : [3, height, width]
-    return { dtype: 'uint8', axes, shape, channels, data, spacing: spacingOf(image), origin: originOf(image), warnings }
+    return { dtype: 'uint8', axes, shape, channels, componentKind: 'rgb', data, spacing: spacingOf(image), origin: originOf(image), warnings }
   }
 
   throw new Error(`暂不支持 ${components} 分量图像`)
@@ -145,6 +147,7 @@ function datasetFromItk(file: File, imported: ItkImport): ImportResult {
       calibrated,
     },
     channels: imported.channels,
+    componentKind: imported.componentKind,
     source: makeSource(file, formatFor(file)),
     metadata: { decodedWith: 'itk-wasm' },
   })
@@ -249,6 +252,7 @@ export function importMemory(input: {
   shape: readonly number[]
   data: PixelArray
   channels?: readonly ChannelInfo[]
+  componentKind?: 'scalar' | 'rgb'
   spacing?: [number, number, number]
 }): ImportResult {
   const dataset = createDataset({
@@ -259,6 +263,7 @@ export function importMemory(input: {
       ? { spacing: input.spacing, origin: [0, 0, 0], direction: [1, 0, 0, 0, 1, 0, 0, 0, 1], unit: 'um', calibrated: true }
       : uncalibratedSpatialTransform(),
     channels: input.channels ?? [{ index: 0, name: 'Channel 1', kind: 'other' }],
+    componentKind: input.componentKind,
     source: { kind: 'memory', name: input.name, format: 'memory', fingerprint: `memory:${input.name}:${input.shape.join('x')}` },
   })
   const storageMeta: StorageMetadata = {

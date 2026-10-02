@@ -30,6 +30,8 @@ export interface DatasetMeta {
   timeCalibration?: TimeCalibration
   channels: readonly ChannelInfo[]
   source: SourceRef
+  /** 分量语义：单通道标量，或 rgb 合成（数据按 c 轴平面存放 3 个通道）。 */
+  componentKind: 'scalar' | 'rgb'
   /** 格式元信息与影响解释/计算/导出的必要属性。 */
   metadata: Readonly<Record<string, string | number | boolean>>
 }
@@ -67,6 +69,7 @@ export interface CreateDatasetInput {
   timeCalibration?: TimeCalibration
   channels?: readonly ChannelInfo[]
   source: SourceRef
+  componentKind?: 'scalar' | 'rgb'
   metadata?: Readonly<Record<string, string | number | boolean>>
   /** 空间轴单位覆盖，用于 buildAxes 展示。 */
   axisUnits?: Partial<Record<AxisName, string>>
@@ -94,6 +97,7 @@ export function createDataset(input: CreateDatasetInput): Dataset {
     timeCalibration: input.timeCalibration,
     channels: input.channels ?? [],
     source: input.source,
+    componentKind: input.componentKind ?? 'scalar',
     metadata: input.metadata ?? {},
     axesInfo: buildAxes(axes, shape, units),
   }
@@ -141,6 +145,7 @@ export function reviseDataset(dataset: Dataset, patch: Partial<Omit<CreateDatase
     timeCalibration: patch.timeCalibration ?? dataset.timeCalibration,
     channels: patch.channels ?? dataset.channels,
     source: patch.source ?? dataset.source,
+    componentKind: patch.componentKind ?? dataset.componentKind,
     metadata: patch.metadata ?? dataset.metadata,
     axisUnits: patch.axisUnits,
   })

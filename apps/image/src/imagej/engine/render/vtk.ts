@@ -1,15 +1,17 @@
 /**
  * VTK.js 二维视口适配层（对应架构方案第 8 节）。
  *
- * - 使用 vtkGenericRenderWindow + vtkImageMapper + vtkActor 复用渲染资源；
+ * - 使用 vtkGenericRenderWindow + vtkImageMapper + vtkImageSlice 复用渲染资源；
  * - 翻页只更新输入数据与切片，不重建整个视口；
- * - 强制最近邻插值，禁止默认的线性混合；
+ * - 相机强制正交、正对图像平面，交互使用 InteractorStyleImage（只缩放/平移，不做 3D 旋转）；
+ * - 单通道默认最近邻；多分量（RGB）默认线性以正常显示照片；
  * - 窗宽窗位只改变屏幕颜色，不回写像素。
  *
  * VTK.js 使用 `vtk.js/Sources/...` 深层导入，且依赖 WebGL，只应在浏览器端动态载入。
- * 本模块不在模块顶层 import VTK，避免进入 SSR / Node 测试路径。
  */
 import type { ImageBlock } from '../types.ts'
+
+export type Interpolation = 'nearest' | 'linear'
 
 export interface WindowLevel {
   window: number
@@ -22,9 +24,10 @@ export interface VtkImageView {
   /** 由 itk-wasm Image 更新显示（经 ITKHelper 转换）。 */
   setItkImage(itkImage: unknown): void
   setWindowLevel(settings: WindowLevel): void
+  setInterpolation(mode: Interpolation): void
   setSlice(index: number): void
   setSlicingAxis(axis: 'i' | 'j' | 'k'): void
-  /** 重新适应容器尺寸。 */
+  /** 重新适应容器尺寸并把相机复位为正视图。 */
   resize(): void
   /** 释放 WebGL 资源。 */
   destroy(): void
@@ -37,38 +40,42 @@ interface VtkModules {
   ImageData: VtkImageDataStatic
   DataArray: { newInstance(initialValues?: unknown): unknown }
   SlicingMode: { I: number; J: number; K: number }
+  InteractorStyleImage: { newInstance(): unknown }
   ITKHelper: { convertItkToVtkImage(itkImage: unknown): unknown }
 }
 
 interface VtkRenderWindowLike {
   setContainer(element: HTMLElement): void
   getRenderer(): VtkRendererLike
-  getRenderWindow?(): VtkRenderWindowCore
+  getInteractor?(): VtkInteractorLike
+  getRenderWindow?(): { render(): void }
   resize(): void
   delete(): void
-  render(): void
 }
-
+interface VtkInteractorLike {
+  setInteractorStyle(style: unknown): void
+}
 interface VtkRendererLike {
   addActor(actor: unknown): void
   removeActor(actor: unknown): void
   resetCamera(): void
   resetCameraClippingRange(): void
-  getActiveCamera?(): { zoom(factor: number): void }
+  getActiveCamera(): VtkCameraLike
 }
-
-interface VtkRenderWindowCore {
-  render(): void
+interface VtkCameraLike {
+  setParallelProjection(value: boolean): unknown
+  setViewUp(x: number, y: number, z: number): unknown
+  setFocalPoint(x: number, y: number, z: number): unknown
+  setPosition(x: number, y: number, z: number): unknown
+  getFocalPoint(): number[]
+  getDistance(): number
 }
-
 interface VtkMapperLike {
   setInputData(data: unknown): void
   setSlicingMode(mode: number): void
   setSlice(slice: number): number
-  getInputData(): unknown
   delete(): void
 }
-
 interface VtkImageSliceLike {
   setMapper(mapper: unknown): void
   getProperty(): VtkImagePropertyLike
@@ -76,41 +83,41 @@ interface VtkImageSliceLike {
 }
 interface VtkImagePropertyLike {
   setInterpolationTypeToNearest(): void
+  setInterpolationTypeToLinear(): void
   setColorWindow(window: number): boolean
   setColorLevel(level: number): boolean
 }
-
 interface VtkImageDataStatic {
   newInstance(initialValues?: unknown): VtkImageDataLike
-  getData(): unknown
 }
 interface VtkImageDataLike {
   setDimensions(dimensions: number[]): void
   setSpacing(spacing: number[]): void
   setOrigin(origin: number[]): void
   getPointData(): { setScalars(array: unknown): void }
-  delete?(): void
 }
 
 async function loadModules(): Promise<VtkModules> {
   // 必须先注册渲染 profile，否则 vtkRenderer 找不到 OpenGL 视图节点工厂。
   await import('vtk.js/Sources/Rendering/Profiles/All')
-  const [genericRenderWindow, imageMapper, mapperConstants, actor, imageData, dataArray, itkHelper] = await Promise.all([
+  const [genericRenderWindow, imageMapper, mapperConstants, imageSlice, imageData, dataArray, interactorStyleImage, itkHelper] = await Promise.all([
     import('vtk.js/Sources/Rendering/Misc/GenericRenderWindow'),
     import('vtk.js/Sources/Rendering/Core/ImageMapper'),
     import('vtk.js/Sources/Rendering/Core/ImageMapper/Constants'),
     import('vtk.js/Sources/Rendering/Core/ImageSlice'),
     import('vtk.js/Sources/Common/DataModel/ImageData'),
     import('vtk.js/Sources/Common/Core/DataArray'),
+    import('vtk.js/Sources/Interaction/Style/InteractorStyleImage'),
     import('vtk.js/Sources/Common/DataModel/ITKHelper'),
   ])
   return {
     GenericRenderWindow: genericRenderWindow.default as unknown as VtkModules['GenericRenderWindow'],
     ImageMapper: imageMapper.default as unknown as VtkModules['ImageMapper'],
-    ImageSlice: actor.default as unknown as VtkModules['ImageSlice'],
+    ImageSlice: imageSlice.default as unknown as VtkModules['ImageSlice'],
     ImageData: imageData.default as unknown as VtkImageDataStatic,
     DataArray: dataArray.default as unknown as VtkModules['DataArray'],
     SlicingMode: mapperConstants.default.SlicingMode as unknown as VtkModules['SlicingMode'],
+    InteractorStyleImage: interactorStyleImage.default as unknown as VtkModules['InteractorStyleImage'],
     ITKHelper: { convertItkToVtkImage: itkHelper.convertItkToVtkImage },
   }
 }
@@ -151,9 +158,12 @@ function interleaveComponents(block: ImageBlock, components: number): ArrayBuffe
   return out
 }
 
-/**
- * 创建二维图像视口。所有 VTK 依赖在这里延迟载入。
- */
+function channelCount(block: ImageBlock): number {
+  const c = block.axes.indexOf('c')
+  return c >= 0 ? block.shape[c]! : 1
+}
+
+/** 创建二维图像视口。所有 VTK 依赖在这里延迟载入。 */
 export async function createVtkImageView(
   container: HTMLElement,
   options?: { background?: [number, number, number]; initial?: WindowLevel },
@@ -164,6 +174,7 @@ export async function createVtkImageView(
     listenWindowResize: false,
   })
   genericRenderWindow.setContainer(container)
+  genericRenderWindow.getInteractor?.().setInteractorStyle(modules.InteractorStyleImage.newInstance())
   const renderer = genericRenderWindow.getRenderer()
   const mapper = modules.ImageMapper.newInstance()
   mapper.setSlicingMode(modules.SlicingMode.K)
@@ -180,24 +191,53 @@ export async function createVtkImageView(
     genericRenderWindow.getRenderWindow?.()?.render()
   }
 
+  /** 相机复位：正交投影、正对图像平面（viewUp +Y），避免出现 3D 倾斜。 */
+  const resetFlatCamera = (): void => {
+    renderer.resetCamera()
+    const camera = renderer.getActiveCamera()
+    camera.setParallelProjection(true)
+    camera.setViewUp(0, 1, 0)
+    const focal = camera.getFocalPoint()
+    const distance = Math.abs(camera.getDistance()) || 1
+    camera.setPosition(focal[0] ?? 0, focal[1] ?? 0, (focal[2] ?? 0) + distance)
+    renderer.resetCameraClippingRange()
+  }
+
+  /** 让渲染窗口跟随容器尺寸；否则 VTK 会停留在默认 300×300 被 CSS 拉伸而发虚。 */
+  const syncSize = (): void => {
+    genericRenderWindow.resize()
+    resetFlatCamera()
+    render()
+  }
+
+  const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => syncSize())
+  observer?.observe(container)
+  // 容器在挂载后可能已有尺寸，立即同步一次。
+  syncSize()
+
   return {
     setBlock(block) {
       mapper.setInputData(blockToVtkImageData(modules, block))
       mapper.setSlice(0)
-      renderer.resetCamera()
-      renderer.resetCameraClippingRange()
+      if (channelCount(block) > 1) actor.getProperty().setInterpolationTypeToLinear()
+      else actor.getProperty().setInterpolationTypeToNearest()
+      resetFlatCamera()
       render()
     },
     setItkImage(itkImage) {
       mapper.setInputData(modules.ITKHelper.convertItkToVtkImage(itkImage))
       mapper.setSlice(0)
-      renderer.resetCamera()
-      renderer.resetCameraClippingRange()
+      resetFlatCamera()
       render()
     },
     setWindowLevel(settings) {
       actor.getProperty().setColorWindow(settings.window)
       actor.getProperty().setColorLevel(settings.level)
+      render()
+    },
+    setInterpolation(mode) {
+      if (mode === 'linear') actor.getProperty().setInterpolationTypeToLinear()
+      else actor.getProperty().setInterpolationTypeToNearest()
       render()
     },
     setSlice(index) {
@@ -209,10 +249,10 @@ export async function createVtkImageView(
       render()
     },
     resize() {
-      genericRenderWindow.resize()
-      render()
+      syncSize()
     },
     destroy() {
+      observer?.disconnect()
       renderer.removeActor(actor)
       mapper.delete()
       actor.delete()

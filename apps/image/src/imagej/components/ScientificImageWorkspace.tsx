@@ -36,6 +36,14 @@ function baseName(state: RuntimeState): string {
   return state.dataset?.source.name.replace(/\.[^.]+$/, '') || 'image'
 }
 
+/** 单通道用数据极值做窗宽窗位；多分量（RGB）用 0..255 恒等映射，保持颜色。 */
+function applyDisplay(view: VtkImageView, image: ImageBlock): void {
+  view.setBlock(image)
+  const c = image.axes.indexOf('c')
+  const components = c >= 0 ? (image.shape[c] ?? 1) : 1
+  view.setWindowLevel(components === 1 ? computeWindowLevel(image) : { window: 255, level: 127.5 })
+}
+
 /** 参数面板：本地编辑，点「应用」才提交一次撤销单位。 */
 function StepParamsEditor({
   capability,
@@ -93,6 +101,9 @@ export function ScientificImageWorkspace(): ReactNode {
   const [vtkError, setVtkError] = useState<string>()
   const [exportError, setExportError] = useState<string>()
   const [selectedStepId, setSelectedStepId] = useState<string>()
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => setMounted(true), [])
 
   useEffect(() => {
     const container = viewportRef.current
@@ -107,10 +118,7 @@ export function ScientificImageWorkspace(): ReactNode {
         }
         viewRef.current = view
         const image = imageRef.current
-        if (image) {
-          view.setBlock(image)
-          view.setWindowLevel(computeWindowLevel(image))
-        }
+        if (image) applyDisplay(view, image)
       })
       .catch((error: unknown) => setVtkError(error instanceof Error ? error.message : String(error)))
     return () => {
@@ -123,14 +131,14 @@ export function ScientificImageWorkspace(): ReactNode {
   useEffect(() => {
     const view = viewRef.current
     if (!view || !state.image) return
-    view.setBlock(state.image)
-    view.setWindowLevel(computeWindowLevel(state.image))
+    applyDisplay(view, state.image)
   }, [state.image])
 
   const slices = useMemo(() => {
     const dataset = state.dataset
     if (!dataset) return [] as Array<{ axis: 't' | 'c' | 'z'; length: number; index: number }>
     return (['t', 'c', 'z'] as const)
+      .filter((axis) => !(axis === 'c' && dataset.componentKind === 'rgb'))
       .map((axis) => ({ axis, length: dataset.shape[dataset.axes.indexOf(axis)] ?? 1, index: state.selection[axis] ?? 0 }))
       .filter((entry) => entry.length > 1)
   }, [state.dataset, state.selection])
@@ -160,6 +168,11 @@ export function ScientificImageWorkspace(): ReactNode {
   const exportTiff = async () => {
     const image = state.image
     if (!image || !state.dataset) return
+    const c = image.axes.indexOf('c')
+    if (c >= 0 && (image.shape[c] ?? 1) > 1) {
+      setExportError('彩色图像暂不支持 TIFF 导出，请使用 PNG')
+      return
+    }
     setExportError(undefined)
     try {
       const { encodeImageBlock } = await import('../engine/compute/itk')
@@ -286,7 +299,7 @@ export function ScientificImageWorkspace(): ReactNode {
             {exportError && <p className="text-error">{exportError}</p>}
             {state.warnings.map((warning) => <p key={warning} className="text-warning">{warning}</p>)}
             <div className="flex flex-wrap gap-4">
-              <span>引擎：{state.engine}</span>
+              <span>引擎：{mounted ? state.engine : '…'}</span>
               <span>耗时：{state.lastRunMs ?? 0} ms</span>
               <span>估算峰值：{(state.estimatedBytes / (1024 * 1024)).toFixed(1)} MiB</span>
               <span>缓存：{state.cache.entries} 项 / {(state.cache.bytes / (1024 * 1024)).toFixed(1)} MiB（命中 {state.cache.hits} / 未命中 {state.cache.misses}）</span>

@@ -68,12 +68,22 @@ function frameSelectionRegion(dataset: Dataset, selection: SliceSelection, roi?:
       const dim = dataset.axes.indexOf(axis)
       start.push(roi ? (roi.start[dim] ?? 0) : 0)
       shape.push(roi ? (roi.shape[dim] ?? dataset.shape[i]!) : dataset.shape[i]!)
+    } else if (axis === 'c' && dataset.componentKind === 'rgb') {
+      // RGB 合成显示：c 轴不作为可切换切片，整段读取。
+      start.push(0)
+      shape.push(dataset.shape[i]!)
     } else {
       start.push(selection[axis] ?? 0)
       shape.push(1)
     }
   }
   return { start, shape }
+}
+
+/** 块是否含多个通道（RGB 等）。 */
+function isMultiChannel(block: ImageBlock): boolean {
+  const c = block.axes.indexOf('c')
+  return c >= 0 && (block.shape[c] ?? 1) > 1
 }
 
 /** 逐帧遍历所有前导维度（用于整卷统计）。 */
@@ -202,6 +212,9 @@ export class PureComputeEngine implements ComputeEngine {
     context: ExecuteContext,
   ): Promise<{ image?: ImageBlock; table?: ParticleRow[] }> {
     const params = step.params as Record<string, number>
+    if (isMultiChannel(block) && step.op !== 'grayscale') {
+      throw new ops.ComputeError('unsupported', '彩色（多通道）图像暂只支持先做灰度化，请先添加 grayscale 步骤')
+    }
     switch (step.op) {
       case 'grayscale': return { image: await this.grayscale(context) }
       case 'invert': return { image: ops.invert(block) }
@@ -264,8 +277,9 @@ export class PureComputeEngine implements ComputeEngine {
     const pixels = elementCount(block.shape) / channels
     const data = new Uint8Array(pixels)
     const src = block.data as unknown as { readonly length: number; readonly [index: number]: number }
+    // 数据按 c 轴平面存放（[c][y][x]），不是逐像素交织。
     for (let i = 0; i < pixels; i += 1) {
-      data[i] = Math.round((src[i * 3]! + src[i * 3 + 1]! + src[i * 3 + 2]!) / 3)
+      data[i] = Math.round((src[i]! + src[pixels + i]! + src[2 * pixels + i]!) / 3)
     }
     const outputShape = context.dataset.axes.map((axis, index) => (axis === 'c' ? 1 : context.dataset.shape[index]!))
     return {
