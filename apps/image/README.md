@@ -2,7 +2,16 @@
 
 本文档说明 joplot 中 `imagej` 图像工作台的**迁移范围**、**代码位置**与**不支持的 Java 桌面功能**。文档为中文，代码与注释遵循仓库既有约定。
 
-下一阶段的科学图像计算、ITK-Wasm 与 VTK.js 分工、Stack 翻页和撤销设计见 [科学图像工作台架构方案](docs/scientific-image-engine-design.md)。该方案描述目标架构，不代表下文记录的旧实现已完成迁移。
+下一阶段的科学图像计算、ITK-Wasm 与 VTK.js 分工、Stack 翻页和撤销设计见 [科学图像工作台架构方案](docs/scientific-image-engine-design.md)。该方案描述目标架构；其落地情况与代码映射见 [计算引擎实现说明](docs/scientific-image-engine-implementation.md)。
+
+> 路由说明：`/imagej` 现在渲染基于新计算引擎的科学工作台（`ScientificImageWorkspace`），
+> 旧版 8 位 ImageJ 工作台保留在 `/imagej/classic`。下文第 1～5 节主要记录旧实现。
+
+## 0. 新计算引擎（P0/P1/P2）
+
+新引擎位于 `src/imagej/engine/**`，提供 Dataset/Storage/Recipe 数据契约、按字节预算的
+缓存与邻页预取、可合并统计，并接入 ITK-Wasm 图像 I/O 与 VTK.js 二维视口。模块职责与
+与架构方案各阶段的对应、已验证与未验证项，见 [计算引擎实现说明](docs/scientific-image-engine-implementation.md)。
 
 ## 1. 入口与路由
 
