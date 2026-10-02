@@ -194,15 +194,38 @@ ImageJ 的写出行为相同。这意味着 Stack 场景下的"只上传可见�
 
 ### 6.3 实现顺序
 
-| 层 | 内容 | 依据 |
+| 层 | 内容 | 状态 |
 | --- | --- | --- |
-| L0 | `TiffIndexer`：IFD 链式遍历，输出 `PageIndex[]`，每页含统一 `segments`；支持 strip、BigTIFF、多帧 IFD | §2.1 已验证的零像素读索引，补齐 §3 的缺口 |
-| L1 | `PageSource.readPage(n)`：按索引读该页字节；`segmentsInRegion` 支持按区域取分段 | §2.2 的按页读 |
-| L2 | 字节预算 LRU 缓存 + 邻页预取 | 现有 `engine/scheduler/cache.ts`；ImageJ 无此能力（§2.3） |
-| L3 | GPU 渲染：整页上传为纹理，window/level 与采样在着色器内完成 / `rasterizeViewport` + LUT 回退 | §4 的 GPU 路线 + §2.6 的 LUT 思路 |
-| L4 | `encodeTiffStack` 增加多分辨率金字塔 | §5 的金字塔思路 |
+| L0 | `TiffIndexer`：IFD 链式遍历，输出逐页索引（每页含统一 `segments`），支持 strip、BigTIFF、多帧 IFD | **已完成** `engine/tiff/indexer.ts` |
+| L1 | `TiffPageSource.readPage(n)`：按索引读该页字节，产出 `ImageBlock`；`segmentsInRegion` 支持按区域取分段 | **已完成** `engine/tiff/source.ts`（未压缩路径） |
+| L2 | 字节预算 LRU 缓存 + 邻页预取 | 待做，现有 `engine/scheduler/cache.ts` 可复用 |
+| L3 | GPU 渲染：整页上传为纹理，window/level 与采样在着色器内完成 / `rasterizeViewport` + LUT 回退 | 待做 |
+| L4 | `encodeTiffStack` 增加多分辨率金字塔 | 待做 |
 
-L0 已完成。L1、L2 是栈浏览的地基，与 L3 的渲染后端选型正交。
+### 6.4 实现记录
+
+L0 与 L1 的实现中确认或修正了以下几点，均已由测试固定：
+
+**行序无需翻转。** TIFF 第一行即图像顶部。ITK 导入路径同样不翻转
+（`importer.ts:86-98` 按 `size[0]/size[1]` 取宽高后顺序拷贝），
+`rasterizeViewport` 也假设第 0 行在顶部（`render/raster.ts` 的 `iy * iw + ix`）。
+三者一致，因此两条读取路径不会互相颠倒。
+
+**RGB 布局必须转换。** TIFF 以像素交织存 RGB，而 `ImageBlock` 的 `c` 轴为平面分离
+（`raster.ts` 按 `data[channel * pixels + index]` 取值，`importer.ts:116` 同）。
+读取层负责转换。
+
+**字节序必须逐页记录。** `TiffIndex` 有文件级的 `littleEndian`，但 `TiffPage` 必须另存一份。
+缺该字段时 `meta.littleEndian` 为 `undefined`，而 `DataView.getUint16(at, undefined)`
+把 `undefined` 当作 `false`，于是小端文件被按大端解读 —— 数值全部错位且不抛任何错误
+（实测 `1` 读成 `256`、`400` 读成 `0x9001 = 36865`）。此坑只有类型检查能发现。
+
+**BigTIFF 的偏移类是 LONG8。** 偏移类 tag 在 BigTIFF 下为 8 字节（type 13/16/17/18），
+按 4 字节读取会让超过 4 GiB 的偏移静默截断为 `0`，表现为「文件能打开但像素全黑」。
+经典 TIFF 中 type 13 是 4 字节的 IFD 指针，因此该差异必须在 `big` 分支单独处理。
+
+**未压缩页的分段按坐标放置，不可直接拼接。** 多个条带在文件里是彼此独立的字节区间，
+必须按各自的 `y` 写入目标缓冲的正确行位置。
 
 ## 7 与既有文档的关系
 

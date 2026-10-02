@@ -287,6 +287,7 @@ async function parsePage(read: ByteReader, entries: RawEntry[], big: boolean, li
   return {
     width,
     height,
+    littleEndian,
     bitsPerSample: bits,
     components,
     sampleFormat: first(TAG_SAMPLE_FORMAT) ?? 1,

@@ -44,6 +44,14 @@ export interface TiffSegment {
 export interface TiffPage {
   width: number
   height: number
+  /**
+   * 像素样本的字节序。理论上不同页可以不同，故逐页记录而非只看文件级。
+   *
+   * 注意必须由 `TiffIndexer` 显式写入：若此处缺失，取值会变成 `undefined`，
+   * 而 `DataView.getUint16(at, undefined)` 会按 `false`（大端）解读，
+   * 表现为小端文件的数值全部错位，且不会抛出任何错误。
+   */
+  littleEndian: boolean
   /** 每通道位深，支持 8 / 16 / 32。 */
   bitsPerSample: number
   /** 每像素的通道数，1 为灰度，3 为 RGB。 */
