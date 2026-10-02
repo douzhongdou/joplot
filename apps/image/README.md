@@ -24,6 +24,8 @@
 | 路径 | 职责 |
 | --- | --- |
 | `src/imagej/components/ScientificImageWorkspace.tsx` | 主工作台交互与面板 |
+| `src/imagej/components/ImageJSidebar.tsx` | 左栏命令目录，命令项下方内联展开自己的操作面板 |
+| `src/imagej/components/CommandPanels.tsx` | 亮度/对比度、阈值、高斯模糊的内联参数面板 |
 | `src/imagej/components/ImageViewport.tsx` | 二维视口、相机、ROI 与原值探查 |
 | `src/imagej/components/useImageAnalysis.ts` | 分析 Worker 的图像与 ROI 同步 |
 | `src/imagej/engine/` | Dataset、Storage、Recipe、调度、计算、I/O、TIFF 与渲染映射 |

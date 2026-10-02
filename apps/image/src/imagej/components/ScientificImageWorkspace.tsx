@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
-import { Check, Download, Image as ImageIcon, Plus, Redo2, Sparkles, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
+import { Check, Download, Image as ImageIcon, Plus, Redo2, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { AppNavbar } from '../../components/AppNavbar'
 import { useI18n } from '../../i18n'
 import { Button } from '@joplot/ui/button'
@@ -20,10 +20,26 @@ import { useImageRuntime } from './useImageRuntime'
 import { useImageAnalysis } from './useImageAnalysis'
 import { ImageViewport, type ImageViewportHandle, type PixelProbe } from './ImageViewport'
 import { ColorContrastPanel } from './ColorContrastPanel'
+import { GaussianCommandPanel, LevelsCommandPanel, ThresholdCommandPanel } from './CommandPanels'
 import { HistogramChart } from './HistogramChart'
 import { applyColorAdjustments, type ColorAdjustment } from '../engine/colorAdjustments'
 
-type ParamPanel = 'levels' | 'threshold' | 'gaussian'
+/** 需要先调参数再执行的操作：面板在对应命令项下方展开，所以这里存命令 label。 */
+type ParamCommand = 'Brightness/Contrast' | 'Color Balance' | 'Threshold' | 'Gaussian Blur'
+type ParamOp = 'levels' | 'threshold' | 'gaussian'
+/** 命令 label → 算子 kind（命令目录里 label 是唯一键）。 */
+const COMMAND_OPS: Record<ParamCommand, ParamOp> = {
+  'Brightness/Contrast': 'levels',
+  'Color Balance': 'levels',
+  Threshold: 'threshold',
+  'Gaussian Blur': 'gaussian',
+}
+/** 算子 kind → 命令目录里默认展开的那一项。 */
+const OP_COMMANDS: Record<ParamOp, ParamCommand> = {
+  levels: 'Brightness/Contrast',
+  threshold: 'Threshold',
+  gaussian: 'Gaussian Blur',
+}
 type ViewType = 'measurement' | 'histogram' | 'profile' | 'particles'
 interface ViewCard { id: number; type: ViewType }
 const VIEW_TYPES: ViewType[] = ['measurement', 'histogram', 'profile', 'particles']
@@ -64,7 +80,7 @@ export function ScientificImageWorkspace() {
   const [gaussianSigma, setGaussianSigma] = useState(1.5), [thresholdLevel, setThresholdLevel] = useState(128)
   const [scope, setScope] = useState<'image' | 'roi'>('image')
   const [applyAll, setApplyAll] = useState(false)
-  const [paramPanel, setParamPanel] = useState<ParamPanel | null>(null)
+  const [paramCommand, setParamCommand] = useState<ParamCommand | null>(null)
   const [views, setViews] = useState<ViewCard[]>([])
   const viewsIdRef = useRef(1)
   const [minParticleArea, setMinParticleArea] = useState(1)
@@ -87,6 +103,7 @@ export function ScientificImageWorkspace() {
   const slice = slices.find((entry) => entry.axis === 'z') ?? slices[0]
   const pageIndex = slice?.index ?? 0
   const levelsActive = brightness !== 0 || contrast !== 50
+  const paramOp = paramCommand ? COMMAND_OPS[paramCommand] : null
   const analysisResult = useImageAnalysis(image, scope === 'roi' ? roi : null, views.some((view) => view.type === 'particles'), minParticleArea, roi, isRgb && colorPreview.length ? 'all' : undefined, colorPreview)
   const status = busy || (image && !analysisResult.analysis) ? copy.status.loading : state.dataset ? copy.status.ready : ''
   const stats = scope === 'roi' && !roi ? undefined : analysisResult.analysis
@@ -101,7 +118,7 @@ export function ScientificImageWorkspace() {
     const range = levelsRange(brightness, contrast), lo = baselineWindow.level - baselineWindow.window / 2
     return { window: baselineWindow.window * (range.max - range.min) / 255, level: lo + baselineWindow.window * (range.max + range.min) / 510 }
   }, [baselineWindow, brightness, contrast])
-  const rasterOptions = useMemo(() => ({ gray: !showColor, threshold: paramPanel === 'threshold' ? thresholdLevel : undefined, colorAdjustments: showOriginal ? [] : colorPreview }), [showColor, paramPanel, thresholdLevel, colorPreview, showOriginal])
+  const rasterOptions = useMemo(() => ({ gray: !showColor, threshold: paramOp === 'threshold' ? thresholdLevel : undefined, colorAdjustments: showOriginal ? [] : colorPreview }), [showColor, paramOp, thresholdLevel, colorPreview, showOriginal])
   const selectPage = (index: number) => {
     if (!slice) return
     if (colorPreview.length) commitColorPreview(colorPreview, false)
@@ -120,7 +137,7 @@ export function ScientificImageWorkspace() {
     if (current) setRoi((rect) => rect ? { x: Math.min(rect.x, current.width - 1), y: Math.min(rect.y, current.height - 1), width: Math.min(rect.width, current.width - Math.min(rect.x, current.width - 1)), height: Math.min(rect.height, current.height - Math.min(rect.y, current.height - 1)) } : null)
   }, [current?.width, current?.height])
   const loadFile = async (file: File) => {
-    setError(''); setParamPanel(null); setShowColor(true); setApplyAll(false)
+    setError(''); setParamCommand(null); setShowColor(true); setApplyAll(false)
     await runtime.openFile(file); seedDefaultViews()
   }
   const onFileInput = (event: ChangeEvent<HTMLInputElement>) => {
@@ -141,9 +158,21 @@ export function ScientificImageWorkspace() {
     if (op !== 'grayscale' && needsGray && ci >= 0 && (image.shape[ci] ?? 1) > 1) runtime.addStep('grayscale', {}, stepScope(null))
     runtime.addStep(op, params, stepScope(rect))
   }
+  /** 打开某个命令自己的参数面板（先提交正在预览的色彩调整，并切到合适的显示模式）。 */
+  const openParamCommand = (command: ParamCommand) => {
+    if (!image || busy || !COMMAND_OPS[command]) return
+    const op = COMMAND_OPS[command]
+    if (op !== 'levels' && colorPreview.length) commitColorPreview(colorPreview, false)
+    setShowOriginal(false); setShowColor(op !== 'threshold'); setParamCommand(command)
+  }
+  /** 命令目录点选：再点一次已展开的命令即收起。 */
+  const toggleParamCommand = (command: string) => {
+    if (paramCommand === command) { closeParamCommand(); return }
+    openParamCommand(command as ParamCommand)
+  }
   const runCommand = (op: string) => {
     if (!image || busy) return
-    if (op === 'levels' || op === 'threshold' || op === 'gaussian') { if (op !== 'levels' && colorPreview.length) commitColorPreview(colorPreview, false); setShowOriginal(false); setShowColor(op !== 'threshold'); setParamPanel(op); return }
+    if (op === 'levels' || op === 'threshold' || op === 'gaussian') { openParamCommand(OP_COMMANDS[op]); return }
     if (op === 'crop') {
       if (stack) { setError(copy.stack.geometryUnavailable); return }
       if (!roi) { setError(copy.errors.needsRoi); return }
@@ -166,7 +195,7 @@ export function ScientificImageWorkspace() {
     setColorPreview([])
   }
   const selectAxis = (axis: 't' | 'c' | 'z', index: number) => { if (colorPreview.length) commitColorPreview(colorPreview, false); runtime.setSelection({ [axis]: index }) }
-  const closeParamPanel = () => { if (colorPreview.length) commitColorPreview(colorPreview, false); setBrightness(0); setContrast(50); setParamPanel(null) }
+  const closeParamCommand = () => { if (colorPreview.length) commitColorPreview(colorPreview, false); setBrightness(0); setContrast(50); setParamCommand(null) }
   const applyCurrentLevels = () => { submit('levels', { brightness, contrast }, null); setBrightness(0); setContrast(50) }
   const applyCurrentThreshold = () => submit('threshold', { level: thresholdLevel })
   const applyOtsu = () => submit('otsu')
@@ -294,6 +323,23 @@ export function ScientificImageWorkspace() {
     observer.observe(canvas)
     return () => observer.disconnect()
   }, [profileData, stats, views])
+
+  /* ---------------- 左栏：命令项下方内联展开的操作面板（同一时刻只展开一个命令） ---------------- */
+
+  // 色彩平衡只在 RGB 图上可用；灰度图下它保持「尚未接入」的禁用态。
+  const expandableCommands = useMemo<ParamCommand[]>(
+    () => isRgb ? ['Brightness/Contrast', 'Color Balance', 'Threshold', 'Gaussian Blur'] : ['Brightness/Contrast', 'Threshold', 'Gaussian Blur'],
+    [isRgb],
+  )
+  const panel: ReactNode = paramOp === 'levels'
+    ? isRgb && image
+      ? <ColorContrastPanel embedded session={colorSession} block={image} roi={roi} language={language} busy={busy} hasStack={Boolean(stack)} onPreview={setColorPreview} onApply={commitColorPreview} onClose={closeParamCommand} />
+      : <LevelsCommandPanel copy={copy} brightness={brightness} contrast={contrast} active={levelsActive} disabled={!hasImage || busy} onBrightness={setBrightness} onContrast={setContrast} onApply={applyCurrentLevels} onClose={closeParamCommand} />
+    : paramOp === 'threshold'
+      ? <ThresholdCommandPanel copy={copy} level={thresholdLevel} minimum={stats?.histogramMin ?? 0} maximum={stats?.histogramMax ?? 255} step={image?.dtype === 'float32' ? 'any' : 1} disabled={!hasImage || busy} onLevel={setThresholdLevel} onApply={applyCurrentThreshold} onOtsu={applyOtsu} onClose={closeParamCommand} />
+      : paramOp === 'gaussian'
+        ? <GaussianCommandPanel copy={copy} sigma={gaussianSigma} disabled={!hasImage || busy} onSigma={setGaussianSigma} onApply={() => submit('gaussian', { sigma: gaussianSigma })} onClose={closeParamCommand} />
+        : null
 
   /* ---------------- 右栏：卡片式视图（一个卡片 = 一个可视化） ---------------- */
 
@@ -474,7 +520,7 @@ export function ScientificImageWorkspace() {
               </div>
             ) : null}
 
-            <Button type="button" variant={showOriginal ? 'secondary' : 'outline'} size="sm" aria-pressed={showOriginal} disabled={!original || busy} onClick={() => { setShowOriginal(!showOriginal); closeParamPanel() }}>{copy.original}</Button>
+            <Button type="button" variant={showOriginal ? 'secondary' : 'outline'} size="sm" aria-pressed={showOriginal} disabled={!original || busy} onClick={() => { setShowOriginal(!showOriginal); closeParamCommand() }}>{copy.original}</Button>
 
             <span className="inline-flex shrink-0 items-center gap-0.5 rounded-[var(--radius-field)] bg-muted p-0.5">
               <button type="button" aria-label={copy.zoomOut} disabled={!hasImage || busy} onClick={() => zoomByStep(-1)}
@@ -515,98 +561,15 @@ export function ScientificImageWorkspace() {
       />
 
       <div className="grid min-h-0 min-w-0 grid-cols-1 overflow-y-auto lg:grid-cols-[260px_minmax(0,1fr)_300px] lg:overflow-hidden">
-        {/* 左栏「处理」：参数面板（内联展开）+ 命令目录 + 撤销 / 状态 */}
+        {/* 左栏「处理」：命令目录（选中项下方内联展开自己的操作面板）+ 撤销 / 状态 */}
         <aside className="order-2 flex min-h-0 flex-col border-b border-base-300 bg-base-100 lg:order-none lg:h-full lg:border-b-0 lg:border-r">
-          {paramPanel === 'levels' && isRgb && image ? <ColorContrastPanel key={`${state.dataset?.id}:${colorSession}`} block={image} roi={roi} language={language} busy={busy} hasStack={Boolean(stack)} onPreview={setColorPreview} onApply={commitColorPreview} onClose={closeParamPanel} /> : null}
-          {paramPanel === 'levels' && !isRgb ? (
-            <section className="shrink-0 border-b border-base-300 px-2.5 py-2">
-              <div className="mb-1.5 flex items-center justify-between gap-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-base-content/60">{copy.adjust.brightness} / {copy.adjust.contrast}</h3>
-                <button type="button" aria-label={copy.close} onClick={closeParamPanel} className="rounded-[var(--radius-field)] p-1 text-base-content/50 hover:bg-muted hover:text-base-content">
-                  <X size={14} />
-                </button>
-              </div>
-              <div className="grid gap-2">
-                <div className="grid gap-1">
-                  <Label htmlFor="imagej-brightness" className="justify-between text-xs">
-                    <span>{copy.adjust.brightness}</span>
-                    <span className="font-mono tabular-nums text-base-content/60">{brightness}</span>
-                  </Label>
-                  <input id="imagej-brightness" type="range" min={-127} max={127} step={1} value={brightness} disabled={!hasImage || busy}
-                    onChange={(event) => setBrightness(Number(event.target.value))} className="w-full accent-primary" />
-                </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="imagej-contrast" className="justify-between text-xs">
-                    <span>{copy.adjust.contrast}</span>
-                    <span className="font-mono tabular-nums text-base-content/60">{contrast}</span>
-                  </Label>
-                  <input id="imagej-contrast" type="range" min={1} max={100} step={1} value={contrast} disabled={!hasImage || busy}
-                    onChange={(event) => setContrast(Number(event.target.value))} className="w-full accent-primary" />
-                </div>
-                <Button type="button" size="sm" className="h-8" disabled={!hasImage || !levelsActive} onClick={applyCurrentLevels}>
-                  {copy.adjust.applyLevels}
-                </Button>
-              </div>
-            </section>
-          ) : null}
-
-          {paramPanel === 'threshold' ? (
-            <section className="shrink-0 border-b border-base-300 px-2.5 py-2">
-              <div className="mb-1.5 flex items-center justify-between gap-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-base-content/60">{copy.adjust.threshold}</h3>
-                <button type="button" aria-label={copy.close} onClick={closeParamPanel} className="rounded-[var(--radius-field)] p-1 text-base-content/50 hover:bg-muted hover:text-base-content">
-                  <X size={14} />
-                </button>
-              </div>
-              <div className="grid gap-2">
-                <div className="flex items-center justify-between gap-2">
-                  <Label htmlFor="imagej-threshold-level" className="text-xs">{copy.adjust.threshold}</Label>
-                  <span className="font-mono text-xs tabular-nums text-base-content/70">{thresholdLevel}</span>
-                </div>
-                <input id="imagej-threshold-level" type="range" min={stats?.histogramMin ?? 0} max={stats?.histogramMax ?? 255} step={image?.dtype === 'float32' ? 'any' : 1} value={thresholdLevel} disabled={!hasImage || busy}
-                  aria-label={copy.adjust.threshold} onChange={(event) => setThresholdLevel(Number(event.target.value))} className="w-full accent-primary" />
-                <div className="grid grid-cols-2 gap-2">
-                  <Button type="button" size="sm" className="h-8" disabled={!hasImage || busy} onClick={applyCurrentThreshold}>
-                    {copy.adjust.thresholdApply}
-                  </Button>
-                  <Button type="button" variant="secondary" size="sm" className="h-8" disabled={!hasImage || busy} onClick={applyOtsu}>
-                    <Sparkles size={14} />
-                    {copy.adjust.otsu}
-                  </Button>
-                </div>
-              </div>
-            </section>
-          ) : null}
-
-          {paramPanel === 'gaussian' ? (
-            <section className="shrink-0 border-b border-base-300 px-2.5 py-2">
-              <div className="mb-1.5 flex items-center justify-between gap-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-base-content/60">{copy.filters.gaussian}</h3>
-                <button type="button" aria-label={copy.close} onClick={closeParamPanel} className="rounded-[var(--radius-field)] p-1 text-base-content/50 hover:bg-muted hover:text-base-content">
-                  <X size={14} />
-                </button>
-              </div>
-              <div className="grid gap-2">
-                <div className="grid gap-1">
-                  <Label htmlFor="imagej-gaussian-sigma" className="justify-between text-xs">
-                    <span>{copy.filters.sigma}</span>
-                    <span className="font-mono tabular-nums text-base-content/60">{gaussianSigma.toFixed(1)}</span>
-                  </Label>
-                  <input id="imagej-gaussian-sigma" type="range" min={0.5} max={5} step={0.1} value={gaussianSigma} disabled={!hasImage || busy}
-                    onChange={(event) => setGaussianSigma(Number(event.target.value))} className="w-full accent-primary" />
-                </div>
-                <Button type="button" size="sm" className="h-8" disabled={!hasImage || busy} onClick={() => submit('gaussian', { sigma: gaussianSigma })}>
-                  {copy.filters.gaussian}
-                </Button>
-              </div>
-            </section>
-          ) : null}
-
-          {stack && <div className="border-b border-base-300 px-2.5 py-2 text-[11px]">
+          {stack && <div className="shrink-0 border-b border-base-300 px-2.5 py-2 text-[11px]">
             <label className="flex items-center gap-2"><input type="checkbox" checked={applyAll} onChange={(event) => setApplyAll(event.target.checked)} />{copy.stack.applyAll}</label>
           </div>}
           <div className="min-h-0 flex-1">
-            <ImageJSidebar language={language} registry={registry} onRun={runCommand} onColorBalance={isRgb ? () => runCommand('levels') : undefined} disabled={!hasImage || busy} stackActions={{ next: () => selectPage(pageIndex + 1), previous: () => selectPage(pageIndex - 1), canNext: Boolean(slice && pageIndex + 1 < slice.length), canPrevious: pageIndex > 0 }} />
+            <ImageJSidebar language={language} registry={registry} onRun={runCommand} disabled={!hasImage || busy}
+              expandableCommands={expandableCommands} expandedCommand={paramCommand} panel={panel} onToggleCommand={toggleParamCommand}
+              stackActions={{ next: () => selectPage(pageIndex + 1), previous: () => selectPage(pageIndex - 1), canNext: Boolean(slice && pageIndex + 1 < slice.length), canPrevious: pageIndex > 0 }} />
           </div>
 
           <details className="max-h-40 shrink-0 overflow-auto border-t border-base-300 px-3 py-2 text-xs">

@@ -4,7 +4,7 @@
 
 ## 产品入口与交互
 
-`/imagej` 使用 `ScientificImageWorkspace`，`/imagej/classic` 保留 Classic。主工作台接入 Classic 的三栏布局、搜索命令菜单、参数面板、显示切换、ROI、分析卡片与导出操作，数据与历史由科学引擎管理。
+`/imagej` 使用 `ScientificImageWorkspace`，`/imagej/classic` 保留 Classic。主工作台接入 Classic 的三栏布局、搜索命令菜单、显示切换、ROI、分析卡片与导出操作，数据与历史由科学引擎管理。左栏命令目录里点选需要参数的命令（亮度/对比度、阈值、高斯模糊、RGB 下的色彩平衡）时，操作面板在该命令项下方就地展开并滚动进视野，再点一次收起；其余命令点选即执行。
 
 Stack 提供 T / C / Z 选择、滑杆、上一页 / 下一页及当前帧 / 整栈开关。RGB 的 C 轴用于合成；标量多通道按 C 选择。操作步骤保存作用范围：当前帧包含明确的 T / C / Z 与可选 ROI，整栈步骤对各帧重放。翻页不会清空历史。撤销 / 重做改变 Recipe，查看某步可暂时显示中间结果。
 

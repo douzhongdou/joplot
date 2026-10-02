@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { OperatorRegistry } from '../lib/engineTypes'
 
 type Language = 'zh-CN' | 'en' | 'ja-JP'
@@ -44,16 +44,27 @@ const LABELS: Record<Language, {
   },
 }
 
-export function ImageJSidebar({ language, registry, onRun, disabled = false, stackActions, onColorBalance }: {
+export function ImageJSidebar({ language, registry, onRun, disabled = false, stackActions, expandableCommands, expandedCommand, panel, onToggleCommand }: {
   language: Language
   registry: OperatorRegistry
   /** 执行命令：传算子 kind，由父组件直接跑。 */
   onRun: (op: string) => void
   disabled?: boolean
-  onColorBalance?(): void
   stackActions?: { next(): void; previous(): void; canNext: boolean; canPrevious: boolean }
+  /**
+   * 可以就地展开操作面板的命令 label（key 用命令英文 label）。
+   * 不在此列表里的命令项点击后直接执行。
+   */
+  expandableCommands?: readonly string[]
+  /** 当前展开的命令 label：面板渲染在该命令项自己下方，其余可展开项保持收起。 */
+  expandedCommand?: string | null
+  /** `expandedCommand` 对应的面板内容。 */
+  panel?: ReactNode
+  /** 点选可展开的命令项时触发（用于打开/收起该命令自己的面板）。 */
+  onToggleCommand?: (command: string) => void
 }) {
   const [query, setQuery] = useState('')
+  const panelRef = useRef<HTMLDivElement | null>(null)
   const labels = LABELS[language] ?? LABELS.en
   const operators = new Map(registry.operators.map((operator) => [operator.kind, operator]))
   const localize = (label: string) => labels.items[label] ?? label
@@ -61,6 +72,8 @@ export function ImageJSidebar({ language, registry, onRun, disabled = false, sta
     ...group,
     items: group.items.filter((item) => `${item.label} ${localize(item.label)}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())),
   })).filter((group) => group.items.length)
+  // 展开的面板紧跟在命令项下方，可能落在可视区外——把它（连同命令项）滚进视野。
+  useEffect(() => { panelRef.current?.scrollIntoView({ block: 'nearest' }) }, [expandedCommand])
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -75,16 +88,27 @@ export function ImageJSidebar({ language, registry, onRun, disabled = false, sta
             <div className="grid gap-0.5">
               {group.items.map((item) => {
                 const operator = item.op ? operators.get(item.op) : undefined
-                const action = item.label === 'Next Slice' ? stackActions?.next : item.label === 'Previous Slice' ? stackActions?.previous : item.label === 'Color Balance' ? onColorBalance : undefined
-                const available = Boolean(operator || action)
+                const action = item.label === 'Next Slice' ? stackActions?.next : item.label === 'Previous Slice' ? stackActions?.previous : undefined
+                const expandable = Boolean(expandableCommands?.includes(item.label) && onToggleCommand)
+                const open = expandable && expandedCommand === item.label
+                const available = Boolean(operator || action || expandable)
                 const blocked = disabled || !available || (item.label === 'Next Slice' && !stackActions?.canNext) || (item.label === 'Previous Slice' && !stackActions?.canPrevious)
                 return (
-                  <button key={item.label} type="button" disabled={blocked} title={!available ? labels.unavailable : undefined}
-                    onClick={() => { if (action) action(); else if (item.op && operator) onRun(item.op) }}
-                    className="flex w-full items-center justify-between rounded-[var(--radius-field)] px-1.5 py-1 text-left text-[13px] text-base-content hover:bg-muted disabled:cursor-not-allowed disabled:text-base-content/35 disabled:hover:bg-transparent">
-                    <span>{localize(item.label)}</span>
-                    {available ? <ChevronRight size={13} className="text-base-content/35" /> : <span className="text-[10px]">{labels.unavailable}</span>}
-                  </button>
+                  <div key={item.label}>
+                    <button type="button" disabled={blocked} title={!available ? labels.unavailable : undefined}
+                      aria-expanded={expandable ? open : undefined}
+                      onClick={() => {
+                        if (expandable && onToggleCommand) { onToggleCommand(item.label); return }
+                        if (action) action(); else if (item.op && operator) onRun(item.op)
+                      }}
+                      className={`flex w-full items-center justify-between rounded-[var(--radius-field)] px-1.5 py-1 text-left text-[13px] transition ${open ? 'bg-muted text-base-content' : 'text-base-content hover:bg-muted'} disabled:cursor-not-allowed disabled:text-base-content/35 disabled:hover:bg-transparent`}>
+                      <span>{localize(item.label)}</span>
+                      {available ? (open ? <ChevronDown size={13} className="text-base-content/55" /> : <ChevronRight size={13} className="text-base-content/35" />) : <span className="text-[10px]">{labels.unavailable}</span>}
+                    </button>
+                    {open ? (
+                      <div ref={panelRef} className="mb-1.5 ml-2 border-l border-base-300 pl-2">{panel}</div>
+                    ) : null}
+                  </div>
                 )
               })}
             </div>

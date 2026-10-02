@@ -18,8 +18,12 @@ const COPY = {
   'ja-JP': { title: '明るさ/コントラスト', minimum: '最小値', maximum: '最大値', brightness: '明るさ', contrast: 'コントラスト', channel: 'チャンネル', auto: '自動', reset: 'リセット', set: '設定', apply: '適用', close: '閉じる', range: '表示範囲を設定', minValue: '表示の最小値', maxValue: '表示の最大値', ok: 'OK', cancel: 'キャンセル', invalid: '有限値を入力し、最大値を最小値以上にしてください。', pixels: 'ピクセル', cumulative: '累積', level: '階調', frequency: '頻度', log: '対数目盛', stack: 'スタック全体に適用？', stackHint: '現在の設定をすべてのスライスに適用しますか？', current: '現在のスライス', all: 'スタック全体' },
 }
 
-export function ColorContrastPanel({ block, roi, language, busy, hasStack, onPreview, onApply, onClose }: {
+export function ColorContrastPanel({ block, roi, language, busy, hasStack, embedded = false, session = 0, onPreview, onApply, onClose }: {
   block: ImageBlock; roi: Rect | null; language: keyof typeof COPY; busy: boolean; hasStack: boolean
+  /** 内联模式：在命令目录里紧跟所属命令项展开（去掉整块分隔线与外边距）。 */
+  embedded?: boolean
+  /** 变化时复位面板内部状态（撤销 / 重做、换图后重新展开用）。 */
+  session?: number
   onPreview(settings: readonly ColorAdjustment[]): void
   onApply(settings: readonly ColorAdjustment[], allPages: boolean): void
   onClose(): void
@@ -36,7 +40,7 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, onPre
   const settings = useMemo(() => [...snapshots, ...active], [snapshots, active])
   const histogram = useImageAnalysis(block, roi, false, 1, roi, channel, snapshots)
   const values = contrastSliderValues(range, 0, defaultMax)
-  useEffect(() => { setRange({ min: 0, max: defaultMax }); setSnapshots([]); setAutoWholeImage(false); autoThreshold.current = 0 }, [block, defaultMax])
+  useEffect(() => { setRange({ min: 0, max: defaultMax }); setSnapshots([]); setAutoWholeImage(false); autoThreshold.current = 0 }, [block, defaultMax, session])
   useEffect(() => onPreview(settings), [settings, onPreview])
   const reset = () => { setRange({ min: 0, max: defaultMax }); setAutoWholeImage(false); autoThreshold.current = 0 }
   const apply = (allPages: boolean) => { onApply(settings, allPages); setSnapshots([]); reset(); setStackDialog(false) }
@@ -50,8 +54,11 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, onPre
   const bins = analysis?.histogram
   const domain = { min: analysis?.histogramMin ?? 0, max: analysis?.histogramMax ?? defaultMax }
   const color = channel === 'red' ? '#dc2626' : channel === 'green' ? '#16a34a' : channel === 'blue' ? '#2563eb' : 'var(--primary)'
-  return <section className="shrink-0 border-b border-base-300 px-3 py-3">
-    <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-semibold">{copy.title}</h3><Button variant="ghost" size="icon-sm" aria-label={copy.close} onClick={onClose} disabled={busy}><X size={14} /></Button></div>
+  return <section className={embedded ? '' : 'shrink-0 border-b border-base-300 px-3 py-3'}>
+    <div className={embedded ? 'mb-1 flex justify-end' : 'mb-2 flex items-center justify-between'}>
+      {embedded ? null : <h3 className="text-xs font-semibold">{copy.title}</h3>}
+      <Button variant="ghost" size="icon-sm" aria-label={copy.close} onClick={onClose} disabled={busy}><X size={14} /></Button>
+    </div>
     <div className="rounded-[var(--radius-field)] border border-base-300 bg-muted/40">
       <HistogramChart
         data={bins ? { counts: bins, min: domain.min, max: domain.max } : null}
