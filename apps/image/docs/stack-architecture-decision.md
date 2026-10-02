@@ -197,10 +197,10 @@ ImageJ 的写出行为相同。这意味着 Stack 场景下的"只上传可见�
 | 层 | 内容 | 状态 |
 | --- | --- | --- |
 | L0 | `TiffIndexer`：IFD 链式遍历，输出逐页索引（每页含统一 `segments`），支持 strip、BigTIFF、多帧 IFD | **已完成** `engine/tiff/indexer.ts` |
-| L1 | `TiffPageSource.readPage(n)`：按索引读该页字节，产出 `ImageBlock`；`segmentsInRegion` 支持按区域取分段 | **已完成** `engine/tiff/source.ts`（未压缩路径） |
-| L2 | 字节预算 LRU 缓存 + 邻页预取 | 待做，现有 `engine/scheduler/cache.ts` 可复用 |
-| L3 | GPU 渲染：整页上传为纹理，window/level 与采样在着色器内完成 / `rasterizeViewport` + LUT 回退 | 待做 |
-| L4 | `encodeTiffStack` 增加多分辨率金字塔 | 待做 |
+| L1 | `TiffPageSource.readPage(n)` 与 `TiffStackStorage`：按页读字节并对齐 dataset 轴 | **已完成** `engine/tiff/source.ts`、`engine/storage-tiff.ts` |
+| L2 | 字节预算 LRU 缓存 + 邻页预取 | **已具备，无需新做**（见 §6.5） |
+| L3 | GPU 渲染：整页上传为纹理，window/level 与采样在着色器内完成 | 未做，当前仍为 `rasterizeViewport` 的 CPU 路径 |
+| L4 | `encodeTiffStack` 增加多分辨率金字塔 | 未做 |
 
 ### 6.4 实现记录
 
@@ -226,6 +226,40 @@ L0 与 L1 的实现中确认或修正了以下几点，均已由测试固定：
 
 **未压缩页的分段按坐标放置，不可直接拼接。** 多个条带在文件里是彼此独立的字节区间，
 必须按各自的 `y` 写入目标缓冲的正确行位置。
+
+### 6.5 L2 无需另建：缓存与预取原本就已就绪
+
+初版计划把「字节预算 LRU + 邻页预取」单列为 L2，实现时发现 `runtime.ts` 早已具备：
+
+- `cacheKeyFor`（`runtime.ts:287-293`）的缓存键已包含 `selectionKey(selection)`，
+  因此按页缓存天然生效，无需另建。
+- `schedulePrefetch`（`runtime.ts:296-333`）已预取邻页 `[+1,-1,+2]`，
+  并按翻页方向设置 `prefetchForward` / `prefetchBackward` 优先级。
+
+因此惰性存储接入后缓存与预取自动生效。实测确认：预取命中时 `run()` 在同步块内
+即返回，**不存在「已过期」中间态**，翻页无闪烁。
+
+### 6.6 接入后的实测结果
+
+三页 64×64 uint16 stack（竖条 / 横条 / 斜条纹三种图案）在浏览器中实测：
+
+| 页码 | 画面中心 3×3 采样（灰度） | 与预期的图案 |
+| --- | --- | --- |
+| 1 / 3 | `[113,130,142]` 三行重复 | 竖条：沿 x 递增、y 重复 ✓ |
+| 2 / 3 | `[113,113,113] [130,130,130] [142,142,142]` | 横条：沿 y 递增、x 相同 ✓ |
+| 3 / 3 | `[0,146,255] [146,0,109] [255,109,219]` | 斜条纹：对角交替 ✓ |
+
+按钮边界正确（首页禁用 `←`、末页禁用 `→`），控制台无错误。
+
+连点翻页时按钮处于 `disabled`（`busy` 期间），故不会堆积请求；
+实测无「新页码配旧像素」，也无残留加载遮罩。
+
+### 6.7 尚未覆盖
+
+- 压缩 TIFF 走 ITK-Wasm 全量解码，因此仍受全量读入的限制（300 页 4096×4096 uint16 不可接受）。
+  要支持压缩栈，需要按页解压路径。
+- OME-TIFF 的 c/t/z 多维语义（需解析 OME-XML）未支持，当前一个 IFD 一律映射为一个 z 切片。
+- 物理标定未从 TIFF 的 Resolution tag 读取，`spatialTransform` 一律标记为未标定。
 
 ## 7 与既有文档的关系
 
