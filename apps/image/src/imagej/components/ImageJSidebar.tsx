@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { OperatorRegistry } from '../lib/engineTypes'
 
 type Language = 'zh-CN' | 'en' | 'ja-JP'
-type MenuItem = { label: string; op?: string }
+type MenuItem = { label: string; op?: string; shortcut?: string }
 type MenuGroup = { label: string; items: MenuItem[] }
 
 /**
@@ -16,7 +16,7 @@ const GROUPS: MenuGroup[] = [
   { label: 'Type', items: [{ label: '8-bit', op: 'grayscale' }, { label: '16-bit' }, { label: '32-bit' }, { label: 'RGB Color' }] },
   { label: 'Adjust', items: [{ label: 'Brightness/Contrast', op: 'levels' }, { label: 'Threshold', op: 'threshold' }, { label: 'Auto Threshold', op: 'otsu' }, { label: 'Color Balance' }] },
   { label: 'Transform', items: [{ label: 'Crop', op: 'crop' }, { label: 'Flip Horizontally', op: 'flipH' }, { label: 'Flip Vertically', op: 'flipV' }, { label: 'Rotate 90° Right', op: 'rotateCW' }, { label: 'Rotate 90° Left', op: 'rotateCCW' }, { label: 'Scale' }] },
-  { label: 'Stacks', items: [{ label: 'Next Slice' }, { label: 'Previous Slice' }, { label: 'Z Project' }] },
+  { label: 'Stacks', items: [{ label: 'Next Slice', shortcut: '.' }, { label: 'Previous Slice', shortcut: ',' }, { label: 'Z Project' }] },
   { label: 'Math', items: [{ label: 'Invert', op: 'invert' }, { label: 'Add' }, { label: 'Subtract' }, { label: 'Multiply' }] },
   { label: 'Filters', items: [{ label: 'Mean', op: 'mean3x3' }, { label: 'Median', op: 'median3x3' }, { label: 'Gaussian Blur', op: 'gaussian' }, { label: 'Minimum', op: 'minimum3x3' }, { label: 'Maximum', op: 'maximum3x3' }, { label: 'Sharpen', op: 'sharpen3x3' }, { label: 'Unsharp Mask' }] },
   { label: 'Binary', items: [{ label: 'Erode', op: 'erode' }, { label: 'Dilate', op: 'dilate' }, { label: 'Open', op: 'open' }, { label: 'Close', op: 'close' }, { label: 'Fill Holes', op: 'fillHoles' }, { label: 'Skeletonize' }, { label: 'Watershed' }] },
@@ -102,7 +102,7 @@ export function ImageJSidebar({ language, registry, onRun, disabled = false, sta
                         if (action) action(); else if (item.op && operator) onRun(item.op)
                       }}
                       className={`flex w-full items-center justify-between rounded-[var(--radius-field)] px-1.5 py-1 text-left text-[13px] transition ${open ? 'bg-muted text-base-content' : 'text-base-content hover:bg-muted'} disabled:cursor-not-allowed disabled:text-base-content/35 disabled:hover:bg-transparent`}>
-                      <span>{localize(item.label)}</span>
+                      <span>{localize(item.label)}{item.shortcut ? <span className="ml-1.5 font-mono text-[10px] text-base-content/40">[{item.shortcut}]</span> : null}</span>
                       {available ? (open ? <ChevronDown size={13} className="text-base-content/55" /> : <ChevronRight size={13} className="text-base-content/35" />) : <span className="text-[10px]">{labels.unavailable}</span>}
                     </button>
                     {open ? (

@@ -128,6 +128,35 @@ export function ScientificImageWorkspace() {
     setError(''); runtime.setSelection({ [slice.axis]: Math.max(0, Math.min(slice.length - 1, index)) })
   }
   const hasImage = Boolean(current)
+  // 翻页走 ref：selectPage 每次渲染重建，若作为 effect 依赖会反复重绑监听。
+  const selectPageRef = useRef<(index: number) => void>(() => {})
+  selectPageRef.current = selectPage
+  useEffect(() => {
+    if (!slice) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      // 焦点在输入控件时不劫持按键：range 滑杆要用方向键与 Home/End。
+      const target = event.target as HTMLElement | null
+      if (target) {
+        const tag = target.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) return
+      }
+      const last = slice.length - 1
+      const key = event.key
+      let targetPage: number | undefined
+      if (key === '.' || key === '>') targetPage = pageIndex + 1
+      else if (key === ',' || key === '<') targetPage = pageIndex - 1
+      else if (key === 'Home') targetPage = 0
+      else if (key === 'End') targetPage = last
+      if (targetPage === undefined) return
+      const next = Math.max(0, Math.min(last, targetPage))
+      if (next === pageIndex) return
+      event.preventDefault()
+      selectPageRef.current(next)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [slice, pageIndex])
   const roiLabel = roi ? `${roi.width}×${roi.height} @ (${roi.x}, ${roi.y})` : '—'
   const seedDefaultViews = () => setViews((cards) => cards.length ? cards : [{ id: viewsIdRef.current++, type: 'measurement' }, { id: viewsIdRef.current++, type: 'histogram' }])
   useEffect(() => {
