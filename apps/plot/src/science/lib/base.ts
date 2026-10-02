@@ -20,7 +20,7 @@ export function buildBaseValues(
     const mapping = mappings[dataset.id]
     if (!mapping) return []
     try {
-      return seriesListFromDataset(dataset, mapping.xColumn, mapping.yColumns)
+      return seriesListFromDataset(dataset, mapping.xColumn, mapping.yColumns, mapping.groupColumn)
     } catch {
       return []
     }
@@ -82,13 +82,16 @@ export function datasetSummary(dataset: SuperDataset): DatasetSummary {
   }
 }
 
-/** 纠正映射：Y 列去重、排除 X 列，至少保留一个 Y。 */
-export function sanitizeMapping(summary: DatasetSummary, nextX: string, nextYs: string[]): DatasetMapping {
+/** 纠正映射：Y 列去重、排除 X 列，至少保留一个 Y；分组列必须是有效表头且不等于 X。 */
+export function sanitizeMapping(summary: DatasetSummary, nextX: string, nextYs: string[], nextGroup = ''): DatasetMapping {
   let yColumns = [...new Set(nextYs)].filter((name) => name !== nextX)
   if (yColumns.length === 0) {
     yColumns = summary.numericColumns.filter((name) => name !== nextX).slice(0, 1)
   }
-  return { xColumn: nextX, yColumns }
+  const groupColumn = nextGroup && nextGroup !== nextX && summary.headers.includes(nextGroup)
+    ? nextGroup
+    : undefined
+  return groupColumn ? { xColumn: nextX, yColumns, groupColumn } : { xColumn: nextX, yColumns }
 }
 
 /** 新数据集的默认映射：优先用推断出的时间列做 X，否则用行号。 */

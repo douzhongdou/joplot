@@ -108,3 +108,22 @@ test('ImageRuntime 缓存命中后跳页不再请求计算', async () => {
   assert.ok(runtime.getState().cache.hits >= 1)
   runtime.dispose()
 })
+
+test('大图旧缓存可淘汰，当前切片历史保留且导出按页执行 Recipe', async () => {
+  const imported = importMemory({ name: 'stack', dtype: 'uint8', axes: ['z', 'y', 'x'], shape: [2, 1, 4], data: Uint8Array.from([1, 2, 3, 4, 10, 20, 30, 40]) })
+  const runtime = new ImageRuntime({ client: inlineClientWith(imported), prefetch: false, cacheBytes: 8 })
+  await runtime.openFile(new File([], 'stack.tif'))
+  runtime.addStep('invert', {}, { kind: 'frame', selection: { z: 0 } }); await runtime.run()
+  runtime.setSelection({ z: 1 }); await runtime.run()
+  assert.deepEqual([...runtime.getState().image!.data], [10, 20, 30, 40])
+  runtime.addStep('invert', {}, { kind: 'frame', selection: { z: 1 } }); await runtime.run()
+  assert.ok(runtime.getState().cache.bytes <= 8)
+  runtime.undo(); await runtime.run()
+  assert.deepEqual([...runtime.getState().image!.data], [10, 20, 30, 40])
+  runtime.redo(); await runtime.run()
+  const frames = []
+  for await (const frame of runtime.exportFrames()) frames.push([...frame.data])
+  assert.deepEqual(frames, [[254, 253, 252, 251], [245, 235, 225, 215]])
+  assert.equal(runtime.getState().selection.z, 1)
+  runtime.dispose()
+})

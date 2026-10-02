@@ -5,7 +5,7 @@
  */
 import type { Dataset, SliceSelection } from './dataset.ts'
 import { datasetVersionKey } from './dataset.ts'
-import { appendStep, createRecipe, makeStep, RecipeHistory, recipeVersionKey, removeStep, updateStepParams, type Recipe } from './recipe.ts'
+import { appendStep, createRecipe, makeStep, RecipeHistory, recipeVersionKey, removeStep, updateStepParams, type Recipe, type StepScope } from './recipe.ts'
 import { ByteCache } from './scheduler/cache.ts'
 import { TASK_PRIORITY, TaskQueue, VersionGuard, type SchedulerTask } from './scheduler/queue.ts'
 import type { ChannelStats, ParticleRow } from '../lib/engineTypes.ts'
@@ -52,7 +52,8 @@ function selectionKey(selection: SliceSelection): string {
 
 export class ImageRuntime {
   private readonly client: EngineClient
-  private readonly cache: ByteCache<ImageBlock>
+  private readonly cache: ByteCache<EngineResult>
+  private activeCacheKey?: string
   private readonly queue = new TaskQueue<EngineResult>()
   private readonly guard = new VersionGuard()
   private readonly prefetchEnabled: boolean
@@ -64,7 +65,7 @@ export class ImageRuntime {
 
   constructor(options: ImageRuntimeOptions) {
     this.client = options.client
-    this.cache = new ByteCache<ImageBlock>(options.cacheBytes ?? 256 * 1024 * 1024)
+    this.cache = new ByteCache<EngineResult>(options.cacheBytes ?? 256 * 1024 * 1024)
     this.prefetchEnabled = options.prefetch ?? true
     this.state = {
       dataset: null,
@@ -107,8 +108,10 @@ export class ImageRuntime {
     this.emit({ status: 'importing', error: undefined, warnings: [] })
     try {
       const dataset = await this.client.import(file)
+      if (this.state.dataset) this.client.dispose(this.state.dataset.id)
       this.history = new RecipeHistory(createRecipe(dataset.id, dataset.revision))
       this.cache.clear()
+      this.activeCacheKey = undefined
       this.guard.update(`${datasetVersionKey(dataset)}|${selectionKey({})}|`)
       this.emit({
         dataset,
@@ -149,11 +152,11 @@ export class ImageRuntime {
     return this.history?.current() ?? this.state.recipe
   }
 
-  addStep(op: string): void {
+  addStep(op: string, params?: Record<string, number | string>, scope?: StepScope): void {
     if (!this.history) return
     const capability = getOperator(op)
     if (!capability) return
-    const step = makeStep(op, defaultOperatorParams(capability))
+    const step = makeStep(op, { ...defaultOperatorParams(capability), ...params }, scope)
     this.history.commit(appendStep(this.history.current(), step))
     this.emit({ recipe: this.history.current(), throughStepId: step.id })
     void this.run()
@@ -195,6 +198,45 @@ export class ImageRuntime {
     return this.history?.canUndo() ?? false
   }
 
+  canRedo(): boolean { return this.history?.canRedo() ?? false }
+
+  async readSourceFrame(): Promise<ImageBlock | null> {
+    const dataset = this.state.dataset
+    if (!dataset) return null
+    const result = await this.client.run({ datasetId: dataset.id, recipe: createRecipe(dataset.id, dataset.revision), selection: { ...this.state.selection } })
+    return result.image
+  }
+
+  redo(): void {
+    if (!this.history?.canRedo()) return
+    this.history.redo()
+    this.emit({ recipe: this.history.current(), throughStepId: undefined })
+    void this.run()
+  }
+
+  /** 顺序执行各页供导出使用，保留各页自己的处理记录，不改变当前选择。 */
+  async *exportFrames(): AsyncGenerator<ImageBlock> {
+    const dataset = this.state.dataset
+    const recipe = this.currentRecipe()
+    if (!dataset || !recipe) return
+    const leading = dataset.axes.map((axis, index) => ({ axis, length: dataset.shape[index]! }))
+      .filter((entry): entry is { axis: 't' | 'c' | 'z'; length: number } => (entry.axis === 't' || entry.axis === 'z' || entry.axis === 'c') && !(entry.axis === 'c' && dataset.componentKind === 'rgb'))
+    const count = leading.reduce((total, entry) => total * entry.length, 1)
+    for (let index = 0; index < count; index += 1) {
+      const selection: SliceSelection = {}
+      let remainder = index
+      for (let i = leading.length - 1; i >= 0; i--) {
+        const entry = leading[i]!
+        selection[entry.axis] = remainder % entry.length
+        remainder = Math.floor(remainder / entry.length)
+      }
+      const result = await this.client.run({ datasetId: dataset.id, recipe, selection })
+      const failure = result.results.find((step) => step.status === 'error')
+      if (failure) throw new Error(failure.error)
+      if (result.image) yield result.image
+    }
+  }
+
   async run(): Promise<void> {
     const dataset = this.state.dataset
     const recipe = this.currentRecipe()
@@ -204,9 +246,12 @@ export class ImageRuntime {
     this.emit({ status: 'running', error: undefined })
     // 先给当前页做缓存查找。
     const key = this.cacheKeyFor(dataset, recipe, this.state.selection, this.state.throughStepId)
+    if (this.activeCacheKey) this.cache.unpin(this.activeCacheKey)
+    this.activeCacheKey = key
     const cached = this.cache.get(key)
     if (cached) {
-      this.emit({ image: cached, status: 'ready' })
+      this.cache.pin(key)
+      this.emit({ image: cached.image, results: cached.results, stats: cached.stats, table: cached.table, lastRunMs: cached.ms, estimatedBytes: cached.estimatedBytes, status: 'ready' })
       this.schedulePrefetch()
       return
     }
@@ -220,19 +265,21 @@ export class ImageRuntime {
       if (this.guard.version() !== version) return // 过期结果不覆盖当前画面
       if (result.image) {
         const bytes = result.image.data.byteLength
-        this.cache.set(key, result.image, bytes, true)
+        if (!result.results.some((step) => step.status === 'error')) this.cache.set(key, result, bytes, true)
       }
       this.emit({
         image: result.image,
         results: result.results,
         stats: result.stats,
         table: result.table,
-        status: 'ready',
+        status: result.results.some((step) => step.status === 'error') ? 'error' : 'ready',
+        error: result.results.find((step) => step.status === 'error')?.error,
         lastRunMs: result.ms,
         estimatedBytes: result.estimatedBytes,
       })
       this.schedulePrefetch()
     } catch (error) {
+      if (this.guard.version() !== version) return
       this.emit({ status: 'error', error: error instanceof Error ? error.message : String(error) })
     }
   }
@@ -250,7 +297,7 @@ export class ImageRuntime {
     const dataset = this.state.dataset
     const recipe = this.currentRecipe()
     if (!this.prefetchEnabled || !dataset || !recipe) return
-    const axis = (['z', 't', 'c'] as const).find((candidate) => (dataset.shape[dataset.axes.indexOf(candidate)] ?? 1) > 1)
+    const axis = (['z', 't', 'c'] as const).find((candidate) => !(candidate === 'c' && dataset.componentKind === 'rgb') && (dataset.shape[dataset.axes.indexOf(candidate)] ?? 1) > 1)
     if (!axis) return
     const length = dataset.shape[dataset.axes.indexOf(axis)]!
     const current = this.state.selection[axis] ?? 0
@@ -260,7 +307,8 @@ export class ImageRuntime {
       const selection = { ...this.state.selection, [axis]: target }
       const key = this.cacheKeyFor(dataset, recipe, selection, this.state.throughStepId)
       if (this.cache.has(key)) continue
-      const version = `${datasetVersionKey(dataset)}|${selectionKey(selection)}|${recipeVersionKey(recipe, this.state.throughStepId)}`
+      const version = this.guard.version()
+      const throughStepId = this.state.throughStepId
       const task: SchedulerTask<EngineResult> = {
         id: `prefetch:${key}`,
         priority: delta > 0 ? TASK_PRIORITY.prefetchForward : TASK_PRIORITY.prefetchBackward,
@@ -271,10 +319,10 @@ export class ImageRuntime {
             datasetId: dataset.id,
             recipe,
             selection,
-            throughStepId: this.state.throughStepId,
+            throughStepId,
           })
-          if (result.image) {
-            this.cache.set(key, result.image, result.image.data.byteLength)
+          if (result.image && !result.results.some((step) => step.status === 'error')) {
+            this.cache.set(key, result, result.image.data.byteLength)
           }
           return result
         },

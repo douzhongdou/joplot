@@ -19,7 +19,7 @@ export interface CameraState {
   viewportHeight: number
 }
 
-export const MIN_ZOOM = 0.01
+export const MIN_ZOOM = 1 / 65_536
 export const MAX_ZOOM = 64
 
 export function clampZoom(zoom: number): number {

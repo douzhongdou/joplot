@@ -15,11 +15,18 @@ export function useImageRuntime(): { state: RuntimeState; runtime: ImageRuntime 
     })
   }
   const [state, setState] = useState<RuntimeState>(() => runtimeRef.current!.getState())
+  const disposeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const runtime = runtimeRef.current
     if (!runtime) return
-    return runtime.subscribe(setState)
+    if (disposeTimer.current) clearTimeout(disposeTimer.current)
+    const unsubscribe = runtime.subscribe(setState)
+    return () => {
+      unsubscribe()
+      // Strict Mode 会立即再次订阅；真正离开页面后才释放运行时。
+      disposeTimer.current = setTimeout(() => runtime.dispose(), 0)
+    }
   }, [])
 
   return { state, runtime: runtimeRef.current }

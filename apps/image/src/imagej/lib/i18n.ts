@@ -103,7 +103,7 @@ export interface ImagejCopy {
   }
   exportPng: string
   close: string
-  stack: { page: string; exportCurrent: string; exportAll: string; geometryUnavailable: string }
+  stack: { page: string; exportCurrent: string; exportAll: string; geometryUnavailable: string; applyAll: string }
   stats: {
     heading: string
     pixels: string
@@ -115,6 +115,9 @@ export interface ImagejCopy {
     histogram: string
     thresholdMark: string
     pixel: string
+    cumulative: string
+    level: string
+    frequency: string
   }
   views: {
     add: string
@@ -237,7 +240,7 @@ const zhCN: ImagejCopy = {
   },
   exportPng: '导出 PNG',
   close: '关闭',
-  stack: { page: '切片', exportCurrent: '导出当前 TIFF', exportAll: '导出整个 TIFF 栈', geometryUnavailable: '多页栈暂不支持改变切片尺寸的操作' },
+  stack: { page: '切片', exportCurrent: '导出当前 TIFF', exportAll: '导出整个 TIFF 栈', geometryUnavailable: '多页栈暂不支持改变切片尺寸的操作', applyAll: '应用到整个 Stack（关闭时仅当前切片）' },
   stats: {
     heading: '测量与直方图',
     pixels: '像素数',
@@ -249,6 +252,9 @@ const zhCN: ImagejCopy = {
     histogram: '直方图',
     thresholdMark: '阈值',
     pixel: '像素',
+    cumulative: '累计',
+    level: '灰度',
+    frequency: '频率',
   },
   views: {
     add: '添加视图',
@@ -271,8 +277,8 @@ const zhCN: ImagejCopy = {
     noImage: '请先打开一张图片。',
     needsRoi: '该操作需要矩形 ROI。',
     generic: '操作失败。',
-    analysisTooLarge: '粒子分析最多支持 400 万像素，请先裁剪图像。',
-    filterTooLarge: '高级滤波最多支持 400 万像素，请先裁剪图像。',
+    analysisTooLarge: '粒子分析无法分配所需内存，请缩小处理范围。',
+    filterTooLarge: '滤波无法分配所需内存，请缩小处理范围。',
   },
 }
 
@@ -371,7 +377,7 @@ const en: ImagejCopy = {
   },
   exportPng: 'Export PNG',
   close: 'Close',
-  stack: { page: 'Slice', exportCurrent: 'Export current TIFF', exportAll: 'Export TIFF stack', geometryUnavailable: 'Size-changing operations are unavailable for multi-page stacks' },
+  stack: { page: 'Slice', exportCurrent: 'Export current TIFF', exportAll: 'Export TIFF stack', geometryUnavailable: 'Size-changing operations are unavailable for multi-page stacks', applyAll: 'Apply to the whole Stack (off: current slice only)' },
   stats: {
     heading: 'Measurements & histogram',
     pixels: 'Pixels',
@@ -383,6 +389,9 @@ const en: ImagejCopy = {
     histogram: 'Histogram',
     thresholdMark: 'Threshold',
     pixel: 'Pixel',
+    cumulative: 'Cumulative',
+    level: 'Level',
+    frequency: 'Frequency',
   },
   views: {
     add: 'Add view',
@@ -405,8 +414,8 @@ const en: ImagejCopy = {
     noImage: 'Open an image first.',
     needsRoi: 'This operation needs a rectangle ROI.',
     generic: 'Operation failed.',
-    analysisTooLarge: 'Particle analysis supports up to 4 million pixels. Crop the image first.',
-    filterTooLarge: 'Advanced filters support up to 4 million pixels. Crop the image first.',
+    analysisTooLarge: 'Insufficient memory for particle analysis. Reduce the processing region.',
+    filterTooLarge: 'Insufficient memory for filtering. Reduce the processing region.',
   },
 }
 
@@ -505,7 +514,7 @@ const jaJP: ImagejCopy = {
   },
   exportPng: 'PNG を書き出す',
   close: '閉じる',
-  stack: { page: 'スライス', exportCurrent: '現在の TIFF を出力', exportAll: 'TIFF スタックを出力', geometryUnavailable: '複数ページのスタックではサイズを変える操作はできません' },
+  stack: { page: 'スライス', exportCurrent: '現在の TIFF を出力', exportAll: 'TIFF スタックを出力', geometryUnavailable: '複数ページのスタックではサイズを変える操作はできません', applyAll: 'スタック全体に適用（オフ：現在のスライス）' },
   stats: {
     heading: '測定とヒストグラム',
     pixels: 'ピクセル数',
@@ -517,6 +526,9 @@ const jaJP: ImagejCopy = {
     histogram: 'ヒストグラム',
     thresholdMark: 'しきい値',
     pixel: 'ピクセル',
+    cumulative: '累積',
+    level: '階調',
+    frequency: '頻度',
   },
   views: {
     add: 'ビューを追加',
@@ -539,8 +551,8 @@ const jaJP: ImagejCopy = {
     noImage: '先に画像を開いてください。',
     needsRoi: 'この操作には矩形 ROI が必要です。',
     generic: '処理に失敗しました。',
-    analysisTooLarge: '粒子解析は 400 万ピクセルまで対応します。画像を切り抜いてください。',
-    filterTooLarge: '高度なフィルタは 400 万ピクセルまで対応します。画像を切り抜いてください。',
+    analysisTooLarge: '粒子解析に必要なメモリを確保できません。処理範囲を縮小してください。',
+    filterTooLarge: 'フィルタに必要なメモリを確保できません。処理範囲を縮小してください。',
   },
 }
 

@@ -414,10 +414,6 @@ export function ImageJApp() {
   }
 
   const runAdvanced = (operation: (image: GrayImage) => GrayImage) => {
-    if (current && !roi && current.data.length > 4_000_000) {
-      setError(copy.errors.filterTooLarge)
-      return
-    }
     run(operation, { roiMode: 'selection' })
   }
 
@@ -577,10 +573,6 @@ export function ImageJApp() {
   const analyzeCurrentParticles = () => {
     const image = guardImage()
     if (!image) return
-    if (image.data.length > 4_000_000) {
-      setError(copy.errors.analysisTooLarge)
-      return
-    }
     try {
       setParticles(analyzeParticles(image, minParticleArea))
     } catch (analysisError) {

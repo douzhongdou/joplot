@@ -1,21 +1,12 @@
 /** ImageJ BinaryProcessor / ParticleAnalyzer 常用的 8 位二值图操作。白色为前景。 */
 import { createImage, ImagejError, type GrayImage } from './processor.ts'
 
-const PARTICLE_PIXEL_LIMIT = 4_000_000
-
-function assertSize(image: GrayImage): void {
-  if (image.data.length > PARTICLE_PIXEL_LIMIT) {
-    throw new ImagejError('too-large', '二值分析最多处理 400 万像素')
-  }
-}
-
 function foreground(image: GrayImage, x: number, y: number): boolean {
   return x >= 0 && y >= 0 && x < image.width && y < image.height
     && image.data[y * image.width + x] !== 0
 }
 
 function morph(image: GrayImage, dilate: boolean): GrayImage {
-  assertSize(image)
   const out = createImage(image.width, image.height)
   for (let y = 0; y < image.height; y += 1) {
     for (let x = 0; x < image.width; x += 1) {
@@ -39,7 +30,6 @@ export function closeBinary(image: GrayImage): GrayImage { return erode(dilate(i
 
 /** 从边界泛洪黑色背景，余下的黑色连通域视为孔洞并填白。 */
 export function fillHoles(image: GrayImage): GrayImage {
-  assertSize(image)
   const { width, height } = image
   const visited = new Uint8Array(width * height)
   const queue = new Int32Array(width * height)
@@ -80,7 +70,6 @@ export interface Particle {
 
 /** 8 连通粒子标记；周长按 4 邻边界像素边计数。 */
 export function analyzeParticles(image: GrayImage, minArea = 1): Particle[] {
-  assertSize(image)
   if (!Number.isInteger(minArea) || minArea < 1) {
     throw new ImagejError('invalid-value', '最小粒子面积必须为正整数')
   }

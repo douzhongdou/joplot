@@ -29,13 +29,13 @@ export function AppNavbar({
   const { language, setLanguage, t } = useI18n()
 
   return (
-    <header className="flex h-[var(--navbar-height)] min-w-0 items-center gap-2 border-b border-base-300 bg-base-100 px-2 sm:gap-3 sm:px-3">
+    <header className="flex h-[var(--navbar-height)] min-w-0 items-center gap-1.5 border-b border-base-300 bg-base-100 px-1.5 sm:gap-2 sm:px-2">
       <Link
         href={IMAGEJ_PATH}
         aria-current={section === 'imagej' ? 'page' : undefined}
-        className="inline-flex shrink-0 items-center gap-2 rounded-[var(--radius-field)] px-1 text-sm font-semibold text-base-content"
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-field)] px-1 text-[13px] font-semibold text-base-content"
       >
-        <ImageIcon size={18} strokeWidth={2.1} aria-hidden="true" />
+        <ImageIcon size={16} strokeWidth={2.1} aria-hidden="true" />
         <span className="hidden sm:inline">{t('chrome.brand')}</span>
       </Link>
 
@@ -45,9 +45,9 @@ export function AppNavbar({
         <div className="min-w-0 flex-1" />
       )}
 
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1.5">
         <Select value={language} onValueChange={(value: string) => setLanguage(value as SupportedLanguage)}>
-          <SelectTrigger className="h-8 w-24 sm:w-28" aria-label={t('chrome.language')}>
+          <SelectTrigger className="w-20 sm:w-24" aria-label={t('chrome.language')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

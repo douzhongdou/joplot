@@ -2,7 +2,7 @@
  * UI ↔ 计算引擎的接缝（只定义类型，不含任何算法）。
  *
  * UI 只依赖这里的类型：算子注册表决定参数面板长什么样，请求/响应决定怎么驱动执行。
- * 引擎实现（当前为纯 TS 参考实现，后续换成 itk-wasm / VTK）通过 EngineAdapter 注入，
+ * 引擎实现（TypedArray 内核或 ITK-Wasm 管道）通过 EngineAdapter 注入，
  * 替换引擎时 UI 一行都不用改。
  */
 

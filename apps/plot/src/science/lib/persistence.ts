@@ -13,6 +13,7 @@ export interface DatasetRecipeEntry {
   datasetId: string
   xColumn: string
   yColumns: string[]
+  groupColumn?: string
 }
 
 export interface ScienceRecipe {
@@ -60,6 +61,7 @@ function isDatasetEntry(value: unknown): value is DatasetRecipeEntry {
   return isRecord(value) && typeof value.key === 'string' && typeof value.datasetId === 'string'
     && typeof value.xColumn === 'string' && Array.isArray(value.yColumns)
     && value.yColumns.every((name: unknown) => typeof name === 'string')
+    && (value.groupColumn === undefined || typeof value.groupColumn === 'string')
 }
 
 function decodeStepsAndSelection(recipeValue: Record<string, unknown>): { steps: AnalysisStep[]; selectedId: string } | null {

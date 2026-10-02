@@ -44,11 +44,14 @@ const LABELS: Record<Language, {
   },
 }
 
-export function ImageJSidebar({ language, registry, onRun }: {
+export function ImageJSidebar({ language, registry, onRun, disabled = false, stackActions, onColorBalance }: {
   language: Language
   registry: OperatorRegistry
   /** 执行命令：传算子 kind，由父组件直接跑。 */
   onRun: (op: string) => void
+  disabled?: boolean
+  onColorBalance?(): void
+  stackActions?: { next(): void; previous(): void; canNext: boolean; canPrevious: boolean }
 }) {
   const [query, setQuery] = useState('')
   const labels = LABELS[language] ?? LABELS.en
@@ -61,29 +64,32 @@ export function ImageJSidebar({ language, registry, onRun }: {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 p-3">
+      <div className="shrink-0 px-2 pb-1.5 pt-2">
         <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={labels.search} aria-label={labels.search}
-          className="h-9 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary" />
+          className="h-7 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary" />
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {groups.length ? groups.map((group) => (
-          <section key={group.label} className="mb-5">
-            <h3 className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wide text-base-content/45">{labels.groups[group.label] ?? group.label}</h3>
+          <section key={group.label} className="mb-3">
+            <h3 className="mb-0.5 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/45">{labels.groups[group.label] ?? group.label}</h3>
             <div className="grid gap-0.5">
               {group.items.map((item) => {
                 const operator = item.op ? operators.get(item.op) : undefined
+                const action = item.label === 'Next Slice' ? stackActions?.next : item.label === 'Previous Slice' ? stackActions?.previous : item.label === 'Color Balance' ? onColorBalance : undefined
+                const available = Boolean(operator || action)
+                const blocked = disabled || !available || (item.label === 'Next Slice' && !stackActions?.canNext) || (item.label === 'Previous Slice' && !stackActions?.canPrevious)
                 return (
-                  <button key={item.label} type="button" disabled={!operator} title={!operator ? labels.unavailable : undefined}
-                    onClick={() => { if (item.op && operator) onRun(item.op) }}
-                    className="flex w-full items-center justify-between rounded-[var(--radius-field)] px-2 py-2 text-left text-sm text-base-content hover:bg-muted disabled:cursor-not-allowed disabled:text-base-content/35 disabled:hover:bg-transparent">
+                  <button key={item.label} type="button" disabled={blocked} title={!available ? labels.unavailable : undefined}
+                    onClick={() => { if (action) action(); else if (item.op && operator) onRun(item.op) }}
+                    className="flex w-full items-center justify-between rounded-[var(--radius-field)] px-1.5 py-1 text-left text-[13px] text-base-content hover:bg-muted disabled:cursor-not-allowed disabled:text-base-content/35 disabled:hover:bg-transparent">
                     <span>{localize(item.label)}</span>
-                    {operator ? <ChevronRight size={14} className="text-base-content/35" /> : <span className="text-[10px]">{labels.unavailable}</span>}
+                    {available ? <ChevronRight size={13} className="text-base-content/35" /> : <span className="text-[10px]">{labels.unavailable}</span>}
                   </button>
                 )
               })}
             </div>
           </section>
-        )) : <p className="px-2 py-6 text-center text-sm text-base-content/50">{labels.empty}</p>}
+        )) : <p className="px-2 py-4 text-center text-xs text-base-content/50">{labels.empty}</p>}
       </div>
     </div>
   )

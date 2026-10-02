@@ -40,7 +40,7 @@ export default async function RootLayout({
   const language = await getRequestLanguage()
 
   return (
-    <html lang={LANGUAGE_HTML_LANG[language]} suppressHydrationWarning>
+    <html lang={LANGUAGE_HTML_LANG[language]} data-theme="dark" data-app="imagej" suppressHydrationWarning>
       <body>
         <I18nProvider initialLanguage={language}>
           <ErrorBoundary>{children}</ErrorBoundary>

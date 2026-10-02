@@ -13,11 +13,6 @@ const nextConfig: NextConfig = {
   transpilePackages: ['@joplot/ui', '@joplot/i18n'],
   assetPrefix: assetPrefix || undefined,
   turbopack: {
-    rules: {
-      // VTK.js 以字符串形式导入 .glsl 着色器源码；用 raw-loader 把内容作为模块默认导出，
-      // 等价 webpack 的 asset/source。Turbopack 内置的 type:'raw' 对这些深层导入不生效。
-      '*.glsl': { loaders: ['raw-loader'], as: '*.js' },
-    },
     resolveAlias: {
       // these packages' `exports` map has no `import` condition; Turbopack needs the concrete
       // browser entry to resolve them.

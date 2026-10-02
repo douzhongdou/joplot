@@ -10,13 +10,15 @@
  */
 import type { Dataset, SliceSelection } from '../dataset.ts'
 import { getOperator, type OperatorCapability } from '../operators.ts'
-import { stepsThrough, type Recipe, type RecipeStep } from '../recipe.ts'
+import { stepAppliesToSelection, stepsThrough, type Recipe, type RecipeStep } from '../recipe.ts'
 import { StatsAccumulator, type MergedStats } from '../stats.ts'
 import type { Storage } from '../storage.ts'
 import { fullRegion } from '../storage.ts'
 import type { ChannelStats, ParticleRow } from '../../lib/engineTypes.ts'
 import { allocateBuffer, elementCount, type ImageBlock, type Region } from '../types.ts'
 import * as ops from './pureOps.ts'
+import { computeWindowLevel } from '../render/rgba.ts'
+import { applyColorAdjustments, type ColorChannel } from '../colorAdjustments.ts'
 
 export interface ExecuteContext {
   dataset: Dataset
@@ -26,6 +28,7 @@ export interface ExecuteContext {
   /** 可选的 ROI（图像索引坐标，含 y/x 范围）。 */
   roi?: Region
   signal?: AbortSignal
+  retainStepImages?: boolean
 }
 
 export interface StepOutcome {
@@ -150,6 +153,7 @@ export class PureComputeEngine implements ComputeEngine {
     }
 
     for (const step of steps) {
+      if (!stepAppliesToSelection(step, context.selection)) continue
       if (context.signal?.aborted) throw new DOMException('已取消', 'AbortError')
       const stepStarted = Date.now()
       const capability = getOperator(step.op)
@@ -159,7 +163,15 @@ export class PureComputeEngine implements ComputeEngine {
       }
       try {
         if (step.op === 'measure') {
-          const stats = await this.measure(context, step)
+          let stats: ChannelStats[]
+          if (step.scope?.kind === 'stack') stats = await this.measure(context, step)
+          else {
+            current ??= await context.storage.readRegion(sourceRegion, { signal: context.signal })
+            const acc = new StatsAccumulator(current.dtype)
+            const region = step.scope?.kind === 'roi' ? step.scope.region : step.scope?.kind === 'frame' ? step.scope.region : undefined
+            acc.add(region ? ops.crop(current, { x: region.start[current.axes.indexOf('x')]!, y: region.start[current.axes.indexOf('y')]!, width: region.shape[current.axes.indexOf('x')]!, height: region.shape[current.axes.indexOf('y')]! }) : current)
+            stats = toChannelStats(context.dataset, acc.merged())
+          }
           results.push({ stepId: step.id, status: 'ok', stats, ms: Date.now() - stepStarted })
           continue
         }
@@ -167,11 +179,15 @@ export class PureComputeEngine implements ComputeEngine {
           current = await context.storage.readRegion(sourceRegion, { signal: context.signal })
           estimatedBytes += blockBytes(current)
         }
-        const { image, table } = await this.applyStep(step, capability, current, context)
+        const region = step.scope?.kind === 'roi' ? step.scope.region : step.scope?.kind === 'frame' ? step.scope.region : undefined
+        const { image, table } = region && step.op !== 'crop' && step.op !== 'grayscale'
+          ? await this.applyRoi(step, capability, current, context, region)
+          : await this.applyStep(step, capability, current, context)
         if (image) {
           current = image
           estimatedBytes += blockBytes(image)
         }
+        if (context.retainStepImages === false) for (const outcome of results) delete outcome.image
         results.push({ stepId: step.id, status: 'ok', image: current ?? undefined, table, ms: Date.now() - stepStarted })
       } catch (error) {
         results.push({
@@ -183,7 +199,32 @@ export class PureComputeEngine implements ComputeEngine {
         break
       }
     }
+    current ??= await context.storage.readRegion(sourceRegion, { signal: context.signal })
     return { results, image: current, ms: Date.now() - started, estimatedBytes }
+  }
+
+  private async applyRoi(step: RecipeStep, capability: OperatorCapability, block: ImageBlock, context: ExecuteContext, region: Region) {
+    const xi = block.axes.indexOf('x'), yi = block.axes.indexOf('y')
+    const rect = { x: region.start[xi] ?? 0, y: region.start[yi] ?? 0, width: region.shape[xi]!, height: region.shape[yi]! }
+    const local = ['gaussian', 'minimum3x3', 'maximum3x3', 'erode', 'dilate', 'open', 'close', 'fillHoles', 'flipH', 'flipV', 'particles'].includes(step.op)
+    const input = local ? ops.crop(block, rect) : block
+    const output = await this.applyStep(step, capability, input, context)
+    if (!output.image) return output
+    const width = block.shape[xi]!, height = block.shape[yi]!
+    const x0 = Math.max(0, Math.min(width - 1, Math.floor(rect.x)))
+    const y0 = Math.max(0, Math.min(height - 1, Math.floor(rect.y)))
+    const w = Math.max(1, Math.min(width - x0, Math.floor(rect.width)))
+    const h = Math.max(1, Math.min(height - y0, Math.floor(rect.height)))
+    const image = output.image
+    // ROI 不能把区域外的 16 位/浮点像素截断为 8 位；保持原块精度，只写回选区。
+    const planes = block.data.length / (width * height)
+    const data = allocateBuffer(block.dtype, block.data.length)
+    data.set(block.data)
+    for (let plane = 0; plane < planes; plane++) for (let row = 0; row < h; row++) {
+      const start = local ? plane * w * h + row * w : plane * width * height + (y0 + row) * width + x0
+      data.set(image.data.subarray(start, start + w), plane * width * height + (y0 + row) * width + x0)
+    }
+    return { image: { ...block, data } }
   }
 
   /** 整卷 / ROI 统计：逐帧读取后合并。 */
@@ -213,12 +254,13 @@ export class PureComputeEngine implements ComputeEngine {
   ): Promise<{ image?: ImageBlock; table?: ParticleRow[] }> {
     const params = step.params as Record<string, number>
     if (isMultiChannel(block) && step.op !== 'grayscale') {
-      throw new ops.ComputeError('unsupported', '彩色（多通道）图像暂只支持先做灰度化，请先添加 grayscale 步骤')
+      if (capability.input.channels !== 'any') throw new ops.ComputeError('unsupported', '该算子需要单通道图像，请先添加 grayscale 步骤')
+      if (step.op !== 'levels' && step.op !== 'invert') return this.applyRgbStep(step, capability, block, context)
     }
     switch (step.op) {
-      case 'grayscale': return { image: await this.grayscale(context) }
+      case 'grayscale': return { image: this.grayscale(block) }
       case 'invert': return { image: ops.invert(block) }
-      case 'levels': return { image: ops.levels(block, params.brightness ?? 0, params.contrast ?? 50) }
+      case 'levels': return { image: step.params.mode === 'rgb-range' ? applyColorAdjustments(block, [{ min: Number(step.params.minimum), max: Number(step.params.maximum), channel: step.params.channel as ColorChannel }]) : ops.levels(block, params.brightness ?? 0, params.contrast ?? 50) }
       case 'threshold': return { image: ops.threshold(block, params.level ?? 128) }
       case 'otsu': return { image: ops.otsu(block) }
       case 'mean3x3': return { image: ops.mean3x3(block) }
@@ -262,31 +304,49 @@ export class PureComputeEngine implements ComputeEngine {
     }
   }
 
-  /** RGB → 灰度：读取 c 轴全部通道做等权平均（对应 ImageJ 的 1/3 等权）。 */
-  private async grayscale(context: ExecuteContext): Promise<ImageBlock> {
-    const cIndex = context.dataset.axes.indexOf('c')
-    if (cIndex < 0) return context.storage.readRegion(frameSelectionRegion(context.dataset, context.selection), {})
-    const channels = context.dataset.shape[cIndex]!
+  /** 同一参数独立处理 RGB 平面，再组装原精度彩色结果。 */
+  private async applyRgbStep(step: RecipeStep, capability: OperatorCapability, block: ImageBlock, context: ExecuteContext): Promise<{ image: ImageBlock }> {
+    const ci = block.axes.indexOf('c'), channels = block.shape[ci]!, planeSize = block.data.length / channels
+    let combined: ImageBlock | undefined
+    for (let channel = 0; channel < channels; channel++) {
+      const shape = block.shape.map((size, index) => index === ci ? 1 : size)
+      const input = { ...block, shape, region: { ...block.region, shape }, data: block.data.subarray(channel * planeSize, (channel + 1) * planeSize) }
+      const output = (await this.applyStep(step, capability, input, context)).image
+      if (!output) throw new ops.ComputeError('unsupported', 'RGB 算子必须输出图像')
+      combined ??= { ...output, shape: output.shape.map((size, index) => index === ci ? channels : size), region: { ...output.region, shape: output.region.shape.map((size, index) => index === ci ? channels : size) }, data: allocateBuffer(output.dtype, output.data.length * channels) }
+      combined.data.set(output.data, channel * output.data.length)
+    }
+    return { image: combined! }
+  }
+
+  /** 当前结果 → 灰度，保留此前处理；RGB 使用 ImageJ 的 1/3 等权。 */
+  private grayscale(source: ImageBlock): ImageBlock {
+    const cIndex = source.axes.indexOf('c')
+    if (!isMultiChannel(source)) {
+      if (source.dtype === 'uint8') return source
+      const settings = computeWindowLevel(source), lo = settings.level - settings.window / 2
+      const data = new Uint8Array(source.data.length)
+      for (let i = 0; i < data.length; i++) data[i] = Number.isFinite(source.data[i]) ? Math.max(0, Math.min(255, Math.round((source.data[i]! - lo) * 255 / settings.window))) : 0
+      return { ...source, dtype: 'uint8', data }
+    }
+    const channels = source.shape[cIndex]!
     if (channels !== 3) throw new ops.ComputeError('unsupported', '灰度只支持 3 通道 RGB 输入')
-    const frameRegion = frameSelectionRegion(context.dataset, context.selection)
-    const start = [...frameRegion.start]
-    const shape = [...frameRegion.shape]
-    start[cIndex] = 0
-    shape[cIndex] = channels
-    const block = await context.storage.readRegion({ start, shape }, { signal: context.signal })
-    const pixels = elementCount(block.shape) / channels
+    const pixels = elementCount(source.shape) / channels
     const data = new Uint8Array(pixels)
-    const src = block.data as unknown as { readonly length: number; readonly [index: number]: number }
+    const src = source.data
+    const settings = source.dtype === 'uint8' ? { window: 255, level: 127.5 } : computeWindowLevel(source)
+    const lo = settings.level - settings.window / 2
     // 数据按 c 轴平面存放（[c][y][x]），不是逐像素交织。
     for (let i = 0; i < pixels; i += 1) {
-      data[i] = Math.round((src[i]! + src[pixels + i]! + src[2 * pixels + i]!) / 3)
+      const value = (src[i]! + src[pixels + i]! + src[2 * pixels + i]!) / 3
+      data[i] = Number.isFinite(value) ? Math.max(0, Math.min(255, Math.round((value - lo) * 255 / settings.window))) : 0
     }
-    const outputShape = context.dataset.axes.map((axis, index) => (axis === 'c' ? 1 : context.dataset.shape[index]!))
+    const outputShape = source.shape.map((size, index) => index === cIndex ? 1 : size)
     return {
       dtype: 'uint8',
-      axes: context.dataset.axes,
+      axes: source.axes,
       shape: outputShape,
-      region: { start, shape: shape.map((n, i) => (i === cIndex ? 1 : n)) },
+      region: { start: [...source.region.start], shape: source.region.shape.map((n, i) => (i === cIndex ? 1 : n)) },
       data,
     }
   }

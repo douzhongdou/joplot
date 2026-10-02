@@ -14,6 +14,8 @@ export interface ScienceCopy {
   xColumn: string
   yColumn: string
   yColumns: string
+  groupColumn: string
+  groupNone: string
   removeDataset: string
   rowIndex: string
   exportCsv: string
@@ -226,6 +228,8 @@ const ZH: ScienceCopy = {
   xColumn: 'X 列',
   yColumn: 'Y 列',
   yColumns: 'Y 列（可多选）',
+  groupColumn: '分组列（可选）',
+  groupNone: '不分组',
   removeDataset: '移除数据集',
   rowIndex: '行号',
   exportCsv: '导出所选结果 CSV',
@@ -334,6 +338,8 @@ const EN: ScienceCopy = {
   xColumn: 'X column',
   yColumn: 'Y column',
   yColumns: 'Y columns (multiple)',
+  groupColumn: 'Group by (optional)',
+  groupNone: 'No grouping',
   removeDataset: 'Remove dataset',
   rowIndex: 'Row index',
   exportCsv: 'Export selected result CSV',
@@ -443,6 +449,8 @@ const JA: ScienceCopy = {
   xColumn: 'X 列',
   yColumn: 'Y 列',
   yColumns: 'Y 列（複数選択可）',
+  groupColumn: 'グループ列（任意）',
+  groupNone: 'グループ化しない',
   removeDataset: 'データセットを削除',
   rowIndex: '行番号',
   exportCsv: '選択結果を CSV で出力',

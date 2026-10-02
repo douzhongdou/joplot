@@ -2,16 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Table2, X } from 'lucide-react'
-import type { DatasetSummary, ScienceValue } from '../types.ts'
+import type { DatasetMapping, DatasetSummary, ScienceValue } from '../types.ts'
 import type { ScienceCopy } from '../lib/i18n.ts'
 import { SelectMenu } from '@/components/SelectMenu'
 import { Button } from '@joplot/ui/button'
 import { vectorData, vectorFields, vectorId } from '../lib/vectors.ts'
-
-interface DatasetMapping {
-  xColumn: string
-  yColumns: string[]
-}
 
 export function valueMeta(value: ScienceValue): string {
   if (value.kind === 'series') {
@@ -49,7 +44,7 @@ export function WorkspacePanel({
   importError: string
   persistenceError: boolean
   importing: boolean
-  onMappingChange: (datasetId: string, xColumn: string, yColumns: string[]) => void
+  onMappingChange: (datasetId: string, xColumn: string, yColumns: string[], groupColumn: string) => void
   onRemoveDataset: (datasetId: string) => void
   onInspectDataset: (datasetId: string) => void
 }) {
@@ -198,7 +193,7 @@ export function WorkspacePanel({
                       { value: '', label: copy.rowIndex },
                       ...dataset.numericColumns.map((name) => ({ value: name, label: name })),
                     ]}
-                    onChange={(value) => onMappingChange(dataset.id, value, mapping.yColumns)}
+                    onChange={(value) => onMappingChange(dataset.id, value, mapping.yColumns, mapping.groupColumn ?? '')}
                     triggerSize="sm"
                     buttonClassName="h-8 text-xs"
                   />
@@ -214,7 +209,7 @@ export function WorkspacePanel({
                           disabled={mapping.yColumns.length === 1 && mapping.yColumns[0] === name}
                           onChange={(event) => onMappingChange(dataset.id, mapping.xColumn, event.target.checked
                             ? [...mapping.yColumns, name]
-                            : mapping.yColumns.filter((candidate) => candidate !== name))}
+                            : mapping.yColumns.filter((candidate) => candidate !== name), mapping.groupColumn ?? '')}
                           className="size-3.5 accent-[var(--color-primary)]"
                         />
                         <span className="truncate" title={name}>{name}</span>
@@ -222,6 +217,21 @@ export function WorkspacePanel({
                     ))}
                   </div>
                 </fieldset>
+                <label className="flex flex-col gap-1 text-[11px] text-base-content/65">
+                  {copy.groupColumn}
+                  <SelectMenu
+                    value={mapping.groupColumn ?? ''}
+                    options={[
+                      { value: '', label: copy.groupNone },
+                      ...dataset.headers
+                        .filter((name) => name !== mapping.xColumn)
+                        .map((name) => ({ value: name, label: name })),
+                    ]}
+                    onChange={(value) => onMappingChange(dataset.id, mapping.xColumn, mapping.yColumns, value)}
+                    triggerSize="sm"
+                    buttonClassName="h-8 text-xs"
+                  />
+                </label>
               </div>
             )}
           </div>

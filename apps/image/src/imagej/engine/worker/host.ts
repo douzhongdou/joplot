@@ -50,6 +50,7 @@ export class EngineHost {
         selection: request.selection,
         roi: request.roi,
         signal: entry.controller.signal,
+        retainStepImages: false,
       },
       request.recipe,
       request.throughStepId,

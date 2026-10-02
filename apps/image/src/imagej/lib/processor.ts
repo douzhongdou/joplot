@@ -14,6 +14,8 @@
  * - 边界像素按 ImageJ 的取边方式做复制填充（replicate padding）。
  */
 
+import { gaussianInto } from './gaussian.ts'
+
 /** 8 位灰度图像。 */
 export interface GrayImage {
   width: number
@@ -66,7 +68,9 @@ export class ImagejError extends Error {
 }
 
 /** 大图内存限制：单张图像的最大像素数（约等于字节数 / 1）。 */
-export const MAX_IMAGE_PIXELS = 40_000_000
+export const MAX_IMAGE_BYTES = 512 * 1024 * 1024
+/** Classic 8 位图像的兼容别名；科学工作台按实际 dtype 和缓冲字节分配。 */
+export const MAX_IMAGE_PIXELS = MAX_IMAGE_BYTES
 
 /** 撤销历史的最大快照数与最大字节预算（按 data 字节估算）。 */
 export const HISTORY_LIMITS = {
@@ -97,12 +101,16 @@ export function createImage(width: number, height: number, fill = 0): GrayImage 
   if (width * height > MAX_IMAGE_PIXELS) {
     throw new ImagejError(
       'too-large',
-      `图像 ${width}x${height} 超过 ${MAX_IMAGE_PIXELS} 像素上限`,
+      `像素缓冲需 ${(width * height / 1024 / 1024).toFixed(1)} MiB，超过单缓冲 ${MAX_IMAGE_BYTES / 1024 / 1024} MiB 内存预算`,
     )
   }
 
   const clampedFill = Math.max(0, Math.min(255, fill))
-  return { width, height, data: new Uint8Array(width * height).fill(clampedFill) }
+  try {
+    return { width, height, data: new Uint8Array(width * height).fill(clampedFill) }
+  } catch {
+    throw new ImagejError('too-large', `无法为 ${width}×${height} 图像分配像素缓冲`)
+  }
 }
 
 /** 校验对象是否为合法的 `GrayImage`。 */
@@ -567,52 +575,11 @@ export function gaussianBlurInto(src: Plane, dst: Plane, width: number, height: 
   if (!Number.isFinite(sigma) || sigma < 0.1 || sigma > 20) {
     throw new ImagejError('invalid-value', '高斯 sigma 必须在 0.1 到 20 之间')
   }
-  const radius = Math.ceil(3 * sigma)
-  const kernel = new Float64Array(radius * 2 + 1)
-  let total = 0
-  for (let k = -radius; k <= radius; k += 1) {
-    const value = Math.exp(-(k * k) / (2 * sigma * sigma))
-    kernel[k + radius] = value
-    total += value
-  }
-  for (let k = 0; k < kernel.length; k += 1) kernel[k] /= total
-
-  const sd = src.data
-  const dd = dst.data
-  const ss = src.stride
-  const ds = dst.stride
-  const so = src.offset
-  const dOff = dst.offset
-  const rowSpan = width * ss
-  const temp = new Float32Array(width * height)
-
-  // 水平
-  for (let y = 0; y < height; y += 1) {
-    const row = y * rowSpan + so
-    const tRow = y * width
-    for (let x = 0; x < width; x += 1) {
-      let sum = 0
-      for (let k = -radius; k <= radius; k += 1) {
-        const nx = x + k < 0 ? 0 : x + k >= width ? width - 1 : x + k
-        sum += sd[row + nx * ss] * kernel[k + radius]
-      }
-      temp[tRow + x] = sum
-    }
-  }
-
-  // 垂直
-  for (let y = 0; y < height; y += 1) {
-    const dRow = y * width * ds + dOff
-    for (let x = 0; x < width; x += 1) {
-      let sum = 0
-      for (let k = -radius; k <= radius; k += 1) {
-        const ny = y + k < 0 ? 0 : y + k >= height ? height - 1 : y + k
-        sum += temp[ny * width + x] * kernel[k + radius]
-      }
-      const value = Math.round(sum)
-      dd[dRow + x * ds] = value < 0 ? 0 : value > 255 ? 255 : value
-    }
-  }
+  gaussianInto(src.data, dst.data, width, height, sigma, {
+    sourceStride: src.stride, sourceOffset: src.offset,
+    destinationStride: dst.stride, destinationOffset: dst.offset,
+    convert: (value) => Math.max(0, Math.min(255, Math.round(value))),
+  })
 }
 
 /* ------------------------------------------------------------------ *

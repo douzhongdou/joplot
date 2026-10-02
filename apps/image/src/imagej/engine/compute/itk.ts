@@ -12,7 +12,7 @@
 import type { Image as ItkImage, TypedArray, PipelineInput, PipelineOutput } from 'itk-wasm'
 import { IntTypes, FloatTypes, PixelTypes, InterfaceTypes } from 'itk-wasm'
 import type { Dtype, ImageBlock, PixelArray, Region, SpatialTransform, Axes } from '../types.ts'
-import { elementCount } from '../types.ts'
+import { allocateBuffer, elementCount } from '../types.ts'
 
 export class ItkAdapterError extends Error {
   readonly cause?: unknown
@@ -72,7 +72,8 @@ export async function blockToItkImageAsync(block: ImageBlock, spatial?: SpatialT
   const { Image, ImageType } = await import('itk-wasm')
   const dimension = block.axes.filter((axis) => axis === 'x' || axis === 'y' || axis === 'z').length
   const componentType = dtypeToComponentType(block.dtype)
-  const image = new Image(new ImageType(dimension, componentType, PixelTypes.Scalar, 1))
+  const ci = block.axes.indexOf('c'), components = ci >= 0 ? block.shape[ci]! : 1
+  const image = new Image(new ImageType(dimension, componentType, components === 3 ? PixelTypes.RGB : PixelTypes.Scalar, components))
   const x = block.axes.indexOf('x')
   const y = block.axes.indexOf('y')
   const z = block.axes.indexOf('z')
@@ -89,7 +90,12 @@ export async function blockToItkImageAsync(block: ImageBlock, spatial?: SpatialT
   image.direction = dimension === 3
     ? new Float64Array(d ?? [1, 0, 0, 0, 1, 0, 0, 0, 1])
     : new Float64Array([d?.[0] ?? 1, d?.[1] ?? 0, d?.[3] ?? 0, d?.[4] ?? 1])
-  image.data = asTypedArray(block.data)
+  if (components === 3) {
+    const pixels = elementCount(block.shape) / components
+    const data = allocateBuffer(block.dtype, pixels * components)
+    for (let i = 0; i < pixels; i++) for (let c = 0; c < components; c++) data[i * components + c] = block.data[c * pixels + i]!
+    image.data = asTypedArray(data)
+  } else image.data = asTypedArray(block.data)
   return image
 }
 
@@ -151,11 +157,11 @@ export async function encodeImageBlock(
 ): Promise<Uint8Array> {
   const image = await blockToItkImageAsync(block, spatial)
   const { writeImage } = await import('@itk-wasm/image-io')
-  const result = await writeImage(image, 'output', {
+  const filename = mimeType === 'image/png' ? 'output.png' : mimeType === 'image/tiff' ? 'output.tiff' : 'output'
+  const result = await writeImage(image, filename, {
     mimeType,
     useCompression: options?.useCompression,
     componentType: options?.componentType,
-    pixelType: PixelTypes.Scalar,
   })
   const serialized = result.serializedImage
   if (serialized?.data) return new Uint8Array(serialized.data as Uint8Array)

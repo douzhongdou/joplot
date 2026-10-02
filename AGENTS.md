@@ -31,3 +31,5 @@ shadcn standard tokens plus legacy daisy-style aliases (`bg-base-100`, `text-bas
 `@source "../../../packages/ui/src"` so Tailwind scans the package for class names.
 Language plumbing lives in `@joplot/i18n`; each app supplies its own dictionaries and route
 segments.
+
+思考过程一律使用中文：推理、分析、权衡、排查步骤都用中文展开，不要在思考中切换成英文。

@@ -168,6 +168,17 @@ class InlineEngineClient implements EngineClient {
 
 /** 创建引擎客户端；默认优先 Worker，失败时回退主线程。 */
 export function createEngineClient(options?: { preferWorker?: boolean; workerFactory?: () => Worker }): EngineClient {
+  // React 可能丢弃一次 render；推迟到首次请求再创建 Worker，避免泄漏后台线程。
+  let client: EngineClient | undefined
+  const get = (): EngineClient => client ??= createActiveEngineClient(options)
+  return {
+    kind: options?.preferWorker !== false && typeof Worker !== 'undefined' ? 'worker' : 'inline',
+    import: (file) => get().import(file), run: (request) => get().run(request),
+    cancel: () => client?.cancel(), dispose: (datasetId) => client?.dispose(datasetId), terminate: () => { client?.terminate(); client = undefined },
+  }
+}
+
+function createActiveEngineClient(options?: { preferWorker?: boolean; workerFactory?: () => Worker }): EngineClient {
   const preferWorker = options?.preferWorker ?? true
   if (preferWorker) {
     try {

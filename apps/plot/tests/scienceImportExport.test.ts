@@ -48,6 +48,22 @@ test('multiple selected Y columns get stable series ids and preserve their own m
   assert.equal(series[1].sampleRate, 1)
 })
 
+test('a group column splits one Y column into one series per group', () => {
+  const dataset = parseDelimitedText('wavelength,od,condition\n400,1,s\n500,2,s\n400,3,p\n500,4,p\n', {
+    id: 'spec', fileName: 'spec.csv',
+  })
+  // 不加分组：整列一段，X 在组边界会从 500 跳回 400（真正的 bug 场景）。
+  assert.equal(seriesListFromDataset(dataset, 'wavelength', ['od']).length, 1)
+  const grouped = seriesListFromDataset(dataset, 'wavelength', ['od'], 'condition')
+  assert.deepEqual(grouped.map((value) => value.id), ['ds:spec:od@0', 'ds:spec:od@1'])
+  assert.deepEqual(grouped.map((value) => value.name), ['od · s', 'od · p'])
+  // 每组各自单调，不再跨组连线。
+  assert.deepEqual([...values1d(grouped[0].x)], [400, 500])
+  assert.deepEqual([...values1d(grouped[1].x)], [400, 500])
+  assert.deepEqual([...values1d(grouped[0].y)], [1, 2])
+  assert.deepEqual([...values1d(grouped[1].y)], [3, 4])
+})
+
 test('a seconds-based X column labels FFT frequency in Hz', () => {
   const dataset = parseDelimitedText('time_s,y\n0,1\n0.5,2\n1,3\n1.5,4\n', {
     id: 'time', fileName: 'time.csv',

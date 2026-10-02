@@ -1,11 +1,11 @@
 /**
  * 纯 TypeScript 计算后端（参考实现与 WASM 缺失时的回退）。
  *
- * 只处理单通道二维块（axes 末尾为 y、x）。8 位数据委托给既有 ImageJ 迁移内核，
+ * 处理二维块（axes 末尾为 y、x）；邻域算子的 RGB 通道由外层独立执行。8 位单通道数据委托给既有 ImageJ 迁移内核，
  * 以获得逐像素一致的行为；16 位 / 浮点走通用路径。堆栈与通道由引擎在外层迭代。
  *
- * 这些实现不满足架构方案对「大图在 Worker 中分块、禁止逐像素 JS 回调」的最终要求，
- * 属于 P1 可运行通路；ITK-Wasm 算子就绪后由 ItkWasmComputeEngine 替换。
+ * 主工作台通过计算 Worker 执行这些内核；高斯使用行缓存，其他内核仍保留整帧输出。
+ * ITK-Wasm 目前提供 I/O 与管道适配接口，尚未为这些算子配置编译后的 ITK 管道。
  */
 import {
   applyLevels,
@@ -26,6 +26,8 @@ import {
 } from '../../lib/processor.ts'
 import { analyzeParticles, closeBinary, dilate as libDilate, erode as libErode, fillHoles as libFillHoles, openBinary } from '../../lib/binary.ts'
 import { gaussianBlur as libGaussian } from '../../lib/filters.ts'
+import { gaussianInto } from '../../lib/gaussian.ts'
+import { computeWindowLevel } from '../render/rgba.ts'
 import { allocateBuffer, elementCount, type ImageBlock, type PixelArray, type Region } from '../types.ts'
 
 /** 计算错误：算子不支持、尺寸非法等。 */
@@ -65,7 +67,7 @@ function plane2d(block: ImageBlock): { width: number; height: number } {
 }
 
 function dtypeMin(dtype: ImageBlock['dtype']): number {
-  return dtype === 'int16' ? -32768 : 0
+  return dtype === 'float32' ? Number.NEGATIVE_INFINITY : dtype === 'int16' ? -32768 : 0
 }
 
 function dtypeMax(dtype: ImageBlock['dtype']): number {
@@ -98,7 +100,9 @@ function toGray(block: ImageBlock): GrayImage {
 }
 
 function fromGray(image: GrayImage, region: Region, axes: ImageBlock['axes']): ImageBlock {
-  return { dtype: 'uint8', axes, shape: [image.height, image.width], region, data: image.data }
+  // 单帧仍可能带 c/z/t 的单例轴，不能只返回 [y, x] 造成 axes 与 shape 错位。
+  const shape = axes.map((axis) => axis === 'x' ? image.width : axis === 'y' ? image.height : 1)
+  return { dtype: 'uint8', axes, shape, region, data: image.data }
 }
 
 /* ------------------------------------------------------------------ *
@@ -106,11 +110,12 @@ function fromGray(image: GrayImage, region: Region, axes: ImageBlock['axes']): I
  * ------------------------------------------------------------------ */
 
 export function invert(block: ImageBlock): ImageBlock {
-  if (block.dtype === 'uint8') return fromGray(invertGray(toGray(block)), block.region, block.axes)
+  const ci = block.axes.indexOf('c')
+  if (block.dtype === 'uint8' && (ci < 0 || block.shape[ci] === 1)) return fromGray(invertGray(toGray(block)), block.region, block.axes)
   const out = newBlockLike(block)
   const src = numbers(block.data)
   const dst = numbers(out.data)
-  const sum = dtypeMin(block.dtype) + dtypeMax(block.dtype)
+  const sum = block.dtype === 'float32' ? computeWindowLevel(block).level * 2 : dtypeMin(block.dtype) + dtypeMax(block.dtype)
   for (let i = 0; i < src.length; i += 1) dst[i] = clampValue(block.dtype, sum - src[i]!)
   return out
 }
@@ -118,18 +123,19 @@ export function invert(block: ImageBlock): ImageBlock {
 export function levels(block: ImageBlock, brightness: number, contrast: number): ImageBlock {
   if (block.dtype === 'uint8') {
     const range = levelsRange(brightness, contrast)
-    return fromGray(applyLevels(toGray(block), range.min, range.max), block.region, block.axes)
+    const ci = block.axes.indexOf('c')
+    if (ci < 0 || block.shape[ci] === 1) return fromGray(applyLevels(toGray(block), range.min, range.max), block.region, block.axes)
+    const out = newBlockLike(block), scale = 255 / (range.max - range.min)
+    for (let i = 0; i < block.data.length; i++) out.data[i] = clampValue(block.dtype, (block.data[i]! - range.min) * scale)
+    return out
   }
   const out = newBlockLike(block)
   const src = numbers(block.data)
   const dst = numbers(out.data)
-  const max = dtypeMax(block.dtype)
-  const min = dtypeMin(block.dtype)
-  const factor = Math.max(1, Math.min(100, contrast)) / 50
-  const center = (min + max) / 2 - brightness * ((max - min) / 255)
-  const half = (max - min) / 2 / factor
-  const lo = center - half
-  const span = half * 2
+  const window = computeWindowLevel(block), range = levelsRange(brightness, contrast)
+  const min = window.level - window.window / 2, max = min + window.window
+  const lo = min + window.window * range.min / 255
+  const span = window.window * (range.max - range.min) / 255
   for (let i = 0; i < src.length; i += 1) {
     dst[i] = clampValue(block.dtype, ((src[i]! - lo) / span) * (max - min) + min)
   }
@@ -140,7 +146,7 @@ export function threshold(block: ImageBlock, level: number): ImageBlock {
   const out = newBlockLike(block, 'uint8')
   const src = numbers(block.data)
   const dst = numbers(out.data)
-  for (let i = 0; i < src.length; i += 1) dst[i] = src[i]! > level ? 255 : 0
+  for (let i = 0; i < src.length; i += 1) dst[i] = Number.isFinite(src[i]) && src[i]! > level ? 255 : 0
   return out
 }
 
@@ -151,11 +157,13 @@ export function otsu(block: ImageBlock): ImageBlock {
   let maxValue = Number.NEGATIVE_INFINITY
   for (let i = 0; i < src.length; i += 1) {
     const value = src[i]!
+    if (!Number.isFinite(value)) continue
     if (value < minValue) minValue = value
     if (value > maxValue) maxValue = value
   }
   const span = maxValue - minValue || 1
   for (let i = 0; i < src.length; i += 1) {
+    if (!Number.isFinite(src[i])) continue
     const bin = Math.max(0, Math.min(255, Math.round(((src[i]! - minValue) / span) * 255)))
     histogram[bin] = (histogram[bin] ?? 0) + 1
   }
@@ -197,8 +205,8 @@ function mean(values: number[]): number {
 }
 
 function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b)
-  return sorted[(sorted.length - 1) >> 1]!
+  values.sort((a, b) => a - b)
+  return values[(values.length - 1) >> 1]!
 }
 
 export function mean3x3(block: ImageBlock): ImageBlock {
@@ -229,7 +237,8 @@ export function sharpen3x3(block: ImageBlock): ImageBlock {
 }
 
 export function convolve3x3(block: ImageBlock, kernel: readonly number[]): ImageBlock {
-  if (kernel.length !== 9) throw new ComputeError('invalid-input', '3×3 卷积核必须包含 9 个元素')
+  if (kernel.length !== 9 || !kernel.every(Number.isFinite)) throw new ComputeError('invalid-input', '3×3 卷积核必须包含 9 个有限元素')
+  const scale = kernel.reduce((sum, value) => sum + value, 0) || 1
   const { width, height } = plane2d(block)
   const out = newBlockLike(block)
   const src = numbers(block.data)
@@ -245,7 +254,7 @@ export function convolve3x3(block: ImageBlock, kernel: readonly number[]): Image
           sum += src[ny + nx]! * kernel[k++]!
         }
       }
-      dst[y * width + x] = clampValue(block.dtype, sum)
+      dst[y * width + x] = clampValue(block.dtype, sum / scale)
     }
   }
   return out
@@ -274,37 +283,10 @@ export function gaussian(block: ImageBlock, sigma: number): ImageBlock {
   if (!(sigma > 0)) throw new ComputeError('invalid-input', 'sigma 必须大于 0')
   if (block.dtype === 'uint8') return fromGray(libGaussian(toGray(block), sigma), block.region, block.axes)
   const { width, height } = plane2d(block)
-  const radius = Math.max(1, Math.ceil(sigma * 3))
-  const kernel = new Float64Array(radius * 2 + 1)
-  let total = 0
-  for (let i = -radius; i <= radius; i += 1) {
-    const value = Math.exp(-(i * i) / (2 * sigma * sigma))
-    kernel[i + radius] = value
-    total += value
-  }
-  for (let i = 0; i < kernel.length; i += 1) kernel[i] = kernel[i]! / total
-  const src = numbers(block.data)
-  const at = (x: number, y: number): number => src[Math.min(height - 1, Math.max(0, y)) * width + Math.min(width - 1, Math.max(0, x))]!
-  const temp = new Float32Array(width * height)
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      let sum = 0
-      for (let k = -radius; k <= radius; k += 1) sum += at(x + k, y) * kernel[k + radius]!
-      temp[y * width + x] = sum
-    }
-  }
   const out = newBlockLike(block)
-  const dst = numbers(out.data)
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      let sum = 0
-      for (let k = -radius; k <= radius; k += 1) {
-        const ny = Math.min(height - 1, Math.max(0, y + k))
-        sum += temp[ny * width + x]! * kernel[k + radius]!
-      }
-      dst[y * width + x] = clampValue(block.dtype, sum)
-    }
-  }
+  gaussianInto(numbers(block.data), numbers(out.data), width, height, sigma, {
+    convert: (value) => clampValue(block.dtype, value),
+  })
   return out
 }
 
@@ -358,7 +340,7 @@ export function fillHoles(block: ImageBlock): ImageBlock {
   const out = newBlockLike(block)
   const dst = numbers(out.data)
   const foreground = new Uint8Array(width * height)
-  for (let i = 0; i < src.length; i += 1) foreground[i] = src[i]! !== 0 ? 1 : 0
+  for (let i = 0; i < src.length; i += 1) foreground[i] = Number.isFinite(src[i]) && src[i]! !== 0 ? 1 : 0
   const visited = new Uint8Array(width * height)
   const queue = new Int32Array(width * height)
   let head = 0
@@ -380,7 +362,7 @@ export function fillHoles(block: ImageBlock): ImageBlock {
     if (index + width < width * height) add(index + width)
   }
   for (let i = 0; i < foreground.length; i += 1) {
-    dst[i] = foreground[i] !== 0 || visited[i] === 0 ? dtypeMax(block.dtype) : dtypeMin(block.dtype)
+    dst[i] = foreground[i] !== 0 || visited[i] === 0 ? block.dtype === 'float32' ? 255 : dtypeMax(block.dtype) : 0
   }
   return out
 }
@@ -397,11 +379,12 @@ export function crop(block: ImageBlock, rect: Rect): ImageBlock {
   const h = Math.max(1, Math.min(height - y, Math.floor(rect.height)))
   const bytesPerElement = block.data.BYTES_PER_ELEMENT
   const srcBytes = new Uint8Array(block.data.buffer, block.data.byteOffset, block.data.byteLength)
-  const outData = allocateBuffer(block.dtype, w * h)
+  const planes = block.data.length / (width * height)
+  const outData = allocateBuffer(block.dtype, planes * w * h)
   const outBytes = new Uint8Array(outData.buffer, outData.byteOffset, outData.byteLength)
-  for (let row = 0; row < h; row += 1) {
-    const from = ((y + row) * width + x) * bytesPerElement
-    const to = row * w * bytesPerElement
+  for (let plane = 0; plane < planes; plane += 1) for (let row = 0; row < h; row += 1) {
+    const from = (plane * width * height + (y + row) * width + x) * bytesPerElement
+    const to = (plane * w * h + row * w) * bytesPerElement
     outBytes.set(srcBytes.subarray(from, from + w * bytesPerElement), to)
   }
   return {
@@ -441,7 +424,7 @@ export function flipVerticalBlock(block: ImageBlock): ImageBlock {
 export function rotateBlock(block: ImageBlock, direction: 'cw' | 'ccw'): ImageBlock {
   if (block.dtype === 'uint8') {
     const image = rotate90(toGray(block), direction)
-    return { dtype: 'uint8', axes: block.axes, shape: [image.height, image.width], region: block.region, data: image.data }
+    return fromGray(image, block.region, block.axes)
   }
   const { width, height } = plane2d(block)
   const out = allocateBuffer(block.dtype, width * height)
@@ -454,7 +437,7 @@ export function rotateBlock(block: ImageBlock, direction: 'cw' | 'ccw'): ImageBl
       dst[ny * height + nx] = src[y * width + x]!
     }
   }
-  return { dtype: block.dtype, axes: block.axes, shape: [width, height], region: block.region, data: out }
+  return { dtype: block.dtype, axes: block.axes, shape: [...block.shape.slice(0, -2), width, height], region: block.region, data: out }
 }
 
 /* ------------------------------------------------------------------ *
@@ -471,6 +454,6 @@ function binarize(block: ImageBlock): GrayImage {
   const { width, height } = plane2d(block)
   const data = new Uint8Array(width * height)
   const src = numbers(block.data)
-  for (let i = 0; i < src.length; i += 1) data[i] = src[i]! !== 0 ? 255 : 0
+  for (let i = 0; i < src.length; i += 1) data[i] = Number.isFinite(src[i]) && src[i]! !== 0 ? 255 : 0
   return { width, height, data }
 }

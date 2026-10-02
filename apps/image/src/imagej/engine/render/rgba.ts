@@ -16,6 +16,7 @@ export function computeWindowLevel(block: ImageBlock): DisplayWindowLevel {
   let max = Number.NEGATIVE_INFINITY
   for (let i = 0; i < values.length; i += 1) {
     const value = values[i]!
+    if (!Number.isFinite(value)) continue
     if (value < min) min = value
     if (value > max) max = value
   }

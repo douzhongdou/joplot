@@ -1,323 +1,721 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
-import { ChevronLeft, ChevronRight, Download, FileUp, Image as ImageIcon, Undo2, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { Check, Download, Image as ImageIcon, Plus, Redo2, Sparkles, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { AppNavbar } from '../../components/AppNavbar'
+import { useI18n } from '../../i18n'
 import { Button } from '@joplot/ui/button'
-import { useImageRuntime } from './useImageRuntime'
-import { toUiRegistry, type OperatorCapability } from '../engine/operators'
-import { getOperator } from '../engine/operators'
-import type { RuntimeState } from '../engine/runtime'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@joplot/ui/dropdown-menu'
+import { Label } from '@joplot/ui/label'
+import { createImagejCopy } from '../lib/i18n'
+import { levelsRange, type Rect } from '../lib/processor'
+import { getOperator, toUiRegistry } from '../engine/operators'
+import { stepAppliesToSelection, type StepScope } from '../engine/recipe'
+import { computeWindowLevel } from '../engine/render/rgba'
+import { displayBlock as toDisplayBlock } from '../engine/render/display'
 import type { ImageBlock } from '../engine/types'
-import { blockToRgba, computeWindowLevel } from '../engine/render/rgba'
-import { encodeTiff } from '../lib/tiff'
-import type { VtkImageView } from '../engine/render/vtk'
+import { encodeTiffStack } from '../engine/tiff'
+import { ImageJSidebar } from './ImageJSidebar'
+import { useImageRuntime } from './useImageRuntime'
+import { useImageAnalysis } from './useImageAnalysis'
+import { ImageViewport, type ImageViewportHandle, type PixelProbe } from './ImageViewport'
+import { ColorContrastPanel } from './ColorContrastPanel'
+import { HistogramChart } from './HistogramChart'
+import { applyColorAdjustments, type ColorAdjustment } from '../engine/colorAdjustments'
 
-const CATEGORY_LABEL: Record<string, string> = {
-  format: '格式',
-  adjust: '调整',
-  threshold: '阈值',
-  filter: '滤波',
-  morphology: '形态学',
-  geometry: '几何',
-  analysis: '分析',
-}
-
-function download(blob: Blob, name: string): void {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = name
-  link.click()
+type ParamPanel = 'levels' | 'threshold' | 'gaussian'
+type ViewType = 'measurement' | 'histogram' | 'profile' | 'particles'
+interface ViewCard { id: number; type: ViewType }
+const VIEW_TYPES: ViewType[] = ['measurement', 'histogram', 'profile', 'particles']
+function download(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob), link = document.createElement('a')
+  link.href = url; link.download = name; link.click()
   setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
-
-function baseName(state: RuntimeState): string {
-  return state.dataset?.source.name.replace(/\.[^.]+$/, '') || 'image'
+function prepareChartCanvas(
+  canvas: HTMLCanvasElement,
+  cssHeight: number,
+): { context: CanvasRenderingContext2D; width: number } | null {
+  const cssWidth = Math.max(1, Math.round(canvas.clientWidth || canvas.parentElement?.clientWidth || 300))
+  const dpr = Math.max(1, window.devicePixelRatio || 1)
+  canvas.width = Math.round(cssWidth * dpr)
+  canvas.height = Math.round(cssHeight * dpr)
+  canvas.style.height = `${cssHeight}px`
+  const context = canvas.getContext('2d')
+  if (!context) return null
+  context.setTransform(dpr, 0, 0, dpr, 0, 0)
+  context.clearRect(0, 0, cssWidth, cssHeight)
+  return { context, width: cssWidth }
 }
 
-/** 单通道用数据极值做窗宽窗位；多分量（RGB）用 0..255 恒等映射，保持颜色。 */
-function applyDisplay(view: VtkImageView, image: ImageBlock): void {
-  view.setBlock(image)
-  const c = image.axes.indexOf('c')
-  const components = c >= 0 ? (image.shape[c] ?? 1) : 1
-  view.setWindowLevel(components === 1 ? computeWindowLevel(image) : { window: 255, level: 127.5 })
-}
-
-/** 参数面板：本地编辑，点「应用」才提交一次撤销单位。 */
-function StepParamsEditor({
-  capability,
-  params,
-  onApply,
-}: {
-  capability: OperatorCapability
-  params: Record<string, number | string>
-  onApply: (next: Record<string, number | string>) => void
-}) {
-  const [draft, setDraft] = useState<Record<string, number | string>>(params)
-  useEffect(() => setDraft(params), [params])
-  if (capability.params.length === 0) return null
-  return (
-    <div className="grid gap-2 rounded-md border border-base-300 p-2">
-      {capability.params.map((spec) => (
-        <label key={spec.key} className="grid gap-1 text-xs">
-          <span className="text-base-content/70">{spec.labelKey}</span>
-          {spec.type === 'number' ? (
-            <input
-              type="number"
-              className="h-7 rounded border border-base-300 bg-base-100 px-2"
-              value={Number(draft[spec.key] ?? spec.default)}
-              min={spec.min}
-              max={spec.max}
-              step={spec.step}
-              onChange={(event) => setDraft((current) => ({ ...current, [spec.key]: Number(event.target.value) }))}
-            />
-          ) : (
-            <select
-              className="h-7 rounded border border-base-300 bg-base-100 px-2"
-              value={String(draft[spec.key] ?? spec.default)}
-              onChange={(event) => setDraft((current) => ({ ...current, [spec.key]: event.target.value }))}
-            >
-              {spec.options.map((option) => (
-                <option key={option.value} value={option.value}>{option.labelKey}</option>
-              ))}
-            </select>
-          )}
-        </label>
-      ))}
-      <Button type="button" size="sm" className="h-7" onClick={() => onApply(draft)}>应用</Button>
-    </div>
-  )
-}
-
-export function ScientificImageWorkspace(): ReactNode {
+export function ScientificImageWorkspace() {
+  const { language } = useI18n()
+  const copy = useMemo(() => createImagejCopy(language), [language])
   const { state, runtime } = useImageRuntime()
   const registry = useMemo(() => toUiRegistry(), [])
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const viewportRef = useRef<HTMLDivElement>(null)
-  const viewRef = useRef<VtkImageView | null>(null)
-  const imageRef = useRef<ImageBlock | null>(null)
-  imageRef.current = state.image
-  const [vtkError, setVtkError] = useState<string>()
-  const [exportError, setExportError] = useState<string>()
-  const [selectedStepId, setSelectedStepId] = useState<string>()
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => setMounted(true), [])
-
+  const viewportRef = useRef<ImageViewportHandle>(null)
+  const profileCanvasRef = useRef<HTMLCanvasElement>(null)
+  const [roi, setRoi] = useState<Rect | null>(null)
+  const [zoom, setZoom] = useState(1)
+  const [tool, setTool] = useState<'pan' | 'roi'>('pan')
+  const [probe, setProbe] = useState<PixelProbe | null>(null)
+  const [brightness, setBrightness] = useState(0), [contrast, setContrast] = useState(50)
+  const [gaussianSigma, setGaussianSigma] = useState(1.5), [thresholdLevel, setThresholdLevel] = useState(128)
+  const [scope, setScope] = useState<'image' | 'roi'>('image')
+  const [applyAll, setApplyAll] = useState(false)
+  const [paramPanel, setParamPanel] = useState<ParamPanel | null>(null)
+  const [views, setViews] = useState<ViewCard[]>([])
+  const viewsIdRef = useRef(1)
+  const [minParticleArea, setMinParticleArea] = useState(1)
+  const [original, setOriginal] = useState<ImageBlock | null>(null), [showColor, setShowColor] = useState(true)
+  const [showOriginal, setShowOriginal] = useState(false)
+  const [colorPreview, setColorPreview] = useState<readonly ColorAdjustment[]>([])
+  const [colorSession, setColorSession] = useState(0)
+  const [uiError, setError] = useState(''), [exporting, setExporting] = useState(false)
+  const image = state.image
+  const isRgb = Boolean(image && image.axes.includes('c') && image.shape[image.axes.indexOf('c')] === 3)
+  const current = image ? { width: image.shape[image.axes.indexOf('x')]!, height: image.shape[image.axes.indexOf('y')]!, data: image.data } : null
+  const sourceName = state.dataset?.source.name ?? ''
+  const busy = state.status === 'importing' || state.status === 'running' || exporting
+  const error = uiError || state.error || ''
+  const historyFlags = { canUndo: runtime.canUndo() || colorPreview.length > 0, canRedo: runtime.canRedo() }
+  const slices = (['t', 'c', 'z'] as const).map((axis) => ({ axis, length: state.dataset?.shape[state.dataset.axes.indexOf(axis)] ?? 1, index: state.selection[axis] ?? 0 }))
+    .filter((entry) => entry.length > 1 && !(entry.axis === 'c' && state.dataset?.componentKind === 'rgb'))
+  const frameCount = slices.reduce((count, entry) => count * entry.length, 1)
+  const stack = frameCount > 1 ? { length: frameCount } : null
+  const slice = slices.find((entry) => entry.axis === 'z') ?? slices[0]
+  const pageIndex = slice?.index ?? 0
+  const levelsActive = brightness !== 0 || contrast !== 50
+  const analysisResult = useImageAnalysis(image, scope === 'roi' ? roi : null, views.some((view) => view.type === 'particles'), minParticleArea, roi, isRgb && colorPreview.length ? 'all' : undefined, colorPreview)
+  const status = busy || (image && !analysisResult.analysis) ? copy.status.loading : state.dataset ? copy.status.ready : ''
+  const stats = scope === 'roi' && !roi ? undefined : analysisResult.analysis
+  const particles = analysisResult.particles ?? null
+  const profileData = analysisResult.analysis?.profile ?? null
+  const displayBlock = showOriginal && original ? original : image
+  const baselineWindow = useMemo(() => {
+    if (!displayBlock) return { window: 255, level: 127.5 }
+    return displayBlock.dtype === 'uint8' ? { window: 255, level: 127.5 } : computeWindowLevel(displayBlock)
+  }, [displayBlock])
+  const displayWindow = useMemo(() => {
+    const range = levelsRange(brightness, contrast), lo = baselineWindow.level - baselineWindow.window / 2
+    return { window: baselineWindow.window * (range.max - range.min) / 255, level: lo + baselineWindow.window * (range.max + range.min) / 510 }
+  }, [baselineWindow, brightness, contrast])
+  const rasterOptions = useMemo(() => ({ gray: !showColor, threshold: paramPanel === 'threshold' ? thresholdLevel : undefined, colorAdjustments: showOriginal ? [] : colorPreview }), [showColor, paramPanel, thresholdLevel, colorPreview, showOriginal])
+  const selectPage = (index: number) => {
+    if (!slice) return
+    if (colorPreview.length) commitColorPreview(colorPreview, false)
+    setError(''); runtime.setSelection({ [slice.axis]: Math.max(0, Math.min(slice.length - 1, index)) })
+  }
+  const hasImage = Boolean(current)
+  const roiLabel = roi ? `${roi.width}×${roi.height} @ (${roi.x}, ${roi.y})` : '—'
+  const seedDefaultViews = () => setViews((cards) => cards.length ? cards : [{ id: viewsIdRef.current++, type: 'measurement' }, { id: viewsIdRef.current++, type: 'histogram' }])
   useEffect(() => {
-    const container = viewportRef.current
-    if (!container) return
     let cancelled = false
-    void import('../engine/render/vtk')
-      .then(({ createVtkImageView }) => createVtkImageView(container, { background: [0.08, 0.08, 0.1] }))
-      .then((view) => {
-        if (cancelled) {
-          view.destroy()
-          return
-        }
-        viewRef.current = view
-        const image = imageRef.current
-        if (image) applyDisplay(view, image)
-      })
-      .catch((error: unknown) => setVtkError(error instanceof Error ? error.message : String(error)))
-    return () => {
-      cancelled = true
-      viewRef.current?.destroy()
-      viewRef.current = null
-    }
-  }, [])
-
+    setRoi(null); setScope('image'); setProbe(null); setOriginal(null); setShowOriginal(false); setBrightness(0); setContrast(50); setColorPreview([])
+    if (state.dataset) void runtime.readSourceFrame().then((block) => { if (!cancelled) setOriginal(block) }).catch((error: unknown) => { if (!cancelled) setError(String(error)) })
+    return () => { cancelled = true }
+  }, [runtime, state.dataset?.id, state.selection.t, state.selection.c, state.selection.z])
   useEffect(() => {
-    const view = viewRef.current
-    if (!view || !state.image) return
-    applyDisplay(view, state.image)
-  }, [state.image])
-
-  const slices = useMemo(() => {
-    const dataset = state.dataset
-    if (!dataset) return [] as Array<{ axis: 't' | 'c' | 'z'; length: number; index: number }>
-    return (['t', 'c', 'z'] as const)
-      .filter((axis) => !(axis === 'c' && dataset.componentKind === 'rgb'))
-      .map((axis) => ({ axis, length: dataset.shape[dataset.axes.indexOf(axis)] ?? 1, index: state.selection[axis] ?? 0 }))
-      .filter((entry) => entry.length > 1)
-  }, [state.dataset, state.selection])
-
-  const selectedStep = state.recipe?.steps.find((step) => step.id === selectedStepId)
-
-  const onFile = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) await runtime.openFile(file)
-    event.target.value = ''
+    if (current) setRoi((rect) => rect ? { x: Math.min(rect.x, current.width - 1), y: Math.min(rect.y, current.height - 1), width: Math.min(rect.width, current.width - Math.min(rect.x, current.width - 1)), height: Math.min(rect.height, current.height - Math.min(rect.y, current.height - 1)) } : null)
+  }, [current?.width, current?.height])
+  const loadFile = async (file: File) => {
+    setError(''); setParamPanel(null); setShowColor(true); setApplyAll(false)
+    await runtime.openFile(file); seedDefaultViews()
   }
-
-  const exportPng = () => {
-    const image = state.image
-    if (!image) return
-    const width = image.shape[image.axes.indexOf('x')] ?? 1
-    const height = image.shape[image.axes.indexOf('y')] ?? 1
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const context = canvas.getContext('2d')
-    if (!context) return
-    context.putImageData(new ImageData(blockToRgba(image, computeWindowLevel(image)), width, height), 0, 0)
-    canvas.toBlob((blob) => { if (blob) download(blob, `${baseName(state)}.png`) }, 'image/png')
+  const onFileInput = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]; if (file) void loadFile(file); event.target.value = ''
   }
-
-  const exportTiff = async () => {
-    const image = state.image
-    if (!image || !state.dataset) return
-    const c = image.axes.indexOf('c')
-    if (c >= 0 && (image.shape[c] ?? 1) > 1) {
-      setExportError('彩色图像暂不支持 TIFF 导出，请使用 PNG')
-      return
+  const stepScope = (rect: Rect | null): StepScope => {
+    const region = image && rect ? { start: image.axes.map((axis) => axis === 'x' ? rect.x : axis === 'y' ? rect.y : 0), shape: image.axes.map((axis, i) => axis === 'x' ? rect.width : axis === 'y' ? rect.height : image.shape[i]!) } : undefined
+    if (applyAll) return region ? { kind: 'roi', region } : { kind: 'stack' }
+    return { kind: 'frame', selection: { ...state.selection }, region }
+  }
+  const submit = (op: string, params: Record<string, number | string> = {}, rect: Rect | null = roi) => {
+    if (!image || busy) return
+    setError(''); setShowOriginal(false)
+    if (colorPreview.length) commitColorPreview(colorPreview, applyAll)
+    const ci = image.axes.indexOf('c')
+    const needsGray = getOperator(op)?.input.channels !== 'any'
+    setShowColor(op !== 'grayscale' && !needsGray)
+    if (op !== 'grayscale' && needsGray && ci >= 0 && (image.shape[ci] ?? 1) > 1) runtime.addStep('grayscale', {}, stepScope(null))
+    runtime.addStep(op, params, stepScope(rect))
+  }
+  const runCommand = (op: string) => {
+    if (!image || busy) return
+    if (op === 'levels' || op === 'threshold' || op === 'gaussian') { if (op !== 'levels' && colorPreview.length) commitColorPreview(colorPreview, false); setShowOriginal(false); setShowColor(op !== 'threshold'); setParamPanel(op); return }
+    if (op === 'crop') {
+      if (stack) { setError(copy.stack.geometryUnavailable); return }
+      if (!roi) { setError(copy.errors.needsRoi); return }
+      submit(op, { ...roi }, null); setRoi(null); return
     }
-    setExportError(undefined)
+    if (op === 'rotateCW' || op === 'rotateCCW') {
+      if (stack) { setError(copy.stack.geometryUnavailable); return }
+      submit(op, {}, null); setRoi(null); return
+    }
+    submit(op, {}, op === 'grayscale' ? null : roi)
+  }
+  const commitColorPreview = (settings: readonly ColorAdjustment[], allPages: boolean) => {
+    if (!image || busy) return
+    for (const adjustment of settings) {
+      const scope = stepScope(adjustment.roi ?? null)
+      const region = scope.kind === 'frame' || scope.kind === 'roi' ? scope.region : undefined
+      const target: StepScope = allPages ? region ? { kind: 'roi', region } : { kind: 'stack' } : { kind: 'frame', selection: { ...state.selection }, region }
+      runtime.addStep('levels', { mode: 'rgb-range', minimum: adjustment.min, maximum: adjustment.max, channel: adjustment.channel }, target)
+    }
+    setColorPreview([])
+  }
+  const selectAxis = (axis: 't' | 'c' | 'z', index: number) => { if (colorPreview.length) commitColorPreview(colorPreview, false); runtime.setSelection({ [axis]: index }) }
+  const closeParamPanel = () => { if (colorPreview.length) commitColorPreview(colorPreview, false); setBrightness(0); setContrast(50); setParamPanel(null) }
+  const applyCurrentLevels = () => { submit('levels', { brightness, contrast }, null); setBrightness(0); setContrast(50) }
+  const applyCurrentThreshold = () => submit('threshold', { level: thresholdLevel })
+  const applyOtsu = () => submit('otsu')
+  const undo = () => { setError(''); setShowOriginal(false); setShowColor(true); setColorPreview([]); setColorSession((value) => value + 1); if (!colorPreview.length) runtime.undo() }
+  const redo = () => { setError(''); setShowOriginal(false); setShowColor(true); setColorPreview([]); setColorSession((value) => value + 1); runtime.redo() }
+  const zoomByStep = (direction: 1 | -1) => viewportRef.current?.zoomBy(direction > 0 ? 1.25 : 0.8)
+  const fitToWindow = () => viewportRef.current?.fit()
+  const showActualSize = () => viewportRef.current?.actualSize()
+  const analyzeCurrentParticles = () => setViews((cards) => cards.some((card) => card.type === 'particles') ? cards : [...cards, { id: viewsIdRef.current++, type: 'particles' }])
+  const viewTitle = (type: ViewType) => type === 'particles' && particles ? `${copy.views.particles} · ${particles.length}` : copy.views[type]
+  const addView = (type: ViewType) => setViews((cards) => cards.some((card) => card.type === type) ? cards : [...cards, { id: viewsIdRef.current++, type }])
+  const removeView = (id: number) => setViews((cards) => cards.filter((card) => card.id !== id))
+  const exportParticlesCsv = () => {
+    if (!particles) return
+    const lines = ['id,area,perimeter,circularity,centroid_x,centroid_y,bounds_x,bounds_y,bounds_width,bounds_height', ...particles.map((p) => [p.id,p.area,p.perimeter,p.circularity,p.centroidX,p.centroidY,p.bounds.x,p.bounds.y,p.bounds.width,p.bounds.height].join(','))]
+    download(new Blob([lines.join('\n') + '\n'], { type: 'text/csv;charset=utf-8' }), `${sourceName.replace(/\.[^.]+$/, '')}-particles.csv`)
+  }
+  const exportPng = async () => {
+    if (!displayBlock) return
+    setError(''); setExporting(true)
     try {
       const { encodeImageBlock } = await import('../engine/compute/itk')
-      const bytes = await encodeImageBlock(image, 'image/tiff', state.dataset.spatialTransform)
-      download(new Blob([bytes as unknown as BlobPart], { type: 'image/tiff' }), `${baseName(state)}.tiff`)
-    } catch (error) {
-      if (image.dtype === 'uint8' && image.axes.length === 2) {
-        const width = image.shape[image.axes.indexOf('x')] ?? 1
-        const height = image.shape[image.axes.indexOf('y')] ?? 1
-        const bytes = encodeTiff([{ width, height, data: image.data as Uint8Array }])
-        download(new Blob([bytes as unknown as BlobPart], { type: 'image/tiff' }), `${baseName(state)}.tiff`)
-      } else {
-        setExportError(`TIFF 导出失败：${error instanceof Error ? error.message : String(error)}`)
-      }
-    }
+      const bytes = await encodeImageBlock(toDisplayBlock(displayBlock, displayWindow, rasterOptions), 'image/png')
+      const blob = new Blob([bytes as unknown as BlobPart], { type: 'image/png' })
+      download(blob, `${sourceName.replace(/\.[^.]+$/, '')}-result.png`)
+    } catch (error) { setError(error instanceof Error ? error.message : String(error)) }
+    finally { setExporting(false) }
   }
+  const downloadTiff = async (allPages: boolean) => {
+    if (!image) return
+    setError(''); setExporting(true)
+    try {
+      if (allPages && colorPreview.length) { commitColorPreview(colorPreview, false); await runtime.run() }
+      const frames = allPages ? runtime.exportFrames() : (async function* () { yield isRgb && colorPreview.length ? applyColorAdjustments(image, colorPreview) : image })()
+      const blob = await encodeTiffStack(frames, allPages ? frameCount : 1)
+      download(blob, `${sourceName.replace(/\.[^.]+$/, '')}-${allPages ? 'stack' : 'result'}.tif`)
+    } catch (error) { setError(error instanceof Error ? error.message : String(error)) }
+    finally { setExporting(false) }
+  }
+  // 剖面图卡片：ROI 水平中线（无选区时为图像中线）上的灰度曲线。
+  useEffect(() => {
+    const canvas = profileCanvasRef.current
+    if (!canvas) return
 
-  const statusText = state.status === 'importing' ? '导入中…'
-    : state.status === 'running' ? '计算中…'
-      : state.status === 'error' ? `错误：${state.error ?? ''}`
-        : state.dataset ? '就绪' : '请导入科学图像（TIFF / PNG）'
+    const draw = () => {
+      const prepared = prepareChartCanvas(canvas, 112)
+      if (!prepared) return
+      const { context, width: cssWidth } = prepared
+      const cssHeight = 112
+      const padLeft = 6
+      const padRight = 6
+      const padTop = 14
+      const padBottom = 16
+      const plotWidth = cssWidth - padLeft - padRight
+      const plotHeight = cssHeight - padTop - padBottom
+      const styles = getComputedStyle(canvas)
+      const foreground = styles.getPropertyValue('--foreground').trim() || '#111111'
+      const primary = styles.getPropertyValue('--primary').trim() || '#3b82f6'
+
+      // y 轴网格 255 / 128 / 0
+      context.strokeStyle = foreground
+      context.lineWidth = 1
+      for (const value of [stats?.histogramMax ?? 255, ((stats?.histogramMin ?? 0) + (stats?.histogramMax ?? 255)) / 2, stats?.histogramMin ?? 0]) {
+        const y = Math.round(padTop + plotHeight * (1 - (value - (stats?.histogramMin ?? 0)) / ((stats?.histogramMax ?? 255) - (stats?.histogramMin ?? 0) || 1))) + 0.5
+        context.globalAlpha = value === 128 ? 0.1 : 0.16
+        context.beginPath()
+        context.moveTo(padLeft, y)
+        context.lineTo(padLeft + plotWidth, y)
+        context.stroke()
+      }
+      context.globalAlpha = 1
+
+      context.font = '9px ui-monospace, SFMono-Regular, monospace'
+      context.fillStyle = foreground
+      context.globalAlpha = 0.55
+      context.textAlign = 'right'
+      context.fillText(String(stats?.histogramMax ?? 255), padLeft + plotWidth, padTop - 5)
+      context.fillText(String(stats?.histogramMin ?? 0), padLeft + plotWidth, cssHeight - 5)
+
+      const values = profileData
+      if (values && values.length >= 2) {
+        const stepX = plotWidth / (values.length - 1)
+        const pointX = (index: number) => padLeft + index * stepX
+        const pointY = (value: number) => padTop + plotHeight * (1 - (value - (stats?.histogramMin ?? 0)) / ((stats?.histogramMax ?? 255) - (stats?.histogramMin ?? 0) || 1))
+
+        // 面积填充
+        context.beginPath()
+        context.moveTo(pointX(0), padTop + plotHeight)
+        for (let i = 0; i < values.length; i += 1) context.lineTo(pointX(i), pointY(values[i]))
+        context.lineTo(pointX(values.length - 1), padTop + plotHeight)
+        context.closePath()
+        context.fillStyle = primary
+        context.globalAlpha = 0.12
+        context.fill()
+        context.globalAlpha = 1
+
+        // 曲线
+        context.beginPath()
+        for (let i = 0; i < values.length; i += 1) {
+          const x = pointX(i)
+          const y = pointY(values[i])
+          if (i === 0) context.moveTo(x, y)
+          else context.lineTo(x, y)
+        }
+        context.strokeStyle = primary
+        context.lineWidth = 1.5
+        context.lineJoin = 'round'
+        context.stroke()
+
+        // 峰值与线长标注
+        let peak = 0
+        for (const value of values) if (value > peak) peak = value
+        context.fillStyle = foreground
+        context.globalAlpha = 0.55
+        context.textAlign = 'left'
+        context.fillText(String(peak), padLeft, padTop - 5)
+        context.textAlign = 'center'
+        context.fillText(`${values.length} px`, padLeft + plotWidth / 2, cssHeight - 5)
+      }
+      context.globalAlpha = 1
+    }
+
+    draw()
+    const observer = new ResizeObserver(draw)
+    observer.observe(canvas)
+    return () => observer.disconnect()
+  }, [profileData, stats, views])
+
+  /* ---------------- 右栏：卡片式视图（一个卡片 = 一个可视化） ---------------- */
+
+  const viewCards = views.length ? (
+    <div className="grid gap-4">
+      {views.map((card) => (
+        <section key={card.id} className="grid gap-2 rounded-[calc(var(--radius-box)+0.25rem)] bg-muted/50 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{viewTitle(card.type)}</h3>
+            <button
+              type="button"
+              aria-label={copy.close}
+              onClick={() => removeView(card.id)}
+              className="rounded-[var(--radius-field)] p-1 text-base-content/50 transition hover:bg-base-200 hover:text-base-content"
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          {card.type === 'measurement' ? (
+            !hasImage ? (
+              <p className="text-sm text-base-content/55">{copy.emptyDescription}</p>
+            ) : stats ? (
+              <dl className="grid grid-cols-2 gap-2">
+                {[
+                  [copy.stats.pixels, stats.count.toLocaleString()],
+                  [copy.stats.area, stats.area.toLocaleString()],
+                  [copy.stats.mean, stats.mean.toFixed(2)],
+                  [copy.stats.min, String(stats.min)],
+                  [copy.stats.max, String(stats.max)],
+                  [copy.stats.stdDev, stats.stdDev.toFixed(2)],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-[var(--radius-field)] bg-base-100 px-3 py-2">
+                    <dt className="text-[11px] text-base-content/55">{label}</dt>
+                    <dd className="font-mono text-sm font-semibold tabular-nums text-base-content">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="text-sm text-base-content/55">{scope === 'roi' && !roi ? copy.roi.needRoi : copy.status.loading}</p>
+            )
+          ) : null}
+
+          {card.type === 'histogram' ? (
+            <div className="rounded-[var(--radius-field)] bg-base-100">
+              <HistogramChart
+                data={stats ? { counts: stats.histogram, min: stats.histogramMin, max: stats.histogramMax } : null}
+                height={112}
+                color="var(--foreground)"
+                labels={{ count: copy.stats.pixel, cumulative: copy.stats.cumulative, level: copy.stats.level, frequency: copy.stats.frequency, empty: stats ? '' : copy.status.loading }}
+                ariaLabel={copy.views.histogram}
+              />
+            </div>
+          ) : null}
+
+          {card.type === 'profile' ? (
+            <div className="grid gap-1">
+              <canvas ref={profileCanvasRef} className="block w-full rounded-[var(--radius-field)] bg-base-100" style={{ height: 112 }} />
+              <p className="text-[11px] text-base-content/55">{copy.views.profileNote}</p>
+            </div>
+          ) : null}
+
+          {card.type === 'particles' ? (
+            particles ? (
+              <>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="grid gap-1">
+                    <Label htmlFor="imagej-particle-min-area" className="text-xs">{copy.binary.minArea}</Label>
+                    <input
+                      id="imagej-particle-min-area"
+                      type="number"
+                      min={1}
+                      max={current ? current.width * current.height : undefined}
+                      step={1}
+                      value={minParticleArea}
+                      onChange={(event) => setMinParticleArea(Math.max(1, Math.round(Number(event.target.value) || 1)))}
+                      className="h-8 w-24 rounded-md border border-base-300 bg-base-100 px-2 text-sm"
+                    />
+                  </div>
+                  <Button type="button" variant="secondary" size="sm" className="h-8" onClick={analyzeCurrentParticles}>
+                    {copy.binary.analyze}
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="h-8" onClick={exportParticlesCsv}>{copy.binary.exportCsv}</Button>
+                </div>
+                <div className="max-h-56 overflow-auto rounded-[var(--radius-field)] bg-base-100">
+                  <table className="w-full min-w-[280px] text-left text-xs tabular-nums">
+                    <thead><tr className="border-b border-base-300"><th className="p-1.5">#</th><th className="p-1.5">{copy.stats.area}</th><th className="p-1.5">{copy.binary.perimeter}</th><th className="p-1.5">{copy.binary.circularity}</th><th className="p-1.5">{copy.binary.centroid}</th></tr></thead>
+                    <tbody>{particles.map((particle) => (
+                      <tr key={particle.id} className="border-b border-base-200">
+                        <td className="p-1.5">{particle.id}</td><td className="p-1.5">{particle.area}</td>
+                        <td className="p-1.5">{particle.perimeter}</td>
+                        <td className="p-1.5">{particle.circularity.toFixed(3)}</td>
+                        <td className="p-1.5">({particle.centroidX.toFixed(1)}, {particle.centroidY.toFixed(1)})</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <Button type="button" variant="secondary" size="sm" className="h-8 w-full" disabled={!hasImage || busy} onClick={analyzeCurrentParticles}>
+                {copy.binary.analyze}
+              </Button>
+            )
+          ) : null}
+        </section>
+      ))}
+    </div>
+  ) : (
+    <p className="rounded-[calc(var(--radius-box)+0.25rem)] bg-muted/50 p-4 text-sm text-base-content/55">
+      {hasImage ? copy.views.empty : copy.emptyDescription}
+    </p>
+  )
+
+  /* ---------------- 渲染 ---------------- */
 
   return (
-    <div className="flex h-screen min-h-0 flex-col bg-base-100 text-base-content">
-      <AppNavbar />
-      <div className="flex min-h-0 flex-1">
-        <aside className="flex w-72 shrink-0 flex-col border-r border-base-300">
-          <div className="border-b border-base-300 p-3">
-            <input ref={fileInputRef} type="file" accept=".tif,.tiff,.png,image/tiff,image/png" className="hidden" onChange={onFile} />
-            <Button type="button" size="sm" className="w-full" onClick={() => fileInputRef.current?.click()}>
-              <FileUp size={14} className="mr-1" />导入图像
+    <div className="grid h-screen grid-rows-[var(--navbar-height)_minmax(0,1fr)] bg-base-100">
+      <AppNavbar
+        section="imagej"
+        toolbar={
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,.tif,.tiff"
+              className="hidden"
+              onChange={onFileInput}
+            />
+            <Button
+              type="button"
+              size="sm"
+              className="shrink-0 font-semibold"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <ImageIcon size={14} strokeWidth={2.2} />
+              {copy.openImage}
             </Button>
-            <p className="mt-2 text-xs text-base-content/60">{statusText}</p>
-          </div>
+            {sourceName ? (
+              <span className="hidden max-w-48 shrink-0 truncate rounded-[var(--radius-field)] bg-muted px-1.5 py-1 text-[11px] text-base-content/70 sm:inline">
+                {sourceName}
+              </span>
+            ) : null}
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            <section className="mb-4">
-              <h2 className="mb-2 text-xs font-semibold uppercase text-base-content/60">步骤</h2>
-              {state.recipe && state.recipe.steps.length > 0 ? (
-                <ul className="grid gap-1">
-                  {state.recipe.steps.map((step, index) => (
-                    <li key={step.id}>
-                      <div className={`flex items-center gap-1 rounded border px-2 py-1 text-xs ${selectedStepId === step.id ? 'border-primary' : 'border-base-300'}`}>
-                        <button type="button" className="flex-1 text-left" onClick={() => setSelectedStepId(step.id)}>{index + 1}. {step.op}</button>
-                        <button type="button" className="opacity-60 hover:opacity-100" onClick={() => runtime.viewStep(step.id)} title="查看此步">看</button>
-                        <button type="button" onClick={() => runtime.removeStep(step.id)} title="删除"><X size={12} /></button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-xs text-base-content/50">尚未添加步骤，源图直接显示。</p>
-              )}
-              {selectedStep && (
-                <div className="mt-2">
-                  <StepParamsEditor
-                    capability={getOperator(selectedStep.op)!}
-                    params={selectedStep.params}
-                    onApply={(next) => runtime.updateParams(selectedStep.id, next)}
-                  />
-                </div>
-              )}
-            </section>
-
-            {registry.categories.map((category) => (
-              <section key={category} className="mb-3">
-                <h3 className="mb-1 text-xs font-semibold text-base-content/60">{CATEGORY_LABEL[category] ?? category}</h3>
-                <div className="flex flex-wrap gap-1">
-                  {registry.operators.filter((operator) => operator.category === category).map((operator) => (
-                    <Button key={operator.kind} type="button" size="sm" variant="outline" className="h-7 px-2 text-xs"
-                      disabled={!state.dataset}
-                      onClick={() => runtime.addStep(operator.kind)}>
-                      {operator.labelKey}
-                    </Button>
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-
-          <div className="grid gap-1 border-t border-base-300 p-3">
-            <div className="grid grid-cols-2 gap-1">
-              <Button type="button" size="sm" variant="outline" className="h-7" disabled={!runtime.canUndo()} onClick={() => runtime.undo()}>
-                <Undo2 size={13} className="mr-1" />撤销
-              </Button>
-              <Button type="button" size="sm" variant="outline" className="h-7" disabled={!state.dataset} onClick={() => runtime.viewStep(undefined)}>查看结果</Button>
-            </div>
-            <div className="grid grid-cols-2 gap-1">
-              <Button type="button" size="sm" variant="outline" className="h-7" disabled={!state.image} onClick={exportPng}>
-                <Download size={13} className="mr-1" />PNG
-              </Button>
-              <Button type="button" size="sm" variant="outline" className="h-7" disabled={!state.image} onClick={() => void exportTiff()}>TIFF</Button>
-            </div>
-          </div>
-        </aside>
-
-        <main className="flex min-h-0 flex-1 flex-col">
-          {slices.length > 0 && (
-            <div className="flex items-center gap-3 border-b border-base-300 px-3 py-1.5 text-xs">
-              {slices.map((slice) => (
-                <div key={slice.axis} className="flex items-center gap-1">
-                  <span className="uppercase text-base-content/60">{slice.axis}</span>
-                  <Button type="button" size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => runtime.stepSelection(slice.axis, -1)}><ChevronLeft size={13} /></Button>
-                  <span>{slice.index + 1}/{slice.length}</span>
-                  <Button type="button" size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => runtime.stepSelection(slice.axis, 1)}><ChevronRight size={13} /></Button>
-                </div>
+            <div role="group" aria-label={copy.viewer.tool} className="inline-flex shrink-0 rounded-[var(--radius-field)] bg-muted p-0.5">
+              {(['pan', 'roi'] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={tool === value}
+                  className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium transition ${
+                    tool === value ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
+                  }`}
+                  onClick={() => setTool(value)}
+                >
+                  {value === 'pan' ? copy.viewer.pan : copy.viewer.roiSelect}
+                </button>
               ))}
             </div>
-          )}
 
-          <div className="relative min-h-0 flex-1 bg-black">
-            <div ref={viewportRef} className="absolute inset-0" />
-            {!state.dataset && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-base-content/50">
-                <ImageIcon size={40} />
-                <p className="text-sm">导入 TIFF 或 PNG 以开始</p>
+            {state.dataset?.componentKind === 'rgb' ? (
+              <div role="group" aria-label={copy.viewer.display} className="inline-flex shrink-0 rounded-[var(--radius-field)] bg-muted p-0.5">
+                {(['color', 'gray'] as const).map((value) => {
+                  const active = value === 'color' ? showColor : !showColor
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={active}
+                      className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium transition ${
+                        active ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
+                      }`}
+                      onClick={() => setShowColor(value === 'color')}
+                    >
+                      {value === 'color' ? copy.viewer.color : copy.viewer.gray}
+                    </button>
+                  )
+                })}
               </div>
-            )}
-            {vtkError && <p className="absolute bottom-2 left-2 text-xs text-error">VTK 初始化失败：{vtkError}</p>}
+            ) : null}
+
+            <Button type="button" variant={showOriginal ? 'secondary' : 'outline'} size="sm" aria-pressed={showOriginal} disabled={!original || busy} onClick={() => { setShowOriginal(!showOriginal); closeParamPanel() }}>{copy.original}</Button>
+
+            <span className="inline-flex shrink-0 items-center gap-0.5 rounded-[var(--radius-field)] bg-muted p-0.5">
+              <button type="button" aria-label={copy.zoomOut} disabled={!hasImage || busy} onClick={() => zoomByStep(-1)}
+                className="flex size-6 items-center justify-center rounded-[calc(var(--radius-field)-2px)] text-base-content/70 transition hover:bg-base-100 hover:text-base-content disabled:opacity-40">
+                <ZoomOut size={14} />
+              </button>
+              <span className="min-w-9 shrink-0 text-center text-[11px] tabular-nums text-base-content/70">
+                {Math.round(zoom * 100)}%
+              </span>
+              <button type="button" aria-label={copy.zoomIn} disabled={!hasImage || busy} onClick={() => zoomByStep(1)}
+                className="flex size-6 items-center justify-center rounded-[calc(var(--radius-field)-2px)] text-base-content/70 transition hover:bg-base-100 hover:text-base-content disabled:opacity-40">
+                <ZoomIn size={14} />
+              </button>
+            </span>
+            <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={!hasImage || busy} onClick={showActualSize}>
+              {copy.viewer.actualSize}
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={!hasImage || busy} onClick={fitToWindow}>
+              {copy.fit}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" className="shrink-0" disabled={!roi} onClick={() => setRoi(null)}>
+              {copy.roi.clear}
+            </Button>
+
+            {slices.map((entry) => <span key={entry.axis} className="inline-flex shrink-0 items-center gap-1">
+              <span className="text-[11px] uppercase text-base-content/55">{entry.axis}</span>
+              <Button type="button" variant="outline" size="icon-sm" disabled={busy || entry.index === 0} aria-label={`${entry.axis} previous slice`} onClick={() => selectAxis(entry.axis, entry.index - 1)}>←</Button>
+              <span className="text-[11px] tabular-nums">{entry.index + 1} / {entry.length}</span>
+              <Button type="button" variant="outline" size="icon-sm" disabled={busy || entry.index + 1 >= entry.length} aria-label={`${entry.axis} next slice`} onClick={() => selectAxis(entry.axis, entry.index + 1)}>→</Button>
+              <input type="range" min={0} max={entry.length - 1} value={entry.index} disabled={busy} onChange={(event) => selectAxis(entry.axis, Number(event.target.value))} aria-label={`${entry.axis} ${copy.stack.page}`} className="w-20 accent-primary" />
+            </span>)}
+
+            <span className="ml-auto hidden shrink-0 truncate pl-2 font-mono text-[11px] text-base-content/55 md:inline">
+              {probe ? `(${probe.x}, ${probe.y}) = ${probe.value} · ` : ''}{roiLabel}
+            </span>
+          </>
+        }
+      />
+
+      <div className="grid min-h-0 min-w-0 grid-cols-1 overflow-y-auto lg:grid-cols-[260px_minmax(0,1fr)_300px] lg:overflow-hidden">
+        {/* 左栏「处理」：参数面板（内联展开）+ 命令目录 + 撤销 / 状态 */}
+        <aside className="order-2 flex min-h-0 flex-col border-b border-base-300 bg-base-100 lg:order-none lg:h-full lg:border-b-0 lg:border-r">
+          {paramPanel === 'levels' && isRgb && image ? <ColorContrastPanel key={`${state.dataset?.id}:${colorSession}`} block={image} roi={roi} language={language} busy={busy} hasStack={Boolean(stack)} onPreview={setColorPreview} onApply={commitColorPreview} onClose={closeParamPanel} /> : null}
+          {paramPanel === 'levels' && !isRgb ? (
+            <section className="shrink-0 border-b border-base-300 px-2.5 py-2">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-base-content/60">{copy.adjust.brightness} / {copy.adjust.contrast}</h3>
+                <button type="button" aria-label={copy.close} onClick={closeParamPanel} className="rounded-[var(--radius-field)] p-1 text-base-content/50 hover:bg-muted hover:text-base-content">
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="grid gap-2">
+                <div className="grid gap-1">
+                  <Label htmlFor="imagej-brightness" className="justify-between text-xs">
+                    <span>{copy.adjust.brightness}</span>
+                    <span className="font-mono tabular-nums text-base-content/60">{brightness}</span>
+                  </Label>
+                  <input id="imagej-brightness" type="range" min={-127} max={127} step={1} value={brightness} disabled={!hasImage || busy}
+                    onChange={(event) => setBrightness(Number(event.target.value))} className="w-full accent-primary" />
+                </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="imagej-contrast" className="justify-between text-xs">
+                    <span>{copy.adjust.contrast}</span>
+                    <span className="font-mono tabular-nums text-base-content/60">{contrast}</span>
+                  </Label>
+                  <input id="imagej-contrast" type="range" min={1} max={100} step={1} value={contrast} disabled={!hasImage || busy}
+                    onChange={(event) => setContrast(Number(event.target.value))} className="w-full accent-primary" />
+                </div>
+                <Button type="button" size="sm" className="h-8" disabled={!hasImage || !levelsActive} onClick={applyCurrentLevels}>
+                  {copy.adjust.applyLevels}
+                </Button>
+              </div>
+            </section>
+          ) : null}
+
+          {paramPanel === 'threshold' ? (
+            <section className="shrink-0 border-b border-base-300 px-2.5 py-2">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-base-content/60">{copy.adjust.threshold}</h3>
+                <button type="button" aria-label={copy.close} onClick={closeParamPanel} className="rounded-[var(--radius-field)] p-1 text-base-content/50 hover:bg-muted hover:text-base-content">
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="grid gap-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="imagej-threshold-level" className="text-xs">{copy.adjust.threshold}</Label>
+                  <span className="font-mono text-xs tabular-nums text-base-content/70">{thresholdLevel}</span>
+                </div>
+                <input id="imagej-threshold-level" type="range" min={stats?.histogramMin ?? 0} max={stats?.histogramMax ?? 255} step={image?.dtype === 'float32' ? 'any' : 1} value={thresholdLevel} disabled={!hasImage || busy}
+                  aria-label={copy.adjust.threshold} onChange={(event) => setThresholdLevel(Number(event.target.value))} className="w-full accent-primary" />
+                <div className="grid grid-cols-2 gap-2">
+                  <Button type="button" size="sm" className="h-8" disabled={!hasImage || busy} onClick={applyCurrentThreshold}>
+                    {copy.adjust.thresholdApply}
+                  </Button>
+                  <Button type="button" variant="secondary" size="sm" className="h-8" disabled={!hasImage || busy} onClick={applyOtsu}>
+                    <Sparkles size={14} />
+                    {copy.adjust.otsu}
+                  </Button>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {paramPanel === 'gaussian' ? (
+            <section className="shrink-0 border-b border-base-300 px-2.5 py-2">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-base-content/60">{copy.filters.gaussian}</h3>
+                <button type="button" aria-label={copy.close} onClick={closeParamPanel} className="rounded-[var(--radius-field)] p-1 text-base-content/50 hover:bg-muted hover:text-base-content">
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="grid gap-2">
+                <div className="grid gap-1">
+                  <Label htmlFor="imagej-gaussian-sigma" className="justify-between text-xs">
+                    <span>{copy.filters.sigma}</span>
+                    <span className="font-mono tabular-nums text-base-content/60">{gaussianSigma.toFixed(1)}</span>
+                  </Label>
+                  <input id="imagej-gaussian-sigma" type="range" min={0.5} max={5} step={0.1} value={gaussianSigma} disabled={!hasImage || busy}
+                    onChange={(event) => setGaussianSigma(Number(event.target.value))} className="w-full accent-primary" />
+                </div>
+                <Button type="button" size="sm" className="h-8" disabled={!hasImage || busy} onClick={() => submit('gaussian', { sigma: gaussianSigma })}>
+                  {copy.filters.gaussian}
+                </Button>
+              </div>
+            </section>
+          ) : null}
+
+          {stack && <div className="border-b border-base-300 px-2.5 py-2 text-[11px]">
+            <label className="flex items-center gap-2"><input type="checkbox" checked={applyAll} onChange={(event) => setApplyAll(event.target.checked)} />{copy.stack.applyAll}</label>
+          </div>}
+          <div className="min-h-0 flex-1">
+            <ImageJSidebar language={language} registry={registry} onRun={runCommand} onColorBalance={isRgb ? () => runCommand('levels') : undefined} disabled={!hasImage || busy} stackActions={{ next: () => selectPage(pageIndex + 1), previous: () => selectPage(pageIndex - 1), canNext: Boolean(slice && pageIndex + 1 < slice.length), canPrevious: pageIndex > 0 }} />
           </div>
 
-          <footer className="max-h-48 overflow-y-auto border-t border-base-300 p-3 text-xs">
-            {state.error && <p className="text-error">{state.error}</p>}
-            {exportError && <p className="text-error">{exportError}</p>}
-            {state.warnings.map((warning) => <p key={warning} className="text-warning">{warning}</p>)}
-            <div className="flex flex-wrap gap-4">
-              <span>引擎：{mounted ? state.engine : '…'}</span>
-              <span>耗时：{state.lastRunMs ?? 0} ms</span>
-              <span>估算峰值：{(state.estimatedBytes / (1024 * 1024)).toFixed(1)} MiB</span>
-              <span>缓存：{state.cache.entries} 项 / {(state.cache.bytes / (1024 * 1024)).toFixed(1)} MiB（命中 {state.cache.hits} / 未命中 {state.cache.misses}）</span>
+          <details className="max-h-40 shrink-0 overflow-auto border-t border-base-300 px-3 py-2 text-xs">
+            <summary>{copy.steps.heading} · {state.recipe?.steps.length ?? 0}</summary>
+            <ol className="mt-2 grid gap-1">{state.recipe?.steps.map((step) => <li key={step.id} className="flex items-center justify-between gap-2"><button disabled={busy || !stepAppliesToSelection(step, state.selection)} onClick={() => { setShowOriginal(false); runtime.viewStep(step.id) }}>{copy.steps.ops[step.op] ?? step.op}</button><button disabled={busy} aria-label={copy.steps.remove} onClick={() => { setShowOriginal(false); runtime.removeStep(step.id) }}><X size={12} /></button></li>)}</ol>
+          </details>
+          <footer className="shrink-0 border-t border-base-300 px-2.5 py-2">
+            <div className="flex items-center gap-1">
+              <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.history.undo} disabled={busy || !historyFlags.canUndo} onClick={undo}>
+                <Undo2 size={14} />
+              </Button>
+              <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.history.redo} disabled={busy || !historyFlags.canRedo} onClick={redo}>
+                <Redo2 size={14} />
+              </Button>
             </div>
-            {state.stats && state.stats.map((stats) => (
-              <p key={stats.channel}>
-                {stats.channel}：像素 {stats.count.toLocaleString()}，均值 {stats.mean.toFixed(2)}，min {stats.min}，max {stats.max}，标准差 {stats.stdDev.toFixed(2)}
-              </p>
-            ))}
-            {state.results.some((result) => result.status === 'error') && (
-              <div>
-                {state.results.filter((result) => result.status === 'error').map((result) => (
-                  <p key={result.stepId} className="text-error">步骤 {result.stepId} 失败：{result.error}</p>
-                ))}
-              </div>
-            )}
+            <div role="status" aria-live="polite" className="mt-1 min-h-4 text-[11px] text-base-content/60">
+              {status}{state.lastRunMs !== undefined ? ` · ${state.lastRunMs} ms` : ''}
+              {analysisResult.error && <span className="text-destructive">{analysisResult.error}</span>}
+            </div>
           </footer>
+        </aside>
+
+        <main className="order-1 relative min-h-[60vh] min-w-0 bg-base-100 lg:order-none lg:min-h-0">
+          {error ? (
+            <p role="alert" className="absolute left-3 right-3 top-3 z-10 rounded-[var(--radius-box)] border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
+
+          {!hasImage ? (
+            <div
+              className="grid h-full place-items-center p-8 text-center"
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault()
+                const file = event.dataTransfer.files?.[0]
+                if (file) void loadFile(file)
+              }}
+            >
+              <div className="grid gap-2 justify-items-center">
+                <ImageIcon size={34} className="text-base-content/35" aria-hidden="true" />
+                <strong className="text-base-content">{copy.emptyTitle}</strong>
+                <p className="max-w-md text-sm text-base-content/60">{copy.emptyDescription}</p>
+                <p className="text-xs text-base-content/45">{copy.localNote}</p>
+              </div>
+            </div>
+          ) : displayBlock ? (
+            <ImageViewport ref={viewportRef} block={displayBlock} windowLevel={displayWindow} options={rasterOptions} tool={tool} roi={roi} onRoi={setRoi} onProbe={setProbe} onZoom={setZoom} />
+          ) : null}
         </main>
+
+        {/* 右栏「分析」：卡片式视图（一个卡片一个可视化）+ 导出 */}
+        <aside className="order-3 flex min-h-0 flex-col border-t border-base-300 bg-base-100 lg:order-none lg:h-full lg:border-t-0 lg:border-l">
+          <header className="flex shrink-0 items-center justify-between gap-2 border-b border-base-300 px-3 py-2">
+            {hasImage ? (
+              <span className="inline-flex rounded-[var(--radius-field)] bg-base-200 p-0.5">
+                {(['image', 'roi'] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={scope === value}
+                    disabled={value === 'roi' && !roi}
+                    className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium transition disabled:opacity-40 ${
+                      scope === value ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
+                    }`}
+                    onClick={() => setScope(value)}
+                  >
+                    {value === 'image' ? copy.roi.scopeImage : copy.roi.scopeRoi}
+                  </button>
+                ))}
+              </span>
+            ) : <span />}
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" size="sm" className="h-7" disabled={!hasImage || busy}>
+                  <Plus size={14} />
+                  {copy.views.add}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {VIEW_TYPES.map((type) => {
+                  const added = views.some((card) => card.type === type)
+                  return (
+                    <DropdownMenuItem key={type} disabled={!hasImage || added} onSelect={() => addView(type)}>
+                      <span className="flex-1">{viewTitle(type)}</span>
+                      {added ? <Check size={14} /> : null}
+                    </DropdownMenuItem>
+                  )
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </header>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">{viewCards}</div>
+
+          <footer className="shrink-0 border-t border-base-300 px-2.5 py-2">
+            <div className="grid gap-1.5">
+              <Button type="button" variant="outline" size="sm" className="h-8" disabled={!hasImage || busy} onClick={exportPng}>
+                <Download size={14} />
+                {copy.exportPng}
+              </Button>
+              <div className="grid grid-cols-2 gap-1.5">
+                <Button type="button" variant="outline" size="sm" className="h-8" disabled={!hasImage || busy} onClick={() => downloadTiff(false)}>{copy.stack.exportCurrent}</Button>
+                <Button type="button" variant="outline" size="sm" className="h-8" disabled={busy || !stack || stack.length < 2} onClick={() => downloadTiff(true)}>{copy.stack.exportAll}</Button>
+              </div>
+            </div>
+          </footer>
+        </aside>
       </div>
     </div>
   )

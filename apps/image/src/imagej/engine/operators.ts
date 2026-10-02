@@ -8,7 +8,7 @@ import type { NumberParamSpec, OperatorRegistry, OperatorSpec, ParamSpec } from 
 import type { Dtype } from './types.ts'
 
 export type OperatorOutput = 'image' | 'table' | 'stats'
-export type ScopeKind = 'image' | 'stack' | 'pages' | 'roi'
+export type ScopeKind = 'image' | 'stack' | 'pages' | 'roi' | 'frame'
 export type DimensionSupport = 2 | 3
 
 export interface OperatorInput {
@@ -87,8 +87,8 @@ function convolved(halo: number, separable: boolean): OperatorCapability {
     labelKey: '',
     output: 'image',
     params: [],
-    input: SINGLE,
-    outputImage: { dtype: 'uint8', sizeChange: 'same' },
+    input: { ...SINGLE, channels: 'any' },
+    outputImage: { dtype: 'same', sizeChange: 'same' },
     scope: ['image', 'roi'],
     regionDependency: { kind: 'finite', halo, separable },
     numeric: { internalPrecision: 'float32', rounding: 'round', boundary: 'replicate' },
@@ -121,7 +121,7 @@ export const OPERATOR_CATALOG: readonly OperatorCapability[] = [
     labelKey: 'invert',
     output: 'image',
     params: [],
-    input: SINGLE3D,
+    input: { ...SINGLE3D, channels: 'any' },
     outputImage: { dtype: 'same', sizeChange: 'same' },
     scope: ['image', 'stack', 'roi'],
     regionDependency: { kind: 'point' },
@@ -134,10 +134,12 @@ export const OPERATOR_CATALOG: readonly OperatorCapability[] = [
     category: 'adjust',
     labelKey: 'levels',
     output: 'image',
-    params: [num('brightness', 'brightness', 0, -127, 127), num('contrast', 'contrast', 50, 1, 100)],
-    input: SINGLE,
+    params: [num('brightness', 'brightness', 0, -127, 127), num('contrast', 'contrast', 50, 1, 100), num('minimum', 'minimum', 0), num('maximum', 'maximum', 255),
+      { key: 'mode', type: 'select', labelKey: 'mode', default: 'brightness-contrast', options: [{ value: 'brightness-contrast', labelKey: 'levels' }, { value: 'rgb-range', labelKey: 'levels' }] },
+      { key: 'channel', type: 'select', labelKey: 'channel', default: 'all', options: ['all', 'red', 'green', 'blue'].map((value) => ({ value, labelKey: value })) }],
+    input: { ...SINGLE, channels: 'any' },
     outputImage: { dtype: 'same', sizeChange: 'same' },
-    scope: ['image', 'roi'],
+    scope: ['image', 'frame', 'stack', 'roi'],
     regionDependency: { kind: 'point' },
     numeric: { internalPrecision: 'float32', rounding: 'truncate', boundary: 'replicate' },
     resource: { tempBytesFactor: 0, parallel: 'slices', cancellable: true },
@@ -183,7 +185,7 @@ export const OPERATOR_CATALOG: readonly OperatorCapability[] = [
     labelKey: 'gaussian',
     output: 'image',
     params: [num('sigma', 'sigma', 1.5, 0.1, 20, 0.1)],
-    input: SINGLE3D,
+    input: { ...SINGLE3D, channels: 'any' },
     outputImage: { dtype: 'same', sizeChange: 'same' },
     scope: ['image', 'stack', 'roi'],
     regionDependency: { kind: 'finite', separable: true },
@@ -268,7 +270,7 @@ export const OPERATOR_CATALOG: readonly OperatorCapability[] = [
     labelKey: 'crop',
     output: 'image',
     params: [num('x', 'x', 0, 0), num('y', 'y', 0, 0), num('width', 'width', 128, 1), num('height', 'height', 128, 1)],
-    input: SINGLE3D,
+    input: { ...SINGLE3D, channels: 'any' },
     outputImage: { dtype: 'same', sizeChange: 'crop' },
     scope: ['image'],
     regionDependency: { kind: 'point' },

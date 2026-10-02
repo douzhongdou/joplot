@@ -4,3 +4,54 @@
 
 /* 共享 UI 包在 node_modules 之外，需要显式告诉 Tailwind 扫描它的类名 */
 @source "../../../packages/ui/src";
+
+/*
+ * 图像工作台是给科学图像处理用的，必须长时间盯着画面看：
+ * 因此整个应用固定深色、接近纯黑，避免亮色界面干扰观察。
+ * 主题在 <html data-theme="dark"> 上；这里让 shadcn 的 `dark:` 变体也跟着生效
+ * （Tailwind v4 默认的 dark 变体跟随系统，不会响应该属性）。
+ */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/* 在共享深色令牌基础上进一步压暗到「黑底」，让画面本身成为焦点。 */
+[data-theme='dark'] {
+  --theme-base-100: oklch(0.08 0 0); /* 应用底板：近黑 */
+  --theme-base-200: oklch(0.15 0 0); /* 抬升面 / hover */
+  --theme-base-300: oklch(0.24 0 0); /* 分隔线 / 边框 */
+  --theme-base-content: oklch(0.93 0 0);
+  --muted-foreground: oklch(0.68 0 0);
+  --chart-grid: color-mix(in oklab, var(--color-base-content) 14%, transparent);
+}
+
+/*
+ * 紧凑密度：图像工作台里所有 shadcn 按钮统一收到 28px 高、28px 见方的图标按钮，
+ * 避免工具栏和侧栏里按钮过大、大小参差。
+ * 写成不进入 @layer 的规则，从而稳定覆盖 Tailwind 工具类（如 h-8 / size-8）。
+ */
+[data-app='imagej'] [data-slot='button'],
+[data-app='imagej'] [data-slot='select-trigger'] {
+  height: 1.75rem;
+  padding-inline: 0.5rem;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1;
+  border-radius: var(--radius-field);
+}
+
+[data-app='imagej'] [data-slot='button'][data-size='icon'],
+[data-app='imagej'] [data-slot='button'][data-size='icon-sm'],
+[data-app='imagej'] [data-slot='button'][data-size='icon-lg'] {
+  width: 1.75rem;
+  padding-inline: 0;
+}
+
+/* 顶栏比默认更矮，工具栏显得更紧凑。 */
+[data-app='imagej'] {
+  --navbar-height: 3rem;
+}
+
+@media (max-width: 639px) {
+  [data-app='imagej'] {
+    --navbar-height: 2.75rem;
+  }
+}

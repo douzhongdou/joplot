@@ -102,6 +102,11 @@ export type ScienceValueKind = ScienceValue['kind']
 export interface DatasetMapping {
   xColumn: string
   yColumns: string[]
+  /**
+   * 分组列（可选）：非空时按该列取值把每个 Y 列拆成多条曲线。
+   * 用于「同一文件里多组数据串联」（例如 condition / polarization）的场景。
+   */
+  groupColumn?: string
 }
 
 /**

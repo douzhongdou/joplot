@@ -6,6 +6,7 @@
  * 撤销恢复上一版 Recipe；是否命中缓存只影响速度，不影响正确性。
  */
 import type { Region } from './types.ts'
+import type { SliceSelection } from './dataset.ts'
 
 /** 步骤作用范围。 */
 export type StepScope =
@@ -13,6 +14,7 @@ export type StepScope =
   | { kind: 'stack' }
   | { kind: 'pages'; from: number; to: number }
   | { kind: 'roi'; region: Region }
+  | { kind: 'frame'; selection: SliceSelection; region?: Region }
 
 /** 步骤参数：数值、字符串或枚举，保持可序列化。 */
 export type StepParamValue = number | string
@@ -120,6 +122,18 @@ export function stepsThrough(recipe: Recipe, throughStepId?: string): readonly R
   return index < 0 ? recipe.steps : recipe.steps.slice(0, index + 1)
 }
 
+export function stepAppliesToSelection(step: RecipeStep, selection: SliceSelection): boolean {
+  if (step.scope?.kind === 'frame') {
+    const target = step.scope.selection
+    return (['t', 'c', 'z'] as const).every((axis) => (target[axis] ?? 0) === (selection[axis] ?? 0))
+  }
+  if (step.scope?.kind === 'pages') {
+    const index = selection.z ?? 0
+    return index >= step.scope.from && index <= step.scope.to
+  }
+  return true
+}
+
 /** 比较两份 Recipe 是否等价（用于判断提交是否真的产生变化）。 */
 export function recipeEquals(a: Recipe, b: Recipe): boolean {
   if (a.sourceId !== b.sourceId || a.sourceRevision !== b.sourceRevision) return false
@@ -135,6 +149,7 @@ export function recipeEquals(a: Recipe, b: Recipe): boolean {
  */
 export class RecipeHistory {
   private readonly entries: Recipe[] = []
+  private cursor = 0
   private readonly maxEntries: number
 
   constructor(initial: Recipe, maxEntries = 32) {
@@ -145,30 +160,39 @@ export class RecipeHistory {
 
   /** 当前（最新）Recipe。 */
   current(): Recipe {
-    return this.entries[this.entries.length - 1]!
+    return this.entries[this.cursor]!
   }
 
   /** 已提交的撤销单位数量。 */
   size(): number {
-    return this.entries.length - 1
+    return this.cursor
   }
 
   canUndo(): boolean {
-    return this.entries.length > 1
+    return this.cursor > 0
   }
+
+  canRedo(): boolean { return this.cursor + 1 < this.entries.length }
 
   /** 提交一份新 Recipe；与当前等价时不产生新历史。 */
   commit(next: Recipe): Recipe {
     if (recipeEquals(this.current(), next)) return this.current()
+    this.entries.splice(this.cursor + 1)
     this.entries.push(next)
     if (this.entries.length > this.maxEntries) this.entries.shift()
+    this.cursor = this.entries.length - 1
     return next
   }
 
   /** 撤销一个提交，返回恢复后的 Recipe；无可撤销时返回当前值。 */
   undo(): Recipe {
     if (!this.canUndo()) return this.current()
-    this.entries.pop()
+    this.cursor -= 1
+    return this.current()
+  }
+
+  redo(): Recipe {
+    if (this.canRedo()) this.cursor += 1
     return this.current()
   }
 
@@ -176,5 +200,6 @@ export class RecipeHistory {
   reset(recipe: Recipe): void {
     this.entries.length = 0
     this.entries.push(recipe)
+    this.cursor = 0
   }
 }

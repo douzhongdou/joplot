@@ -146,8 +146,6 @@ export class MemoryStorage implements Storage {
     const { axes, shape, dtype } = this.meta
     const outCount = elementCount(region.shape)
     const out = allocateBuffer(dtype, outCount)
-    const outNumbers = out as unknown as { [index: number]: number }
-    const srcNumbers = this.buffer as unknown as { [index: number]: number }
 
     // 行优先线性化：先把 start/shape 展开成每一维的步长。
     const strides = new Array<number>(shape.length)
@@ -164,7 +162,9 @@ export class MemoryStorage implements Storage {
     }
 
     const dims = region.shape.length
-    for (let outIndex = 0; outIndex < outCount; outIndex += 1) {
+    // x 轴连续：按行复制 TypedArray，避免每个像素都进行多维除法与取模。
+    const rowWidth = region.shape[dims - 1]!
+    for (let outIndex = 0; outIndex < outCount; outIndex += rowWidth) {
       let remainder = outIndex
       let srcIndex = 0
       for (let i = 0; i < dims; i += 1) {
@@ -172,7 +172,7 @@ export class MemoryStorage implements Storage {
         remainder %= outStrides[i]!
         srcIndex += ((region.start[i] ?? 0) + coordinate) * strides[i]!
       }
-      outNumbers[outIndex] = srcNumbers[srcIndex]!
+      out.set(this.buffer.subarray(srcIndex, srcIndex + rowWidth), outIndex)
     }
 
     return Promise.resolve({

@@ -1,152 +1,61 @@
-# 科学图像计算引擎：实现说明与现状
+# 科学图像引擎实现说明
 
-日期：2026-10-02。本文件记录《科学图像工作台架构方案》（`scientific-image-engine-design.md`）
-的落地情况：已实现的模块、与设计文档的对应关系、已验证与未验证的内容。
+更新日期：2026-10-02。此文档描述当前代码；长期计划见 [架构方案](scientific-image-engine-design.md)。
 
-> 设计文档仍然有效，是目标契约；本文件只说明当前代码到了哪一步。
+## 产品入口与交互
 
-## 1. 结论速览
+`/imagej` 使用 `ScientificImageWorkspace`，`/imagej/classic` 保留 Classic。主工作台接入 Classic 的三栏布局、搜索命令菜单、参数面板、显示切换、ROI、分析卡片与导出操作，数据与历史由科学引擎管理。
 
-- 已按方案搭建 P0 数据契约、区域读取、Recipe/撤销、字节预算缓存、任务优先级/合并、
-  统计合并、显示几何，并在纯 TS 后端上跑通「导入 → 显示源图 → 加步骤 → 撤销 → 跳页缓存」
-  的完整链路，全部有单测（59 个用例通过）。
-- 已接入 **ITK-Wasm** 做图像 I/O（`@itk-wasm/image-io` 的 `readImage` / `writeImage`），
-  保留 16 位 / 浮点 / 多通道精度，并提供了运行按需编译算子的 `runPipeline` 适配。
-- 已接入 **VTK.js** 二维视口（`vtkGenericRenderWindow` + `vtkImageMapper` + 最近邻插值），
-  以及 `ITKHelper.convertItkToVtkImage`。
-- 计算与解码走 **Worker**（`new Worker(new URL(...), { type: 'module' })`），Worker 不可用时
-  回退到主线程宿主，行为一致。
-- **已在真实浏览器 (`next dev`) 端到端验证**：导入 TIFF 与 PNG（PNG 走真实 ITK-Wasm 解码，
-  无回退路径）、VTK 显示、添加 invert/measure 步骤、撤销、缓存命中、C 轴通道切换均正常，
-  无控制台报错。
-- **尚未完成**：方案第 6 节要求的 ITK 算子 WASM 只是「按需编译」的机制，官方 npm 上没有
-  高斯 / 中值 / 形态学 / 连通域等滤波包；当前这些算子由纯 TS 后端实现，是 P1 可运行通路，
-  不是最终的高性能实现。分块 / halo / 跨块连通域也尚未实现。
+Stack 提供 T / C / Z 选择、滑杆、上一页 / 下一页及当前帧 / 整栈开关。RGB 的 C 轴用于合成；标量多通道按 C 选择。操作步骤保存作用范围：当前帧包含明确的 T / C / Z 与可选 ROI，整栈步骤对各帧重放。翻页不会清空历史。撤销 / 重做改变 Recipe，查看某步可暂时显示中间结果。
 
-## 2. 代码结构
+## 数据与执行
 
-```
-src/imagej/engine/
-├── types.ts             # Dtype、命名轴、SpatialTransform、Region、ImageBlock、PixelArray
-├── dataset.ts           # Dataset、revision、轴/形状派生、切片定位
-├── storage.ts           # Storage 接口、能力查询、MemoryStorage 区域读取
-├── recipe.ts            # Recipe、线性步骤链、版本键、RecipeHistory（撤销）
-├── operators.ts         # 算子能力声明、参数校验、UI 注册表桥接
-├── stats.ts             # 可合并统计（跨块 / 跨 Worker 合并）
-├── importer.ts          # 文件 → Dataset + Storage（ITK 优先，内置 TIFF 回退）
-├── runtime.ts           # 运行时：缓存、预取、步骤与撤销的状态编排
-├── scheduler/
-│   ├── cache.ts         # ByteCache：按字节预算的 LRU，支持 pin
-│   └── queue.ts         # TaskQueue 优先级/合并、VersionGuard 过期检查
-├── compute/
-│   ├── pureOps.ts       # 纯 TS 算子（8 位委托既有 ImageJ 内核，其他 dtype 通用路径）
-│   ├── engine.ts        # ComputeEngine + PureComputeEngine（Recipe 执行）
-│   └── itk.ts           # ITK-Wasm 适配：Image↔Block、读写文件、runPipeline
-├── render/
-│   ├── geometry.ts      # 索引/屏幕坐标、DPR、1:1、缩放锚点
-│   ├── rgba.ts          # 窗口映射到 RGBA（PNG 导出）
-│   └── vtk.ts           # VTK.js 二维视口（动态载入）
-└── worker/
-    ├── host.ts          # EngineHost：管理 Dataset/Storage 并执行
-    ├── engine.worker.ts # Worker 入口
-    ├── client.ts        # EngineClient（Worker / 主线程回退）
-    └── protocol.ts      # Worker 消息协议
-```
+| 模块 | 当前职责 |
+| --- | --- |
+| `dataset.ts`, `types.ts` | 轴、数据类型、维度、通道与原精度 ImageBlock |
+| `storage.ts`, `importer.ts` | 内存数据集、行复制的区域读取、ITK / 普通浏览器图像导入 |
+| `recipe.ts` | 线性操作链、帧 / ROI / 整栈范围、参数、撤销与重做 |
+| `runtime.ts` | UI 状态、版本保护、按字节缓存、邻页预取、源帧对照和顺序导出 |
+| `worker/client.ts`, `worker/host.ts` | 懒创建计算 Worker、导入 / 计算通信、释放旧数据集与中间结果 |
+| `compute/engine.ts`, `compute/pureOps.ts` | 当前帧算法、范围过滤、ROI 写回和分析结果 |
+| `compute/itk.ts` | ITK-Wasm 图像转换、解码、编码与可配置管道接口 |
+| `lib/gaussian.ts` | 可分离高斯行环形缓存，临时内存随行宽和核半径增长 |
+| `analysis.ts`, `analysis.worker.ts` | 原精度统计、直方图、剖面和粒子分析 |
+| `render/raster.ts`, `render/geometry.ts` | 视口大小 RGBA、最近邻采样、相机与坐标转换 |
+| `render/display.ts`, `tiff.ts` | PNG 显示映射、原精度 TIFF 逐页编码 |
 
-UI：`src/imagej/components/ScientificImageWorkspace.tsx`（默认页 `/imagej`）与
-`useImageRuntime.ts`。旧版 8 位工作台保留在 `/imagej/classic`（`ImageJApp.tsx`）。
+滤波、形态学、填孔和粒子分析不再以 400 万像素拒绝输入。TypeScript 内核在计算 Worker 执行；高斯临时缓冲使用行环形缓存。原先整幅高斯 Float32 临时数组和运行时保留每步整图的问题已修正。默认结果缓存预算为 256 MiB，仅固定当前结果，其余可淘汰；缓存命中同时恢复图像和分析结果。撤销保存 Recipe 元数据，不保存每步整幅图像。
 
-## 3. 与架构方案各阶段的对应
+这仍是内存内计算：源数据集与当前帧输入 / 输出会占用完整像素缓冲。形态学、填孔、粒子分析仍可能分配全帧辅助数组。计算 Worker 使 UI 可响应，但同步内核只在步骤之间检查取消，尚未实现内核执行中抢占或完整分块管道。
 
-| 阶段 | 方案要求 | 当前实现 |
-| --- | --- | --- |
-| P0 数据契约 | Dataset、ViewState、Recipe、Storage 区域接口、算子能力 | `types/dataset/storage/recipe/operators`，均有单测 |
-| P1 原型通路 | 真实科学 TIFF 读取、ITK 代表算子、VTK 二维视口、原值探查 | I/O 与 VTK 已接；算子暂用纯 TS 后端。原值探查为窗口映射前读取 |
-| P2 Stack 浏览 | 原分辨率邻页预取、队列优先级、有限缓存、过期结果 | `runtime.schedulePrefetch` + `TaskQueue` + `ByteCache` + `VersionGuard` |
-| P3 步骤与撤销 | 参数提交、作用范围、步骤查看、撤销最近提交 | `RecipeHistory` + `runtime` 已实现；作用范围中 stack/roi 已用于 measure |
-| P4 算法扩展 | 形态学、标签、统计、三维、批量导出 | 纯 TS 覆盖常见算子；三维与跨块连通域未实现 |
+ITK-Wasm 当前提供图像 I/O 和 PNG 编码，滤波仍由 TypeScript 内核完成。`ItkWasmComputeEngine` 管道接口并不等于已经配置了 ITK 滤波 WASM。实现说明不会将这两个路径混为一谈。
 
-显示状态（ViewState）目前在运行时与组件中体现为切片选择与窗宽窗位，尚未抽出独立类型；
-LUT / 缩放平移状态需要在 UI 层继续补齐。
+## 视口与精度
 
-## 4. ITK-Wasm 现状说明
+二维显示已移除 VTK.js、类型 shim、raw-loader 及 GLSL 配置。`ImageViewport` 根据可见区域和 DPR 分配 Canvas，从原始 TypedArray 按最近邻读取颜色，不创建源尺寸 Canvas 或整图 RGBA。1:1 对应一个源像素占一个设备像素；ROI 保存图像索引坐标，探查读取原始值。
 
-- `itk-wasm@1.0.0-b.201` 已是「管道」模型：核心提供 `runPipeline`，具体算子由独立 WASM 提供。
-- `@itk-wasm/image-io@1.6.1` 提供 `readImage` / `writeImage`，用于保留精度的科学图像读写；
-  其中 `readImage` 已在浏览器中验证可解码 PNG（无回退路径），TIFF 也走同一入口。
-- 官方 npm 上目前**没有**高斯、中值、形态学、连通域等滤波包；这些需要按方案「按需编译」，
-  编译产物通过 `compute/itk.ts` 的 `runItkPipeline({ pipelinePath, args, inputs, outputs })` 接入。
-- 因此当前算子的执行后端是 `PureComputeEngine`。`ItkWasmComputeEngine` 的接入点是
-  `operators.ts` 的能力声明 + `runItkPipeline`，替换时 UI 无需改动。
+科学数据始终保留只读源缓冲。灰度显示窗宽窗位、阈值预览不修改结果；彩色亮度面板按 ImageJ RGB 的实时像素语义显示调整后的值，探查、统计与 PNG 同步。应用、关闭面板、切页或继续处理时将 RGB 调整写入 Recipe。阈值整图输出 8 位；ROI 阈值保留区域外原数据类型与像素。显式灰度转换基于当前结果生成 8 位数据，保留此前的亮度等处理，撤销可恢复原精度。统计使用原值与 Welford 样本标准差，忽略 NaN / Infinity；原始浮点剖面保留其值。整数直方图按数据类型范围，浮点直方图按当前统计范围分箱。
 
-## 5. Worker 与所有权
+`ColorContrastPanel` 结合 ImageJ Brightness/Contrast 的 Minimum / Maximum / Brightness / Contrast 与 Color Balance 的 All / Red / Green / Blue。RGB 8 位映射依据 [ContrastAdjuster](https://github.com/imagej/ImageJ/blob/master/ij/plugin/frame/ContrastAdjuster.java) 和 [ColorProcessor](https://github.com/imagej/ImageJ/blob/master/ij/process/ColorProcessor.java)：256 位置滑杆、中心 / 宽度与分段斜率、最小值向零取整和 256 倍 LUT 截断。切换通道保存实时 RGB 快照并复位范围；Reset 恢复当前快照，Auto 使用 ImageJ 的峰值排除与重复点击阈值策略，Set 接受精确最小 / 最大值。Apply 保留彩色并复位控件，Stack 弹窗支持当前切片、整栈和取消。色彩平衡菜单也已接入。产品仍保留浏览器面板布局及 Recipe 撤销；不声称复制 Java 桌面窗口系统。
 
-- 解码与计算在 Worker 中；主线程只发送 `File` 与 Recipe。
-- 结果图像以 `ArrayBuffer` **转移**回主线程（`engine.worker.ts` 的 `serializeBlock`），
-  发送侧随后不可再引用，符合方案的转移所有权约定。
-- Worker 创建失败时 `createEngineClient` 回退主线程宿主（测试与旧环境）。
+分析 Worker 每幅结果只接收一次像素副本，移动 ROI 时仅更新坐标；整图统计可复用。RGB 统计使用与 Classic 一致的等权灰度。基础 3×3 滤波读取选区外邻域并仅写回 ROI；高斯、秩滤波等按 Classic 的裁剪选区语义处理。
 
-## 6. 已验证
+## 导出
 
-- `npx tsc --noEmit`：通过。
-- `npm test`：59 个用例通过，覆盖数据契约、区域读取、Recipe/撤销、统计合并、缓存淘汰、
-  任务优先级与合并、版本过期、坐标换算、算子参数校验、纯 TS 引擎（含 8/16 位、整卷统计）、
-  运行时缓存命中与撤销驱动重算、RGBA 映射。
-- 浏览器（`next dev`，Turbopack）端到端：`/imagej` 导入 8 位 TIFF 显示正确；导入 PNG 时
-  `@itk-wasm/image-io` 真实解码成功且无回退警告；invert 步骤生效；measure 输出
-  1024 像素 / 均值 126 / min 0 / max 252 / 标准差 73.93；撤销后缓存命中；C 轴 1/3 通道切换正常；
-  页脚显示「引擎：worker」，即 `new Worker(new URL(...))` 在 Turbopack 下成功打包并执行；
-  控制台无错误。
-- 2D 视口正确性（像素采样）：渲染画布随容器尺寸（877×749，非默认 300×300）；图像内容外接框
-  与源比例一致且水平垂直对齐（无 3D 倾斜）；左上白块 / 中央蓝底 / 右下红块的 RGB 与位置都正确，
-  说明彩色合成与方向均正确。
+PNG 将显示映射生成标量 8 位或 RGB 图像，再由 ITK 编码，不经过源尺寸 Canvas。TIFF 使用 Blob 按页编码，保留 `uint8`、`uint16`、`int16`、`float32` 与 RGB 的标签及原始像素；奇数像素页做偶数字节对齐。整栈逐页重放各帧 Recipe，不切换 UI 当前页，也不同时保留所有计算帧。
 
-命令（在 `apps/image` 下）：
+TIFF 输出为无压缩经典 TIFF，要求同尺寸 / 通道数 / 数据类型，小于 4 GiB。T / C / Z 展平，不保留 OME / ImageJ 多维元数据。BigTIFF、磁盘虚拟栈、压缩指定页解码、超内存分块处理、Z 投影与其他禁用菜单仍未实现。
 
-```bash
-npx tsc --noEmit
-npm test
-```
+## Next.js 集成
 
-### Turbopack 配置要求
+`next.config.ts` 保留 ITK 包的浏览器入口别名以供 Turbopack 解析。Worker 通过静态 `new URL(..., import.meta.url)` 构建。懒创建计算 Worker 与延迟最终释放避免 React StrictMode 的重复初始化 / 清理破坏运行时；真实卸载释放 Worker。
 
-VTK.js 与 ITK-Wasm 在本项目的 Next 16（Turbopack 默认）下需要两项配置（见 `next.config.ts`）：
+## 验证记录
 
-```ts
-turbopack: {
-  rules: {
-    // VTK.js 以字符串导入 .glsl；Turbopack 内置 type:'raw' 对深层导入不生效，改用 raw-loader。
-    '*.glsl': { loaders: ['raw-loader'], as: '*.js' },
-  },
-  resolveAlias: {
-    // 这两个包的 exports 条件里没有 import，Turbopack 无法直接解析，指到具体浏览器入口。
-    'itk-wasm': 'itk-wasm/dist/index.js',
-    '@itk-wasm/image-io': '@itk-wasm/image-io/dist/index.js',
-  },
-}
-```
+- 图像应用 90 个测试通过，包括旧算法、RGB 轴与形状、ImageJ 彩色 LUT / 滑杆 / Auto / 分通道 / ROI / 4K RGB、缓存淘汰、Stack 作用范围、撤销 / 重做、ROI 原精度、浮点算子及 TIFF 像素回归。
+- 算法实际运行 4096×2160 与 7680×4320 的最小 / 最大滤波及 8K 高斯；高斯行缓存对照整幅浮点参考。宽 65536 的视口单测验证原值与固定屏幕缓冲。
+- 浏览器验证双页 TIFF 翻页、当前页 / 整栈操作、撤销 / 重做、ROI 绘制与选区像素写回、统计 / 剖面、16 位 TIFF 导入与原精度导出。
+- 浏览器验证 7680×4320 导入、高斯 / 最小滤波、完整分辨率 ITK PNG 导出及视口尺寸；另验证 RGB PNG、自动灰度、亮度应用和阈值预览。无页面异常。
+- 图像应用 TypeScript 检查和生产构建通过。
 
-`raw-loader` 是 `apps/image` 的开发依赖。缺少上述配置时，动态 import 会静默失败并回退到内置
-8 位 TIFF 解码器，VTK 则会因着色器为空而在渲染时抛错。
-
-## 7. 未验证 / 限制
-
-- 浏览器验证覆盖的是 `next dev`（Turbopack 开发构建）与主路径；**生产构建（`next build`）未运行**
-  （仓库约定不运行 build），其他浏览器、GPU 与 WebGPU 后端未验证。
-- Worker 路径已确认（页脚显示「引擎：worker」）；主线程回退路径仅在单测中以注入客户端方式覆盖。
-- 纯 TS 后端整帧处理，未做分块 / halo / 重叠块，也未实现跨块连通域合并（方案第 6 节）。
-- `measure` 仅产出单通道统计；粒子表与直方图尚未接入新工作台。
-- RGB/彩色图像以 `c` 轴平面存放并合成彩色显示（`componentKind: 'rgb'`，默认线性插值）；逐像素
-  算子暂不支持彩色输入，会给出明确错误，需先添加 grayscale 步骤。
-- 新工作台 UI 文案目前为中文，尚未接入 `@joplot/i18n` 的中英日字典。
-- 递归高斯的分块限制、GPU 纹理精度、默认内存预算与 Worker 数量等，仍属方案第 13 节
-  要求的实测项。
-- 磁盘派生缓存、刷新恢复、OME-Zarr、远程存储 / 计算未实现（方案列为后续）。
-
-## 8. 后续建议顺序
-
-1. 在真实浏览器验证 P1 链路（读取指定页、一个滤波、一个统计、VTK 显示、翻页、撤销）。
-2. 编译所需的 ITK 算子 WASM，逐个替换 `PureComputeEngine` 的对应分支，并用黄金样例比对。
-3. 实现分块执行与 halo 管理，替换「整帧处理」；补跨块连通域标签合并。
-4. 把 ViewState（LUT、缩放、平移、当前工具）抽成独立类型并接入运行时。
-5. 接入 i18n 与更多分析视图（直方图、粒子表、ROI）。
+这些验证覆盖具体图像和算法，不构成任意图像尺寸或任意 Stack 页数的承诺。后续大数据能力需要按需读取和磁盘存储，而不只是提高分配上限。

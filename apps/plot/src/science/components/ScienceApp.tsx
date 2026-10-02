@@ -540,11 +540,11 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
     }
   }
 
-  const updateMapping = (datasetId: string, nextX: string, nextYs: string[]) => {
+  const updateMapping = (datasetId: string, nextX: string, nextYs: string[], nextGroup = '') => {
     if (importingRef.current) return
     const summary = datasets.find((candidate) => candidate.id === datasetId)
     if (!summary) return
-    const next = { ...mappings, [datasetId]: sanitizeMapping(summary, nextX, nextYs) }
+    const next = { ...mappings, [datasetId]: sanitizeMapping(summary, nextX, nextYs, nextGroup) }
     setMappings(next)
     setImportError('')
     // 映射变化不终止 Worker：把 mappings 发过去重建 base。
@@ -579,7 +579,9 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
         return
       }
       const nextMappings = Object.fromEntries(
-        restored.recipe.datasets.map((entry) => [entry.datasetId, { xColumn: entry.xColumn, yColumns: entry.yColumns }]),
+        restored.recipe.datasets.map((entry) => [entry.datasetId, entry.groupColumn
+          ? { xColumn: entry.xColumn, yColumns: entry.yColumns, groupColumn: entry.groupColumn }
+          : { xColumn: entry.xColumn, yColumns: entry.yColumns }]),
       )
       setSelectedId(restored.recipe.selectedId)
       // 先落步骤，使 mutate 结果按「步骤未变」路径原子采纳。
@@ -616,6 +618,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
         datasetId: dataset.id,
         xColumn: mappings[dataset.id]?.xColumn ?? '',
         yColumns: mappings[dataset.id]?.yColumns ?? [],
+        ...(mappings[dataset.id]?.groupColumn ? { groupColumn: mappings[dataset.id]!.groupColumn } : {}),
       })),
       steps,
       selectedId,
