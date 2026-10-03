@@ -6,7 +6,7 @@
  */
 import type { Dataset, SliceSelection } from '../dataset.ts'
 import type { Storage } from '../storage.ts'
-import { importFile, type ImportResult } from '../importer.ts'
+import { importFile, importImageStack, type ImportResult } from '../importer.ts'
 import { PureComputeEngine, type EngineRunResult } from '../compute/engine.ts'
 import type { Recipe } from '../recipe.ts'
 import type { Region } from '../types.ts'
@@ -31,6 +31,12 @@ export class EngineHost {
 
   async import(file: File, decoder?: (file: File) => Promise<unknown | null>): Promise<ImportResult> {
     const result = await importFile(file, decoder as never)
+    this.entries.set(result.dataset.id, { dataset: result.dataset, storage: result.storage, controller: new AbortController() })
+    return result
+  }
+
+  async importStack(files: File[], decoder?: (file: File) => Promise<unknown | null>): Promise<ImportResult> {
+    const result = await importImageStack(files, decoder as never)
     this.entries.set(result.dataset.id, { dataset: result.dataset, storage: result.storage, controller: new AbortController() })
     return result
   }

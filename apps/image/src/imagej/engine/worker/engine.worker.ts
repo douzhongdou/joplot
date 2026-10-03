@@ -58,6 +58,12 @@ async function handle(request: WorkerRequest): Promise<void> {
       scope.postMessage(response)
       return
     }
+    case 'import-stack': {
+      const result = await host.importStack(request.files)
+      const response: ImportedResponse = { type: 'imported', id: request.id, dataset: result.dataset }
+      scope.postMessage(response)
+      return
+    }
     case 'run': {
       const outcome = await host.run(request)
       const response: ResultResponse = {

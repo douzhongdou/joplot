@@ -8,6 +8,7 @@ import type { Image as ItkImage } from 'itk-wasm'
 import { createDataset, nextDatasetId, type Dataset } from './dataset.ts'
 import { MemoryStorage, type Storage, type StorageMetadata } from './storage.ts'
 import { TiffStackStorage } from './storage-tiff.ts'
+import { MultiFrameStorage, frameSignature } from './storage-multi.ts'
 import { TiffPageSource, dtypeOf } from './tiff/source.ts'
 import { type Dtype, type ChannelInfo, uncalibratedSpatialTransform, allocateBuffer, type PixelArray } from './types.ts'
 import { decodeTiff } from '../lib/tiff.ts'
@@ -325,6 +326,79 @@ async function fallbackTiff(file: File): Promise<ImportResult | null> {
   const buffer = await file.arrayBuffer()
   const pages = decodeTiff(buffer)
   return datasetFromGrayPages(file, pages, pages[0]!.width, pages[0]!.height)
+}
+
+/**
+ * 把多个图像文件合成一个 Stack。
+ *
+ * 页映射为 z 轴切片（与 `storage-tiff.ts` 的轴映射一致）。要求所有来源同 dtype、
+ * 同 y/x 尺寸、同分量语义，且各自都是单帧；否则抛出可读错误交给 UI 展示。
+ */
+export async function importImageStack(
+  files: readonly File[],
+  decoder?: (file: File) => Promise<ItkImage | null>,
+): Promise<ImportResult> {
+  if (files.length < 2) throw new Error('合成 Stack 至少需要两张图像')
+  const results = await Promise.all(files.map((file) => importFile(file, decoder)))
+  const first = results[0]!
+  const signature = frameSignature(first.storage.metadata())
+  const warnings: string[] = []
+  for (let index = 0; index < results.length; index += 1) {
+    const result = results[index]!
+    const sig = frameSignature(result.storage.metadata())
+    if (sig.multiFrame) throw new Error(`第 ${index + 1} 张「${files[index]!.name}」本身是多页 Stack，不能再合成 Stack`)
+    if (sig.dtype !== signature.dtype || sig.width !== signature.width || sig.height !== signature.height || sig.componentKind !== signature.componentKind) {
+      throw new Error(`第 ${index + 1} 张「${files[index]!.name}」的位深 / 尺寸 / 分量与第一张不一致，无法合成 Stack`)
+    }
+    warnings.push(...result.warnings)
+  }
+
+  const rgb = signature.componentKind === 'rgb'
+  const axes: Dataset['axes'] = rgb ? ['c', 'z', 'y', 'x'] : ['z', 'y', 'x']
+  const shape = rgb ? [3, files.length, signature.height, signature.width] : [files.length, signature.height, signature.width]
+  const channels = rgb
+    ? [
+      { index: 0, name: 'Red', kind: 'rgb' as const, displayColor: [255, 0, 0] as [number, number, number] },
+      { index: 1, name: 'Green', kind: 'rgb' as const, displayColor: [0, 255, 0] as [number, number, number] },
+      { index: 2, name: 'Blue', kind: 'rgb' as const, displayColor: [0, 0, 255] as [number, number, number] },
+    ]
+    : first.dataset.channels
+  const dataset = createDataset({
+    dtype: signature.dtype,
+    axes,
+    shape,
+    spatialTransform: first.dataset.spatialTransform,
+    channels,
+    componentKind: signature.componentKind,
+    source: {
+      kind: 'memory',
+      name: stackName(files),
+      format: 'unknown',
+      fingerprint: `stack:${files.map(fileFingerprint).join('|')}`,
+    },
+    metadata: { decodedWith: 'multi-file', pages: files.length },
+  })
+  const storageMeta: StorageMetadata = {
+    dtype: dataset.dtype,
+    axes: dataset.axes,
+    shape: dataset.shape,
+    spatialTransform: dataset.spatialTransform,
+    channels: dataset.channels,
+    source: dataset.source,
+  }
+  warnings.unshift(`已把 ${files.length} 张图像合成 Stack（z 轴 ${files.length} 页）`)
+  return {
+    dataset,
+    storage: new MultiFrameStorage(nextDatasetId('store'), storageMeta, results.map((result) => result.storage)),
+    warnings,
+  }
+}
+
+/** Stack 的展示名：文件夹导入取目录名，其余用页数。 */
+function stackName(files: readonly File[]): string {
+  const relative = (files[0] as File & { webkitRelativePath?: string }).webkitRelativePath
+  if (relative && relative.includes('/')) return relative.split('/')[0]!
+  return `${files.length} images`
 }
 
 /** 由内存中的像素数组直接构造 Dataset（测试与生成的样例）。 */

@@ -6,6 +6,8 @@ import { AppNavbar } from '../../components/AppNavbar'
 import { useI18n } from '../../i18n'
 import { Button } from '@joplot/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@joplot/ui/dropdown-menu'
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@joplot/ui/context-menu'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@joplot/ui/tabs'
 import { Label } from '@joplot/ui/label'
 import { createImagejCopy } from '../lib/i18n'
 import { levelsRange, type Rect } from '../lib/processor'
@@ -16,7 +18,8 @@ import { displayBlock as toDisplayBlock } from '../engine/render/display'
 import type { ImageBlock } from '../engine/types'
 import { encodeTiffStack } from '../engine/tiff'
 import { ImageJSidebar } from './ImageJSidebar'
-import { useImageRuntime } from './useImageRuntime'
+import { createDocumentRuntime, createWorkspaceEngine, useRuntimeState, type ImageWorkspaceEngine } from './useImageRuntime'
+import type { ImageRuntime } from '../engine/runtime'
 import { useImageAnalysis } from './useImageAnalysis'
 import { ImageViewport, type ImageViewportHandle, type PixelProbe } from './ImageViewport'
 import { ColorContrastPanel } from './ColorContrastPanel'
@@ -64,10 +67,10 @@ function prepareChartCanvas(
   return { context, width: cssWidth }
 }
 
-export function ScientificImageWorkspace() {
+function ImageDocumentView({ runtime, onOpenImage }: { runtime: ImageRuntime; onOpenImage(file: File): void }) {
   const { language } = useI18n()
   const copy = useMemo(() => createImagejCopy(language), [language])
-  const { state, runtime } = useImageRuntime()
+  const state = useRuntimeState(runtime)
   const registry = useMemo(() => toUiRegistry(), [])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const viewportRef = useRef<ImageViewportHandle>(null)
@@ -172,12 +175,14 @@ export function ScientificImageWorkspace() {
   useEffect(() => {
     if (current) setRoi((rect) => rect ? { x: Math.min(rect.x, current.width - 1), y: Math.min(rect.y, current.height - 1), width: Math.min(rect.width, current.width - Math.min(rect.x, current.width - 1)), height: Math.min(rect.height, current.height - Math.min(rect.y, current.height - 1)) } : null)
   }, [current?.width, current?.height])
-  const loadFile = async (file: File) => {
-    setError(''); setParamCommand(null); setShowColor(true); setApplyAll(false)
-    await runtime.openFile(file); seedDefaultViews()
-  }
+  /* 数据集就绪后播种默认视图：新建文档由外壳导入，不经过本组件的 loadFile。 */
+  useEffect(() => {
+    if (state.dataset) seedDefaultViews()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.dataset?.id])
+  /* 打开文件交给外壳：每个文件开一个新 tab。 */
   const onFileInput = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]; if (file) void loadFile(file); event.target.value = ''
+    const file = event.target.files?.[0]; if (file) onOpenImage(file); event.target.value = ''
   }
   const stepScope = (rect: Rect | null): StepScope => {
     const region = image && rect ? { start: image.axes.map((axis) => axis === 'x' ? rect.x : axis === 'y' ? rect.y : 0), shape: image.axes.map((axis, i) => axis === 'x' ? rect.width : axis === 'y' ? rect.height : image.shape[i]!) } : undefined
@@ -492,7 +497,7 @@ export function ScientificImageWorkspace() {
   /* ---------------- 渲染 ---------------- */
 
   return (
-    <div className="grid h-screen grid-rows-[var(--navbar-height)_minmax(0,1fr)] bg-base-100">
+    <div className="grid h-full grid-rows-[var(--navbar-height)_minmax(0,1fr)] bg-base-100">
       <AppNavbar
         section="imagej"
         toolbar={
@@ -642,7 +647,7 @@ export function ScientificImageWorkspace() {
               onDrop={(event) => {
                 event.preventDefault()
                 const file = event.dataTransfer.files?.[0]
-                if (file) void loadFile(file)
+                if (file) onOpenImage(file)
               }}
             >
               <div className="grid gap-2 justify-items-center">
@@ -737,5 +742,206 @@ export function ScientificImageWorkspace() {
         </aside>
       </div>
     </div>
+  )
+}
+
+/* ------------------------------------------------------------------ *
+ * 外壳：多文档（tab）管理
+ * ------------------------------------------------------------------ */
+
+interface DocumentEntry { id: string; title: string; files: File[]; runtime: ImageRuntime }
+
+/** 文件夹导入时按扩展名筛选图片。 */
+const IMAGE_FILE = /\.(png|jpe?g|webp|tiff?|bmp|gif)$/i
+
+let documentCounter = 0
+function nextDocumentId(): string {
+  documentCounter += 1
+  return `doc_${Date.now().toString(36)}_${documentCounter.toString(36)}`
+}
+
+/**
+ * 工作台外壳。
+ *
+ * 持有共享引擎与一组文档；每个文档 = 一个 `ImageRuntime`，并渲染一个 `ImageDocumentView`。
+ * 非活动文档用 `hidden` 保留挂载状态（缩放 / ROI / 处理记录都留在各自的组件里），
+ * 从而 tab 切换不丢视图状态。引擎（Worker + 字节缓存）由所有文档共享。
+ */
+export function ScientificImageWorkspace() {
+  const { language } = useI18n()
+  const copy = useMemo(() => createImagejCopy(language), [language])
+  const engineRef = useRef<ImageWorkspaceEngine | null>(null)
+  if (!engineRef.current) engineRef.current = createWorkspaceEngine()
+  const engine = engineRef.current
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [documents, setDocuments] = useState<DocumentEntry[]>([])
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const documentsRef = useRef(documents); documentsRef.current = documents
+
+  /* 卸载时释放全部文档运行时。 */
+  useEffect(() => () => { for (const doc of documentsRef.current) doc.runtime.dispose() }, [])
+
+  const openFiles = (files: readonly File[]) => {
+    if (!files.length) return
+    const created: DocumentEntry[] = []
+    for (const file of files) {
+      const runtime = createDocumentRuntime(engine)
+      created.push({ id: nextDocumentId(), title: file.name, files: [file], runtime })
+      void runtime.openFile(file)
+    }
+    setDocuments((docs) => [...docs, ...created])
+    setActiveId(created[created.length - 1]!.id)
+  }
+
+  /** 把多个文件作为一个 Stack 打开（文件夹导入 / 合并 tab）。 */
+  const openStackFiles = (files: readonly File[], title?: string) => {
+    if (files.length < 2) { openFiles(files); return }
+    const runtime = createDocumentRuntime(engine)
+    const entry: DocumentEntry = { id: nextDocumentId(), title: title ?? `${files.length} images`, files: [...files], runtime }
+    setDocuments((docs) => [...docs, entry])
+    setActiveId(entry.id)
+    void runtime.openStack(files)
+  }
+
+  /** 选择文件夹：过滤图片、按文件名自然排序后合成一个 Stack。 */
+  const pickFolder = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.multiple = true
+    ;(input as HTMLInputElement & { webkitdirectory: boolean }).webkitdirectory = true
+    input.onchange = () => {
+      const all = Array.from(input.files ?? [])
+      const images = all
+        .filter((file) => IMAGE_FILE.test(file.name))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+      if (!images.length) return
+      const folder = images[0]!.webkitRelativePath?.split('/')[0]
+      openStackFiles(images, folder || `${images.length} images`)
+    }
+    input.click()
+  }
+
+  /** 把左右两个 tab 的文件合成一个新的 Stack tab，并关闭原 tab（分组 = 组成 stack）。 */
+  const mergeDocuments = (leftId: string, rightId: string) => {
+    const left = documents.find((doc) => doc.id === leftId)
+    const right = documents.find((doc) => doc.id === rightId)
+    if (!left || !right) return
+    const files = [...left.files, ...right.files]
+    left.runtime.dispose(); right.runtime.dispose()
+    const runtime = createDocumentRuntime(engine)
+    const entry: DocumentEntry = { id: nextDocumentId(), title: `${files.length} images`, files, runtime }
+    setDocuments((docs) => [...docs.filter((doc) => doc.id !== leftId && doc.id !== rightId), entry])
+    setActiveId(entry.id)
+    void runtime.openStack(files)
+  }
+
+  const closeDocument = (id: string) => {
+    const index = documents.findIndex((doc) => doc.id === id)
+    if (index < 0) return
+    const doc = documents[index]!
+    const next = documents.filter((entry) => entry.id !== id)
+    doc.runtime.dispose()
+    setDocuments(next)
+    if (activeId === id) setActiveId(next[Math.min(index, next.length - 1)]?.id ?? null)
+  }
+
+  const onFileInput = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    if (files.length) openFiles(files)
+    event.target.value = ''
+  }
+
+  const closeOthers = (id: string) => {
+    for (const doc of documents) if (doc.id !== id) doc.runtime.dispose()
+    setDocuments(documents.filter((doc) => doc.id === id))
+    setActiveId(id)
+  }
+
+  const closeToRight = (id: string) => {
+    const index = documents.findIndex((doc) => doc.id === id)
+    if (index < 0) return
+    const removed = documents.slice(index + 1)
+    for (const doc of removed) doc.runtime.dispose()
+    setDocuments(documents.slice(0, index + 1))
+    if (activeId && removed.some((doc) => doc.id === activeId)) setActiveId(id)
+  }
+
+  const isLastDocument = (id: string) => documents[documents.length - 1]?.id === id
+
+  return (
+    <Tabs value={activeId ?? ''} onValueChange={setActiveId} className="grid h-screen grid-rows-[auto_minmax(0,1fr)] gap-0">
+      <div className="flex h-9 items-stretch gap-1 border-b border-base-300 bg-base-100 px-1.5">
+        <input ref={fileInputRef} type="file" multiple accept="image/*,.tif,.tiff" className="hidden" onChange={onFileInput} />
+        <TabsList className="h-full min-w-0 flex-1 items-stretch justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0">
+          {documents.map((doc, index) => (
+            <ContextMenu key={doc.id}>
+              <ContextMenuTrigger asChild>
+                <div className="group relative flex shrink-0 items-stretch">
+                  <TabsTrigger
+                    value={doc.id}
+                    title={doc.title}
+                    className="h-full max-w-44 gap-1 rounded-[var(--radius-field)] border border-transparent py-0 pr-6 pl-2 text-xs data-[state=active]:border-base-300 data-[state=active]:bg-base-200">
+                    <span className="truncate">{doc.title}</span>
+                  </TabsTrigger>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`${copy.close} ${doc.title}`}
+                    onClick={(event) => { event.stopPropagation(); closeDocument(doc.id) }}
+                    className="absolute right-0.5 top-1/2 size-5 -translate-y-1/2 rounded-[3px] text-base-content/45 opacity-60 hover:bg-base-300 hover:text-base-content hover:opacity-100">
+                    <X size={11} />
+                  </Button>
+                </div>
+              </ContextMenuTrigger>
+              <ContextMenuContent className="w-56">
+                <ContextMenuItem onSelect={() => closeDocument(doc.id)}>{copy.close}</ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem disabled={documents.length <= 1} onSelect={() => closeOthers(doc.id)}>{copy.tabs.closeOthers}</ContextMenuItem>
+                <ContextMenuItem disabled={isLastDocument(doc.id)} onSelect={() => closeToRight(doc.id)}>{copy.tabs.closeToRight}</ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem disabled={index === 0} onSelect={() => mergeDocuments(documents[index - 1]!.id, doc.id)}>{copy.tabs.mergePrevious}</ContextMenuItem>
+                <ContextMenuItem disabled={index === documents.length - 1} onSelect={() => mergeDocuments(doc.id, documents[index + 1]!.id)}>{copy.tabs.mergeNext}</ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
+          ))}
+        </TabsList>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.openImage} title={copy.openImage} className="my-auto shrink-0">
+              <Plus size={15} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>{copy.openImage}</DropdownMenuItem>
+            <DropdownMenuItem onSelect={pickFolder}>{copy.tabs.openFolder}</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      <div className="relative min-h-0">
+        {documents.length === 0 ? (
+          <div
+            className="grid h-full place-items-center p-8 text-center"
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => { event.preventDefault(); openFiles(Array.from(event.dataTransfer.files ?? [])) }}>
+            <div className="grid gap-2 justify-items-center">
+              <ImageIcon size={34} className="text-base-content/35" aria-hidden="true" />
+              <strong className="text-base-content">{copy.emptyTitle}</strong>
+              <p className="max-w-md text-sm text-base-content/60">{copy.emptyDescription}</p>
+              <p className="text-xs text-base-content/45">{copy.localNote}</p>
+              <Button type="button" size="sm" onClick={() => fileInputRef.current?.click()}>
+                <ImageIcon size={14} strokeWidth={2.2} />
+                {copy.openImage}
+              </Button>
+            </div>
+          </div>
+        ) : documents.map((doc) => (
+          <TabsContent key={doc.id} value={doc.id} forceMount className="m-0 h-full outline-none data-[state=inactive]:hidden">
+            <ImageDocumentView runtime={doc.runtime} onOpenImage={(file) => openFiles([file])} />
+          </TabsContent>
+        ))}
+      </div>
+    </Tabs>
   )
 }

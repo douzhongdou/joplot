@@ -103,6 +103,7 @@ export interface ImagejCopy {
   }
   exportPng: string
   close: string
+  tabs: { closeOthers: string; closeToRight: string; openFolder: string; mergePrevious: string; mergeNext: string }
   stack: { page: string; exportCurrent: string; exportAll: string; geometryUnavailable: string; applyAll: string }
   stats: {
     heading: string
@@ -240,6 +241,7 @@ const zhCN: ImagejCopy = {
   },
   exportPng: '导出 PNG',
   close: '关闭',
+  tabs: { closeOthers: '关闭其他', closeToRight: '关闭右侧标签', openFolder: '打开文件夹…', mergePrevious: '与左侧标签合并为 Stack', mergeNext: '与右侧标签合并为 Stack' },
   stack: { page: '切片', exportCurrent: '导出当前 TIFF', exportAll: '导出整个 TIFF 栈', geometryUnavailable: '多页栈暂不支持改变切片尺寸的操作', applyAll: '应用到整个 Stack（关闭时仅当前切片）' },
   stats: {
     heading: '测量与直方图',
@@ -377,6 +379,7 @@ const en: ImagejCopy = {
   },
   exportPng: 'Export PNG',
   close: 'Close',
+  tabs: { closeOthers: 'Close others', closeToRight: 'Close tabs to the right', openFolder: 'Open folder…', mergePrevious: 'Merge with tab on the left into a stack', mergeNext: 'Merge with tab on the right into a stack' },
   stack: { page: 'Slice', exportCurrent: 'Export current TIFF', exportAll: 'Export TIFF stack', geometryUnavailable: 'Size-changing operations are unavailable for multi-page stacks', applyAll: 'Apply to the whole Stack (off: current slice only)' },
   stats: {
     heading: 'Measurements & histogram',
@@ -514,6 +517,7 @@ const jaJP: ImagejCopy = {
   },
   exportPng: 'PNG を書き出す',
   close: '閉じる',
+  tabs: { closeOthers: '他を閉じる', closeToRight: '右側を閉じる', openFolder: 'フォルダーを開く…', mergePrevious: '左のタブとスタックに統合', mergeNext: '右のタブとスタックに統合' },
   stack: { page: 'スライス', exportCurrent: '現在の TIFF を出力', exportAll: 'TIFF スタックを出力', geometryUnavailable: '複数ページのスタックではサイズを変える操作はできません', applyAll: 'スタック全体に適用（オフ：現在のスライス）' },
   stats: {
     heading: '測定とヒストグラム',

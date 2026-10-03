@@ -35,6 +35,7 @@ function fileClient(): EngineClient {
       imported = await importFile(file)
       return imported.dataset
     },
+    async importStack() { throw new Error('测试客户端不支持 importStack') },
     async run(options): Promise<EngineResult> {
       const source = imported!
       const outcome = await engine.runRecipe(

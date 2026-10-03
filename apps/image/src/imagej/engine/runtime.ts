@@ -48,8 +48,12 @@ export interface ImageRuntimeOptions {
   client: EngineClient
   /** 缓存字节预算；默认 256 MiB（架构方案第一轮受限测试配置）。 */
   cacheBytes?: number
+  /** 共享缓存：多文档共用一个实例；提供时忽略 cacheBytes。 */
+  cache?: ByteCache<EngineResult>
   /** 是否预取邻页；默认开启。 */
   prefetch?: boolean
+  /** 是否由本运行时负责 terminate client；共享 client 时置 false。默认 true。 */
+  ownsClient?: boolean
 }
 
 const EMPTY_CACHE = { entries: 0, bytes: 0, hits: 0, misses: 0 }
@@ -65,6 +69,8 @@ export class ImageRuntime {
   private readonly queue = new TaskQueue<EngineResult>()
   private readonly guard = new VersionGuard()
   private readonly prefetchEnabled: boolean
+  private readonly ownsClient: boolean
+  private readonly ownsCache: boolean
   private readonly listeners = new Set<(state: RuntimeState) => void>()
   private state: RuntimeState
   private history: RecipeHistory | null = null
@@ -73,7 +79,9 @@ export class ImageRuntime {
 
   constructor(options: ImageRuntimeOptions) {
     this.client = options.client
-    this.cache = new ByteCache<EngineResult>(options.cacheBytes ?? 256 * 1024 * 1024)
+    this.cache = options.cache ?? new ByteCache<EngineResult>(options.cacheBytes ?? 256 * 1024 * 1024)
+    this.ownsCache = !options.cache
+    this.ownsClient = options.ownsClient ?? true
     this.prefetchEnabled = options.prefetch ?? true
     this.state = {
       dataset: null,
@@ -114,12 +122,21 @@ export class ImageRuntime {
   }
 
   async openFile(file: File): Promise<void> {
+    return this.openWith(() => this.client.import(file))
+  }
+
+  /** 把多个文件作为一个 Stack 打开（文件夹导入 / 合并 tab）。 */
+  async openStack(files: readonly File[]): Promise<void> {
+    return this.openWith(() => this.client.importStack([...files]))
+  }
+
+  private async openWith(importer: () => Promise<Dataset>): Promise<void> {
     this.emit({ status: 'importing', error: undefined, warnings: [] })
     try {
-      const dataset = await this.client.import(file)
+      const dataset = await importer()
       if (this.state.dataset) this.client.dispose(this.state.dataset.id)
       this.history = new RecipeHistory(createRecipe(dataset.id, dataset.revision))
-      this.cache.clear()
+      if (this.ownsCache) this.cache.clear()
       this.activeCacheKey = undefined
       this.guard.update(`${datasetVersionKey(dataset)}|${selectionKey({})}|`)
       this.emit({
@@ -366,8 +383,10 @@ export class ImageRuntime {
   dispose(): void {
     this.disposed = true
     this.queue.clear()
-    this.cache.clear()
-    this.client.terminate()
+    if (this.ownsCache) this.cache.clear()
+    const datasetId = this.state.dataset?.id
+    if (datasetId) this.client.dispose(datasetId)
+    if (this.ownsClient) this.client.terminate()
     this.listeners.clear()
   }
 }

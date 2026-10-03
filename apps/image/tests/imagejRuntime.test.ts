@@ -42,6 +42,7 @@ function inlineClientWith(imported: ReturnType<typeof importMemory>): EngineClie
   return {
     kind: 'inline',
     async import() { return imported.dataset },
+    async importStack() { return imported.dataset },
     async run(options): Promise<EngineResult> {
       const outcome = await engine.runRecipe(
         { dataset: imported.dataset, storage: imported.storage, selection: options.selection },

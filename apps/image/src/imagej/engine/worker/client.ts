@@ -31,6 +31,7 @@ export interface EngineResult {
 export interface EngineClient {
   readonly kind: 'worker' | 'inline'
   import(file: File): Promise<Dataset>
+  importStack(files: File[]): Promise<Dataset>
   run(options: EngineRunOptions): Promise<EngineResult>
   cancel(): void
   dispose(datasetId?: string): void
@@ -98,6 +99,12 @@ class WorkerEngineClient implements EngineClient {
     return response.dataset
   }
 
+  async importStack(files: File[]): Promise<Dataset> {
+    const response = await this.request({ type: 'import-stack', id: this.nextId++, files })
+    if (response.type !== 'imported') throw new Error('Worker 未返回导入结果')
+    return response.dataset
+  }
+
   async run(options: EngineRunOptions): Promise<EngineResult> {
     const response = (await this.request({
       type: 'run',
@@ -141,6 +148,11 @@ class InlineEngineClient implements EngineClient {
     return result.dataset
   }
 
+  async importStack(files: File[]): Promise<Dataset> {
+    const result = await this.host.importStack(files)
+    return result.dataset
+  }
+
   async run(options: EngineRunOptions): Promise<EngineResult> {
     const outcome = await this.host.run(options)
     return {
@@ -173,7 +185,7 @@ export function createEngineClient(options?: { preferWorker?: boolean; workerFac
   const get = (): EngineClient => client ??= createActiveEngineClient(options)
   return {
     kind: options?.preferWorker !== false && typeof Worker !== 'undefined' ? 'worker' : 'inline',
-    import: (file) => get().import(file), run: (request) => get().run(request),
+    import: (file) => get().import(file), importStack: (files) => get().importStack(files), run: (request) => get().run(request),
     cancel: () => client?.cancel(), dispose: (datasetId) => client?.dispose(datasetId), terminate: () => { client?.terminate(); client = undefined },
   }
 }

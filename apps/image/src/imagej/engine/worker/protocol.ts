@@ -33,6 +33,13 @@ export interface ImportRequest {
   file: File
 }
 
+/** 把多个文件合成一个 Stack 导入。 */
+export interface ImportStackRequest {
+  type: 'import-stack'
+  id: number
+  files: File[]
+}
+
 export interface RunRequest {
   type: 'run'
   id: number
@@ -55,7 +62,7 @@ export interface DisposeRequest {
   datasetId?: string
 }
 
-export type WorkerRequest = ImportRequest | RunRequest | CancelRequest | DisposeRequest
+export type WorkerRequest = ImportRequest | ImportStackRequest | RunRequest | CancelRequest | DisposeRequest
 
 export interface ImportedResponse {
   type: 'imported'
