@@ -13,9 +13,9 @@ self.onmessage = (event: MessageEvent<{ type: 'image'; block: ImageBlock } | { t
   if (!block) return
   try {
     const analyzed = request.channel ? colorHistogramBlock(block, request.channel, request.adjustments) : block
-    const base = request.channel || request.roi ? analyzeBlock(analyzed, request.roi) : wholeAnalysis ??= analyzeBlock(block)
+    const base = request.channel || request.roi ? analyzeBlock(analyzed, request.roi, false) : wholeAnalysis ??= analyzeBlock(block, null, false)
     const analysis = { ...base, profile: profileBlock(analyzed, request.profileRoi) }
-    const autoAnalysis = request.channel ? request.channel === 'all' ? analysis : analyzeBlock(colorHistogramBlock(block, 'all', request.adjustments), request.roi) : undefined
+    const autoAnalysis = request.channel ? request.channel === 'all' ? analysis : analyzeBlock(colorHistogramBlock(block, 'all', request.adjustments), request.roi, false) : undefined
     let particles
     if (request.particles) {
       const input = request.roi ? crop(analyzed, request.roi) : analyzed

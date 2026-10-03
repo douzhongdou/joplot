@@ -18,15 +18,21 @@ export function useImageAnalysis(block: ImageBlock | null, roi: Rect | null, par
     return () => { worker.terminate(); workerRef.current = null; lastBlock.current = null }
   }, [])
   useEffect(() => {
-    const worker = workerRef.current, id = ++version.current
-    setResult({})
-    if (!worker || !block) return
-    // 每幅图只复制一次给分析 Worker，ROI 移动仅传坐标，不重复复制大图。
-    if (lastBlock.current !== block) {
+    const worker = workerRef.current
+    const id = ++version.current
+    if (!worker) return
+    if (!block) { lastBlock.current = null; setResult({}); return }
+    const pageChanged = lastBlock.current !== block
+    if (pageChanged) {
+      // 每幅图只复制一次给分析 Worker；切片切换时立即分析，旧结果保留到新结果返回，
+      // 从而不会先闪空再填充（避免「重载 UI」的观感）。
       const data = block.data.slice()
       worker.postMessage({ type: 'image', block: { ...block, data } }, [data.buffer])
       lastBlock.current = block
+      worker.postMessage({ type: 'analyze', id, roi, profileRoi, particles, minArea, channel, adjustments })
+      return
     }
+    // ROI / 参数变化：80ms 防抖，避免连续拖动时堆积请求。
     const timeout = setTimeout(() => worker.postMessage({ type: 'analyze', id, roi, profileRoi, particles, minArea, channel, adjustments }), 80)
     return () => clearTimeout(timeout)
   }, [block, roi, profileRoi, particles, minArea, channel, adjustments])
