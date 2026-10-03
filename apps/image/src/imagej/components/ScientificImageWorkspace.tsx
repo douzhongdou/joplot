@@ -27,25 +27,27 @@ import { ColorContrastPanel } from './ColorContrastPanel'
 import { StackBuilderDialog, type StackRow } from './StackBuilderDialog'
 import { StackOrderDialog } from './StackOrderDialog'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@joplot/ui/dialog'
-import { GaussianCommandPanel, LevelsCommandPanel, ThresholdCommandPanel } from './CommandPanels'
+import { DebayerCommandPanel, GaussianCommandPanel, LevelsCommandPanel, ThresholdCommandPanel } from './CommandPanels'
 import { HistogramChart } from './HistogramChart'
 import { applyColorAdjustments, type ColorAdjustment } from '../engine/colorAdjustments'
 
 /** 需要先调参数再执行的操作：面板在对应命令项下方展开，所以这里存命令 label。 */
-type ParamCommand = 'Brightness/Contrast' | 'Color Balance' | 'Threshold' | 'Gaussian Blur'
-type ParamOp = 'levels' | 'threshold' | 'gaussian'
+type ParamCommand = 'Brightness/Contrast' | 'Color Balance' | 'Threshold' | 'Gaussian Blur' | 'Debayer'
+type ParamOp = 'levels' | 'threshold' | 'gaussian' | 'debayer'
 /** 命令 label → 算子 kind（命令目录里 label 是唯一键）。 */
 const COMMAND_OPS: Record<ParamCommand, ParamOp> = {
   'Brightness/Contrast': 'levels',
   'Color Balance': 'levels',
   Threshold: 'threshold',
   'Gaussian Blur': 'gaussian',
+  Debayer: 'debayer',
 }
 /** 算子 kind → 命令目录里默认展开的那一项。 */
 const OP_COMMANDS: Record<ParamOp, ParamCommand> = {
   levels: 'Brightness/Contrast',
   threshold: 'Threshold',
   gaussian: 'Gaussian Blur',
+  debayer: 'Debayer',
 }
 type ViewType = 'measurement' | 'histogram' | 'profile' | 'particles'
 interface ViewCard { id: number; type: ViewType }
@@ -85,6 +87,7 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
   const [probe, setProbe] = useState<PixelProbe | null>(null)
   const [brightness, setBrightness] = useState(0), [contrast, setContrast] = useState(50)
   const [gaussianSigma, setGaussianSigma] = useState(1.5), [thresholdLevel, setThresholdLevel] = useState(128)
+  const [debayerPattern, setDebayerPattern] = useState('auto'), [debayerAlgorithm, setDebayerAlgorithm] = useState('malvar')
   const [scope, setScope] = useState<'image' | 'roi'>('image')
   const [applyAll, setApplyAll] = useState(false)
   const [paramCommand, setParamCommand] = useState<ParamCommand | null>(null)
@@ -204,8 +207,10 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
     if (colorPreview.length) commitColorPreview(colorPreview, applyAll)
     const ci = image.axes.indexOf('c')
     const needsGray = getOperator(op)?.input.channels !== 'any'
-    setShowColor(op !== 'grayscale' && !needsGray)
-    if (op !== 'grayscale' && needsGray && ci >= 0 && (image.shape[ci] ?? 1) > 1) runtime.addStep('grayscale', {}, stepScope(null))
+    // debayer 需要单通道输入，但输出是 RGB，应保持彩色显示；其他需要灰度的算子仍先转灰度。
+    const outputsRgb = op === 'debayer'
+    setShowColor(outputsRgb || (op !== 'grayscale' && !needsGray))
+    if (op !== 'grayscale' && !outputsRgb && needsGray && ci >= 0 && (image.shape[ci] ?? 1) > 1) runtime.addStep('grayscale', {}, stepScope(null))
     runtime.addStep(op, params, stepScope(rect))
   }
   /** 打开某个命令自己的参数面板（先提交正在预览的色彩调整，并切到合适的显示模式）。 */
@@ -222,7 +227,7 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
   }
   const runCommand = (op: string) => {
     if (!image || busy) return
-    if (op === 'levels' || op === 'threshold' || op === 'gaussian') { openParamCommand(OP_COMMANDS[op]); return }
+    if (op === 'levels' || op === 'threshold' || op === 'gaussian' || op === 'debayer') { openParamCommand(OP_COMMANDS[op]); return }
     if (op === 'crop') {
       if (stack) { setError(copy.stack.geometryUnavailable); return }
       if (!roi) { setError(copy.errors.needsRoi); return }
@@ -378,7 +383,9 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
 
   // 色彩平衡只在 RGB 图上可用；灰度图下它保持「尚未接入」的禁用态。
   const expandableCommands = useMemo<ParamCommand[]>(
-    () => isRgb ? ['Brightness/Contrast', 'Color Balance', 'Threshold', 'Gaussian Blur'] : ['Brightness/Contrast', 'Threshold', 'Gaussian Blur'],
+    () => isRgb
+      ? ['Brightness/Contrast', 'Color Balance', 'Threshold', 'Gaussian Blur', 'Debayer']
+      : ['Brightness/Contrast', 'Threshold', 'Gaussian Blur', 'Debayer'],
     [isRgb],
   )
   const panel: ReactNode = paramOp === 'levels'
@@ -389,23 +396,25 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
       ? <ThresholdCommandPanel copy={copy} level={thresholdLevel} minimum={stats?.histogramMin ?? 0} maximum={stats?.histogramMax ?? 255} step={image?.dtype === 'float32' ? 'any' : 1} disabled={!hasImage || busy} onLevel={setThresholdLevel} onApply={applyCurrentThreshold} onOtsu={applyOtsu} onClose={closeParamCommand} />
       : paramOp === 'gaussian'
         ? <GaussianCommandPanel copy={copy} sigma={gaussianSigma} disabled={!hasImage || busy} onSigma={setGaussianSigma} onApply={() => submit('gaussian', { sigma: gaussianSigma })} onClose={closeParamCommand} />
-        : null
+        : paramOp === 'debayer'
+          ? <DebayerCommandPanel copy={copy} pattern={debayerPattern} algorithm={debayerAlgorithm} disabled={!hasImage || busy} onPattern={setDebayerPattern} onAlgorithm={setDebayerAlgorithm} onApply={() => submit('debayer', { pattern: debayerPattern, algorithm: debayerAlgorithm }, null)} onClose={closeParamCommand} />
+          : null
 
   /* ---------------- 右栏：卡片式视图（一个卡片 = 一个可视化） ---------------- */
 
   const viewCards = views.length ? (
-    <div className="grid gap-2">
+    <div className="divide-y divide-base-300">
       {views.map((card) => (
-        <section key={card.id} className="grid gap-1.5 rounded-[var(--radius-box)] bg-muted/50 p-2.5">
+        <section key={card.id} className="grid gap-1.5 py-2 first:pt-1 last:pb-0">
           <div className="flex items-center justify-between gap-1">
-            <h3 className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{viewTitle(card.type)}</h3>
+            <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-base-content/50">{viewTitle(card.type)}</h3>
             <button
               type="button"
               aria-label={copy.close}
               onClick={() => removeView(card.id)}
-              className="rounded-[var(--radius-field)] p-0.5 text-base-content/50 transition hover:bg-base-200 hover:text-base-content"
+              className="rounded-[var(--radius-field)] p-0.5 text-base-content/45 transition hover:bg-base-200 hover:text-base-content"
             >
-              <X size={14} />
+              <X size={13} />
             </button>
           </div>
 
@@ -413,7 +422,7 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
             !hasImage ? (
               <p className="text-sm text-base-content/55">{copy.emptyDescription}</p>
             ) : stats ? (
-              <dl className="grid grid-cols-2 gap-1.5">
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5">
                 {[
                   [copy.stats.pixels, stats.count.toLocaleString()],
                   [copy.stats.area, stats.area.toLocaleString()],
@@ -422,9 +431,9 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
                   [copy.stats.max, String(stats.max)],
                   [copy.stats.stdDev, stats.stdDev.toFixed(2)],
                 ].map(([label, value]) => (
-                  <div key={label} className="rounded-[var(--radius-field)] bg-base-100 px-2 py-1">
-                    <dt className="text-[10px] text-base-content/55">{label}</dt>
-                    <dd className="font-mono text-[13px] font-semibold tabular-nums text-base-content">{value}</dd>
+                  <div key={label} className="flex items-baseline justify-between gap-2">
+                    <dt className="truncate text-[10px] text-base-content/55">{label}</dt>
+                    <dd className="font-mono text-[12px] font-semibold tabular-nums text-base-content">{value}</dd>
                   </div>
                 ))}
               </dl>
@@ -434,20 +443,18 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
           ) : null}
 
           {card.type === 'histogram' ? (
-            <div className="rounded-[var(--radius-field)] bg-base-100">
-              <HistogramChart
-                data={stats ? { counts: stats.histogram, min: stats.histogramMin, max: stats.histogramMax } : null}
-                height={96}
-                color="var(--foreground)"
-                labels={{ count: copy.stats.pixel, cumulative: copy.stats.cumulative, level: copy.stats.level, frequency: copy.stats.frequency, empty: stats ? '' : copy.status.loading }}
-                ariaLabel={copy.views.histogram}
-              />
-            </div>
+            <HistogramChart
+              data={stats ? { counts: stats.histogram, min: stats.histogramMin, max: stats.histogramMax } : null}
+              height={96}
+              color="var(--foreground)"
+              labels={{ count: copy.stats.pixel, cumulative: copy.stats.cumulative, level: copy.stats.level, frequency: copy.stats.frequency, empty: stats ? '' : copy.status.loading }}
+              ariaLabel={copy.views.histogram}
+            />
           ) : null}
 
           {card.type === 'profile' ? (
-            <div className="grid gap-1">
-              <canvas ref={profileCanvasRef} className="block w-full rounded-[var(--radius-field)] bg-base-100" style={{ height: 96 }} />
+            <div className="grid gap-0.5">
+              <canvas ref={profileCanvasRef} className="block w-full" style={{ height: 96 }} />
               <p className="text-[10px] text-base-content/55">{copy.views.profileNote}</p>
             </div>
           ) : null}
@@ -456,8 +463,8 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
             particles ? (
               <>
                 <div className="flex flex-wrap items-end gap-2">
-                  <div className="grid gap-1">
-                    <Label htmlFor="imagej-particle-min-area" className="text-xs">{copy.binary.minArea}</Label>
+                  <div className="grid gap-0.5">
+                    <Label htmlFor="imagej-particle-min-area" className="text-[11px]">{copy.binary.minArea}</Label>
                     <input
                       id="imagej-particle-min-area"
                       type="number"
@@ -466,15 +473,15 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
                       step={1}
                       value={minParticleArea}
                       onChange={(event) => setMinParticleArea(Math.max(1, Math.round(Number(event.target.value) || 1)))}
-                      className="h-8 w-24 rounded-md border border-base-300 bg-base-100 px-2 text-sm"
+                      className="h-7 w-24 rounded-md border border-base-300 bg-base-100 px-2 text-sm"
                     />
                   </div>
-                  <Button type="button" variant="secondary" size="sm" className="h-8" onClick={analyzeCurrentParticles}>
+                  <Button type="button" variant="secondary" size="sm" className="h-7" onClick={analyzeCurrentParticles}>
                     {copy.binary.analyze}
                   </Button>
-                  <Button type="button" variant="outline" size="sm" className="h-8" onClick={exportParticlesCsv}>{copy.binary.exportCsv}</Button>
+                  <Button type="button" variant="outline" size="sm" className="h-7" onClick={exportParticlesCsv}>{copy.binary.exportCsv}</Button>
                 </div>
-                <div className="max-h-56 overflow-auto rounded-[var(--radius-field)] bg-base-100">
+                <div className="max-h-56 overflow-auto">
                   <table className="w-full min-w-[280px] text-left text-xs tabular-nums">
                     <thead><tr className="border-b border-base-300"><th className="p-1.5">#</th><th className="p-1.5">{copy.stats.area}</th><th className="p-1.5">{copy.binary.perimeter}</th><th className="p-1.5">{copy.binary.circularity}</th><th className="p-1.5">{copy.binary.centroid}</th></tr></thead>
                     <tbody>{particles.map((particle) => (
@@ -489,7 +496,7 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
                 </div>
               </>
             ) : (
-              <Button type="button" variant="secondary" size="sm" className="h-8 w-full" disabled={!hasImage || busy} onClick={analyzeCurrentParticles}>
+              <Button type="button" variant="secondary" size="sm" className="h-7 w-full" disabled={!hasImage || busy} onClick={analyzeCurrentParticles}>
                 {copy.binary.analyze}
               </Button>
             )
@@ -498,9 +505,7 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
       ))}
     </div>
   ) : (
-    <p className="rounded-[calc(var(--radius-box)+0.25rem)] bg-muted/50 p-4 text-sm text-base-content/55">
-      {hasImage ? copy.views.empty : copy.emptyDescription}
-    </p>
+    <p className="text-sm text-base-content/55">{hasImage ? copy.views.empty : copy.emptyDescription}</p>
   )
 
   /* ---------------- 渲染 ---------------- */
@@ -514,7 +519,7 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,.tif,.tiff,.webp,.fits,.fit,.fts"
+              accept="image/*,.tif,.tiff,.webp,.fits,.fit,.fts,.dng,.cr2,.nef,.arw,.orf,.rw2,.raf"
               className="hidden"
               onChange={onFileInput}
             />
@@ -760,7 +765,7 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
 interface DocumentEntry { id: string; title: string; files: File[]; runtime: ImageRuntime }
 
 /** 文件夹导入时按扩展名筛选图片。 */
-const IMAGE_FILE = /\.(png|jpe?g|webp|tiff?|bmp|gif|fits?|fts)$/i
+const IMAGE_FILE = /\.(png|jpe?g|webp|tiff?|bmp|gif|fits?|fts|dng|cr2|crw|nef|nrw|arw|srf|sr2|orf|rw2|pef|srw|raf|3fr|fff|iiq|mrw|dcr|kdc|rwl|x3f|erf|mef|mos|mfw)$/i
 
 const byNameNatural = (a: File, b: File) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
 
@@ -1055,7 +1060,7 @@ export function ScientificImageWorkspace() {
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <input ref={fileInputRef} type="file" multiple accept="image/*,.tif,.tiff,.webp,.fits,.fit,.fts" className="hidden" onChange={onFileInput} />
+      <input ref={fileInputRef} type="file" multiple accept="image/*,.tif,.tiff,.webp,.fits,.fit,.fts,.dng,.cr2,.nef,.arw,.orf,.rw2,.raf" className="hidden" onChange={onFileInput} />
       <div className="relative min-h-0 flex-1">
         {documents.length === 0 ? (
           <div className="grid h-full place-items-center p-8 text-center">
