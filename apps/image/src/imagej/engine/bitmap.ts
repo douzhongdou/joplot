@@ -45,10 +45,11 @@ export function canDecodeNativeBitmap(): boolean {
   return typeof createImageBitmap === 'function'
 }
 
-/** 用浏览器原生解码器解码 WebP 等格式；环境不支持时返回 null。 */
-export async function decodeWebpFile(file: Blob): Promise<DecodedImage | null> {
+/** 用浏览器原生解码器解码 WebP / JPEG 等格式；环境不支持时返回 null。 */
+export async function decodeNativeBitmapFile(file: Blob): Promise<DecodedImage | null> {
   if (typeof createImageBitmap !== 'function') return null
-  const bitmap = await createImageBitmap(file)
+  // from-image：按 JPEG 的 EXIF 方向摆正，与相机/浏览器显示一致。
+  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
   try {
     const { width, height } = bitmap
     const raster = createRaster(width, height)
@@ -60,6 +61,9 @@ export async function decodeWebpFile(file: Blob): Promise<DecodedImage | null> {
     bitmap.close?.()
   }
 }
+
+/** WebP 专用别名（历史命名）。 */
+export const decodeWebpFile = decodeNativeBitmapFile
 
 /** 只取绘制与取像所需的方法，兼容 Offscreen 与主线程两种 2D 上下文。 */
 interface Raster2d {

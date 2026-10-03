@@ -42,6 +42,9 @@ const FITS_SUFFIX = /\.(fits|fit|fts)$/
 /** 相机 RAW 扩展名；非 TIFF 容器会在解码时给出明确错误。 */
 const RAW_SUFFIX = /\.(dng|cr2|crw|nef|nrw|arw|srf|sr2|orf|rw2|pef|srw|raf|3fr|fff|iiq|mrw|dcr|kdc|rwl|x3f|erf|mef|mos|mfw)$/i
 
+/** JPEG：8 位、无 alpha，浏览器原生解码与 ITK 结果一致但快得多。 */
+const JPEG_SUFFIX = /\.(jpe?g)$/i
+
 function formatFor(file: File): StorageMetadata['source']['format'] {
   const lower = file.name.toLowerCase()
   if (lower.endsWith('.tif') || lower.endsWith('.tiff') || file.type === 'image/tiff') return 'tiff'
@@ -307,6 +310,11 @@ export async function importFile(
   if (format === 'fits') return importFits(file)
   if (format === 'webp') return importWebp(file)
   if (format === 'raw') return importRaw(file)
+  // JPEG 走浏览器原生解码：比 ITK-Wasm 快得多，且 8 位结果一致；环境不支持时回退 ITK。
+  if (JPEG_SUFFIX.test(file.name.toLowerCase()) || file.type === 'image/jpeg') {
+    const native = await importNativeRaster(file)
+    if (native) return native
+  }
 
   const stack = await tryTiffStack(file)
   if (stack) return stack
@@ -343,6 +351,15 @@ async function importWebp(file: File): Promise<ImportResult> {
   const decoded = await decodeWebpFile(file)
   if (!decoded) throw new Error('当前环境不支持原生 WebP 解码（缺少 createImageBitmap / Canvas）')
   return datasetFromDecoded(file, decoded, 'webp-native')
+}
+
+/** JPEG：浏览器原生解码（比 ITK-Wasm 快）；环境不支持时返回 null 交回 ITK。 */
+async function importNativeRaster(file: File): Promise<ImportResult | null> {
+  const { decodeNativeBitmapFile } = await import('./bitmap.ts')
+  const decoded = await decodeNativeBitmapFile(file)
+  if (!decoded) return null
+  decoded.warnings.push('JPEG 使用浏览器原生解码器（8 位）')
+  return datasetFromDecoded(file, decoded, 'native-bitmap')
 }
 
 /** RAW：自研解码，输出单通道 CFA 马赛克灰度 + CFA 元数据，彩色由 debayer 算子还原。 */
