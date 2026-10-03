@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
 import { Check, Download, Image as ImageIcon, Plus, Redo2, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { AppNavbar } from '../../components/AppNavbar'
 import { useI18n } from '../../i18n'
@@ -10,6 +10,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@joplot/ui/tabs'
 import { Label } from '@joplot/ui/label'
 import { createImagejCopy } from '../lib/i18n'
+import { readDroppedContent } from '../lib/dropFiles'
 import { levelsRange, type Rect } from '../lib/processor'
 import { getOperator, toUiRegistry } from '../engine/operators'
 import { stepAppliesToSelection, type StepScope } from '../engine/recipe'
@@ -638,15 +639,7 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader }: { runtime: Imag
           ) : null}
 
           {!hasImage ? (
-            <div
-              className="grid h-full place-items-center p-8 text-center"
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                event.preventDefault()
-                const file = event.dataTransfer.files?.[0]
-                if (file) onOpenImage(file)
-              }}
-            >
+            <div className="grid h-full place-items-center p-8 text-center">
               <div className="grid gap-2 justify-items-center">
                 <ImageIcon size={34} className="text-base-content/35" aria-hidden="true" />
                 <strong className="text-base-content">{copy.emptyTitle}</strong>
@@ -752,6 +745,8 @@ interface DocumentEntry { id: string; title: string; files: File[]; runtime: Ima
 /** 文件夹导入时按扩展名筛选图片。 */
 const IMAGE_FILE = /\.(png|jpe?g|webp|tiff?|bmp|gif)$/i
 
+const byNameNatural = (a: File, b: File) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+
 let documentCounter = 0
 function nextDocumentId(): string {
   documentCounter += 1
@@ -775,6 +770,8 @@ export function ScientificImageWorkspace() {
   const [documents, setDocuments] = useState<DocumentEntry[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const documentsRef = useRef(documents); documentsRef.current = documents
+  const [dragging, setDragging] = useState(false)
+  const dragDepth = useRef(0)
 
   /* 卸载时释放全部文档运行时。 */
   useEffect(() => () => { for (const doc of documentsRef.current) doc.runtime.dispose() }, [])
@@ -866,6 +863,36 @@ export function ScientificImageWorkspace() {
 
   const isLastDocument = (id: string) => documents[documents.length - 1]?.id === id
 
+  /** 拖放：多个文件各开一个 tab；每个文件夹合成一个 Stack。 */
+  const handleDrop = async (data: DataTransfer) => {
+    const { files, folders } = await readDroppedContent(data)
+    for (const folder of folders) {
+      const images = folder.files.filter((file) => IMAGE_FILE.test(file.name)).sort(byNameNatural)
+      if (images.length) openStackFiles(images, folder.name)
+    }
+    if (files.length) openFiles(files)
+  }
+  const onDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    if (!event.dataTransfer?.types?.includes('Files')) return
+    dragDepth.current += 1
+    setDragging(true)
+  }
+  const onDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!event.dataTransfer?.types?.includes('Files')) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+  }
+  const onDragLeave = () => {
+    dragDepth.current = Math.max(0, dragDepth.current - 1)
+    if (dragDepth.current === 0) setDragging(false)
+  }
+  const onDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    dragDepth.current = 0
+    setDragging(false)
+    void handleDrop(event.dataTransfer)
+  }
+
   const tabsHeader = (
     <div className="flex h-9 shrink-0 items-stretch gap-1 border-b border-base-300 bg-base-100 px-1.5">
       <TabsList className="h-full min-w-0 flex-1 items-stretch justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0">
@@ -917,14 +944,19 @@ export function ScientificImageWorkspace() {
   )
 
   return (
-    <Tabs value={activeId ?? ''} onValueChange={setActiveId} className="h-screen gap-0">
+    <Tabs
+      value={activeId ?? ''}
+      onValueChange={setActiveId}
+      className="relative h-screen gap-0"
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <input ref={fileInputRef} type="file" multiple accept="image/*,.tif,.tiff" className="hidden" onChange={onFileInput} />
       <div className="relative min-h-0 flex-1">
         {documents.length === 0 ? (
-          <div
-            className="grid h-full place-items-center p-8 text-center"
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => { event.preventDefault(); openFiles(Array.from(event.dataTransfer.files ?? [])) }}>
+          <div className="grid h-full place-items-center p-8 text-center">
             <div className="grid gap-2 justify-items-center">
               <ImageIcon size={34} className="text-base-content/35" aria-hidden="true" />
               <strong className="text-base-content">{copy.emptyTitle}</strong>
@@ -942,6 +974,11 @@ export function ScientificImageWorkspace() {
           </TabsContent>
         ))}
       </div>
+      {dragging ? (
+        <div className="pointer-events-none absolute inset-0 z-50 grid place-items-center bg-base-100/60">
+          <div className="rounded-[var(--radius-box)] border-2 border-dashed border-primary/60 px-6 py-4 text-sm text-base-content/80">{copy.dropHint}</div>
+        </div>
+      ) : null}
     </Tabs>
   )
 }
