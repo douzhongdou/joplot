@@ -64,6 +64,11 @@ async function handle(request: WorkerRequest): Promise<void> {
       scope.postMessage(response)
       return
     }
+    case 'analyze': {
+      const analysis = await host.analyze(request)
+      scope.postMessage({ type: 'analysis', id: request.id, analysis })
+      return
+    }
     case 'run': {
       const outcome = await host.run(request)
       const response: ResultResponse = {

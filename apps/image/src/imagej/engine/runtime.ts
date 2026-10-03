@@ -80,6 +80,8 @@ export class ImageRuntime {
   private pumping = false
   private runPromise: Promise<void> | null = null
   private runQueued = false
+  private analysisInFlight = false
+  private analysisQueued = false
   private disposed = false
 
   constructor(options: ImageRuntimeOptions) {
@@ -287,6 +289,7 @@ export class ImageRuntime {
         this.runQueued = false
         await this.runOnce()
       }
+      if (!this.disposed) this.scheduleAnalysis()
     } finally {
       this.runPromise = null
       if (this.runQueued && !this.disposed) this.runPromise = this.drainRuns()
@@ -307,7 +310,7 @@ export class ImageRuntime {
     const cached = this.cache.get(key)
     if (cached) {
       this.cache.pin(key)
-      this.emit({ image: cached.image, imageStale: false, results: cached.results, stats: cached.stats, table: cached.table, analysis: cached.analysis, lastRunMs: cached.ms, estimatedBytes: cached.estimatedBytes, status: 'ready' })
+      this.emit({ image: cached.image, imageStale: false, results: cached.results, stats: cached.stats, table: cached.table, lastRunMs: cached.ms, estimatedBytes: cached.estimatedBytes, status: 'ready' })
       this.schedulePrefetch()
       return
     }
@@ -317,7 +320,6 @@ export class ImageRuntime {
         recipe,
         selection: this.state.selection,
         throughStepId: this.state.throughStepId,
-        analyze: true,
       })
       if (this.guard.version() !== version) return // 过期结果不覆盖当前画面
       if (result.image) {
@@ -330,7 +332,6 @@ export class ImageRuntime {
         results: result.results,
         stats: result.stats,
         table: result.table,
-        analysis: result.analysis,
         status: result.results.some((step) => step.status === 'error') ? 'error' : 'ready',
         error: result.results.find((step) => step.status === 'error')?.error,
         lastRunMs: result.ms,
@@ -349,6 +350,41 @@ export class ImageRuntime {
       selectionKey(selection),
       recipeVersionKey(recipe, throughStepId),
     ].join('\u0001')
+  }
+
+  /**
+   * 整帧分析不进显示路径：翻页时先出图（ImageJ 的 setSlice 也只换指针 + 重绘），
+   * 随后立即请求当前切片的直方图/统计（合并、只保留最新），算完单独 emit。
+   * 这样面板是「live」的（像 ImageJ 的 Live 直方图），又不阻塞出图；
+   * 分析在 Worker 内直接读缓存页，不跨线程拷贝整帧。
+   */
+  private scheduleAnalysis(): void {
+    this.analysisQueued = true
+    void this.pumpAnalysis()
+  }
+
+  private async pumpAnalysis(): Promise<void> {
+    if (this.analysisInFlight) return
+    this.analysisInFlight = true
+    try {
+      while (this.analysisQueued && !this.disposed) {
+        this.analysisQueued = false
+        const dataset = this.state.dataset
+        const recipe = this.currentRecipe()
+        if (!dataset || !recipe) break
+        const version = this.guard.version()
+        const selection = { ...this.state.selection }
+        const throughStepId = this.state.throughStepId
+        try {
+          const analysis = await this.client.analyze({ datasetId: dataset.id, recipe, selection, throughStepId })
+          if (analysis && this.guard.version() === version) this.emit({ analysis })
+        } catch {
+          // 分析失败不影响显示
+        }
+      }
+    } finally {
+      this.analysisInFlight = false
+    }
   }
 
   /** 预取邻页（P2）：按翻页方向设置优先级，结果只入缓存。 */
@@ -381,7 +417,6 @@ export class ImageRuntime {
             recipe,
             selection,
             throughStepId,
-            analyze: true,
           })
           if (result.image && !result.results.some((step) => step.status === 'error')) {
             this.cache.set(key, result, result.image.data.byteLength)

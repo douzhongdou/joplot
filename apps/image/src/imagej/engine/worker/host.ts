@@ -7,7 +7,7 @@
 import type { Dataset, SliceSelection } from '../dataset.ts'
 import type { Storage } from '../storage.ts'
 import { importFile, importImageStack, type ImportResult } from '../importer.ts'
-import { analyzeBlock } from '../analysis.ts'
+import { analyzeBlock, type ImageAnalysis } from '../analysis.ts'
 import { PureComputeEngine, type EngineRunResult } from '../compute/engine.ts'
 import type { Recipe } from '../recipe.ts'
 import type { Region } from '../types.ts'
@@ -67,6 +67,24 @@ export class EngineHost {
     // 分析在同一线程里顺带完成：主线程无需再复制整帧、再跑第二个 Worker。
     if (request.analyze && outcome.image) outcome.analysis = analyzeBlock(outcome.image)
     return outcome
+  }
+
+  async analyze(request: { datasetId: string; recipe: Recipe; selection: SliceSelection; throughStepId?: string }): Promise<ImageAnalysis | undefined> {
+    const entry = this.entries.get(request.datasetId)
+    if (!entry) throw new Error(`未知数据集 ${request.datasetId}`)
+    entry.controller = new AbortController()
+    const outcome = await this.engine.runRecipe(
+      {
+        dataset: entry.dataset,
+        storage: entry.storage,
+        selection: request.selection,
+        signal: entry.controller.signal,
+        retainStepImages: false,
+      },
+      request.recipe,
+      request.throughStepId,
+    )
+    return outcome.image ? analyzeBlock(outcome.image) : undefined
   }
 
   cancel(): void {

@@ -41,6 +41,16 @@ export interface ImportStackRequest {
   files: File[]
 }
 
+/** 只计算当前切片的整帧分析（不返回图像）；用于把分析移出显示路径。 */
+export interface AnalyzeRequest {
+  type: 'analyze'
+  id: number
+  datasetId: string
+  recipe: Recipe
+  selection: SliceSelection
+  throughStepId?: string
+}
+
 export interface RunRequest {
   type: 'run'
   id: number
@@ -64,7 +74,7 @@ export interface DisposeRequest {
   datasetId?: string
 }
 
-export type WorkerRequest = ImportRequest | ImportStackRequest | RunRequest | CancelRequest | DisposeRequest
+export type WorkerRequest = ImportRequest | ImportStackRequest | RunRequest | AnalyzeRequest | CancelRequest | DisposeRequest
 
 export interface ImportedResponse {
   type: 'imported'
@@ -91,7 +101,13 @@ export interface ErrorResponse {
   message: string
 }
 
-export type WorkerResponse = ImportedResponse | ResultResponse | ErrorResponse
+export interface AnalysisResponse {
+  type: 'analysis'
+  id: number
+  analysis?: ImageAnalysis
+}
+
+export type WorkerResponse = ImportedResponse | ResultResponse | AnalysisResponse | ErrorResponse
 
 /** 一步作用范围的可序列化描述（RecipeStep 的 scope 已满足）。 */
 export type { StepScope }

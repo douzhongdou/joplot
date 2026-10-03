@@ -9,7 +9,7 @@ import type { Recipe } from '../recipe.ts'
 import type { Dtype, ImageBlock, PixelArray, Region } from '../types.ts'
 import type { ChannelStats, ParticleRow } from '../../lib/engineTypes.ts'
 import type { ImageAnalysis } from '../analysis.ts'
-import type { ResultResponse, SerializedBlock, StepOutcomeWire, WorkerRequest, WorkerResponse } from './protocol.ts'
+import type { ResultResponse, SerializedBlock, StepOutcomeWire, WorkerRequest, WorkerResponse, AnalysisResponse } from './protocol.ts'
 import { EngineHost } from './host.ts'
 
 export interface EngineRunOptions {
@@ -37,6 +37,8 @@ export interface EngineClient {
   import(file: File): Promise<Dataset>
   importStack(files: File[]): Promise<Dataset>
   run(options: EngineRunOptions): Promise<EngineResult>
+  /** 只算当前切片的整帧分析（不返回图像），用于把分析移出显示路径。 */
+  analyze(options: EngineRunOptions): Promise<ImageAnalysis | undefined>
   cancel(): void
   dispose(datasetId?: string): void
   terminate(): void
@@ -109,6 +111,18 @@ class WorkerEngineClient implements EngineClient {
     return response.dataset
   }
 
+  async analyze(options: EngineRunOptions): Promise<ImageAnalysis | undefined> {
+    const response = (await this.request({
+      type: 'analyze',
+      id: this.nextId++,
+      datasetId: options.datasetId,
+      recipe: options.recipe,
+      selection: options.selection,
+      throughStepId: options.throughStepId,
+    })) as AnalysisResponse
+    return response.analysis
+  }
+
   async run(options: EngineRunOptions): Promise<EngineResult> {
     const response = (await this.request({
       type: 'run',
@@ -159,6 +173,10 @@ class InlineEngineClient implements EngineClient {
     return result.dataset
   }
 
+  async analyze(options: EngineRunOptions): Promise<ImageAnalysis | undefined> {
+    return this.host.analyze(options)
+  }
+
   async run(options: EngineRunOptions): Promise<EngineResult> {
     const outcome = await this.host.run(options)
     return {
@@ -192,7 +210,7 @@ export function createEngineClient(options?: { preferWorker?: boolean; workerFac
   const get = (): EngineClient => client ??= createActiveEngineClient(options)
   return {
     kind: options?.preferWorker !== false && typeof Worker !== 'undefined' ? 'worker' : 'inline',
-    import: (file) => get().import(file), importStack: (files) => get().importStack(files), run: (request) => get().run(request),
+    import: (file) => get().import(file), importStack: (files) => get().importStack(files), run: (request) => get().run(request), analyze: (options) => get().analyze(options),
     cancel: () => client?.cancel(), dispose: (datasetId) => client?.dispose(datasetId), terminate: () => { client?.terminate(); client = undefined },
   }
 }
