@@ -509,7 +509,7 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,.tif,.tiff"
+              accept="image/*,.tif,.tiff,.webp,.fits,.fit,.fts"
               className="hidden"
               onChange={onFileInput}
             />
@@ -593,10 +593,6 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
               <input type="range" min={0} max={entry.length - 1} value={entry.index} disabled={busy} onChange={(event) => selectAxis(entry.axis, Number(event.target.value))} aria-label={`${entry.axis} ${copy.stack.page}`} className="w-20 accent-primary" />
             </span>)}
 
-            {onEjectPage && slice && slice.length > 1 ? (
-              <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={busy} onClick={() => onEjectPage(pageIndex)}>{copy.ejectPage}</Button>
-            ) : null}
-
             <span className="ml-auto hidden shrink-0 truncate pl-2 font-mono text-[11px] text-base-content/55 md:inline">
               {probe ? `(${probe.x}, ${probe.y}) = ${probe.value} · ` : ''}{roiLabel}
             </span>
@@ -638,6 +634,8 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
 
         <main className="order-1 flex min-h-[60vh] min-w-0 flex-col bg-base-100 lg:order-none lg:min-h-0">
           {tabsHeader}
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
           <div className="relative min-h-0 flex-1">
           {error ? (
             <p role="alert" className="absolute left-3 right-3 top-3 z-10 rounded-[var(--radius-box)] border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -678,6 +676,13 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
             </>
           ) : null}
           </div>
+            </ContextMenuTrigger>
+            {onEjectPage && slice && slice.length > 1 ? (
+              <ContextMenuContent className="w-48">
+                <ContextMenuItem onSelect={() => onEjectPage(pageIndex)}>{copy.ejectPage}</ContextMenuItem>
+              </ContextMenuContent>
+            ) : null}
+          </ContextMenu>
         </main>
 
         {/* 右栏「分析」：卡片式视图（一个卡片一个可视化）+ 导出 */}
@@ -750,7 +755,7 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
 interface DocumentEntry { id: string; title: string; files: File[]; runtime: ImageRuntime }
 
 /** 文件夹导入时按扩展名筛选图片。 */
-const IMAGE_FILE = /\.(png|jpe?g|webp|tiff?|bmp|gif)$/i
+const IMAGE_FILE = /\.(png|jpe?g|webp|tiff?|bmp|gif|fits?|fts)$/i
 
 const byNameNatural = (a: File, b: File) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
 
@@ -1045,7 +1050,7 @@ export function ScientificImageWorkspace() {
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <input ref={fileInputRef} type="file" multiple accept="image/*,.tif,.tiff" className="hidden" onChange={onFileInput} />
+      <input ref={fileInputRef} type="file" multiple accept="image/*,.tif,.tiff,.webp,.fits,.fit,.fts" className="hidden" onChange={onFileInput} />
       <div className="relative min-h-0 flex-1">
         {documents.length === 0 ? (
           <div className="grid h-full place-items-center p-8 text-center">

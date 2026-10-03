@@ -6,7 +6,7 @@
 
 ## 当前能力
 
-- 导入本地图像与多页 TIFF，保留 `uint8`、`uint16`、`int16`、`float32` 数据类型；RGB 合成显示与显式灰度转换。
+- 导入本地图像、多页 TIFF、WebP 与 FITS，保留 `uint8`、`uint16`、`int16`、`float32` 数据类型；FITS 支持 BITPIX / BSCALE / BZERO 与多维 z 栈，WebP 走浏览器原生解码。RGB 合成显示与显式灰度转换。
 - 平移、滚轮缩放、适应窗口、1:1、原图对照、矩形 ROI 绘制与移动、原值探查。
 - 彩色亮度 / 对比度使用 ImageJ 四滑杆、All / Red / Green / Blue 通道、Auto / Reset / Set / Apply；分通道调整和切换快照保留颜色。反相、滤波与几何操作也可逐通道处理 RGB。另有手动阈值、Otsu、形态学与填孔。
 - T / C / Z 选择、Stack 上一页 / 下一页、当前帧或整个 Stack 处理；切页保留处理记录。RGB 的 C 轴用于合成显示。
@@ -28,7 +28,7 @@
 | `src/imagej/components/CommandPanels.tsx` | 亮度/对比度、阈值、高斯模糊的内联参数面板 |
 | `src/imagej/components/ImageViewport.tsx` | 二维视口、相机、ROI 与原值探查 |
 | `src/imagej/components/useImageAnalysis.ts` | 分析 Worker 的图像与 ROI 同步 |
-| `src/imagej/engine/` | Dataset、Storage、Recipe、调度、计算、I/O、TIFF 与渲染映射 |
+| `src/imagej/engine/` | Dataset、Storage、Recipe、调度、计算、I/O、TIFF / FITS / 原生位图解码与渲染映射 |
 | `src/imagej/lib/` | Classic 算法、共享 8 位内核、高斯行缓存与三语文案 |
 | `src/imagej/components/ImageJApp.tsx` | Classic 入口 |
 | `tests/imagej*.test.ts` | 科学图像、Stack、算法、缓存、历史与编码回归 |
@@ -40,6 +40,8 @@
 当前 ITK 导入仍将完整数据集解码到内存，滤波仍需要当前帧的输入与输出。大 Stack 受设备可用内存约束；尚未实现磁盘虚拟栈、按需解码、完整分块计算或 BigTIFF 导出。视口尺寸与图像尺寸分离并不代表无限制的数据规模。
 
 原精度 TIFF 导出使用无压缩经典 TIFF，要求各页尺寸、通道数、数据类型一致，文件小于 4 GiB。T / C / Z 展平为多页 TIFF，暂不写出 OME / ImageJ 的多维元数据。若仅对某页执行改变数据类型的转换，应导出该页，或对整栈统一转换。多页栈暂禁用裁剪和 90° 旋转。
+
+FITS 暂只载入第一个图像 HDU（NAXIS ≤ 3，第 3 维按 z 轴）；文件含多个图像 HDU 时会提示但不会合并，NAXIS > 3、大端以外的编码与随机组不处理。WebP 依赖浏览器原生 `createImageBitmap`（Worker 里用 `OffscreenCanvas`），Alpha 通道忽略；不支持的 32/64 位整数与双精度浮点 FITS 会统一转 float32 并提示精度损失。
 
 Classic 保留原来的 Canvas 导入边长限制、8 位历史快照与简单 TIFF 解码器；共享 8 位单缓冲分配预算为 512 MiB。主工作台的原精度数据路径不使用 Classic 的 Canvas 导入限制。菜单里原先未实现的 Z 投影、虚拟栈、16 / 32 位转换等命令仍禁用；迁移现有交互不代表完整复刻 ImageJ。
 

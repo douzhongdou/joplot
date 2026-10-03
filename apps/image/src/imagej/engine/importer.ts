@@ -36,10 +36,15 @@ function makeSource(file: File, format: StorageMetadata['source']['format']) {
   }
 }
 
+/** FITS 常见扩展名：.fits / .fit / .fts。 */
+const FITS_SUFFIX = /\.(fits|fit|fts)$/
+
 function formatFor(file: File): StorageMetadata['source']['format'] {
   const lower = file.name.toLowerCase()
   if (lower.endsWith('.tif') || lower.endsWith('.tiff') || file.type === 'image/tiff') return 'tiff'
   if (lower.endsWith('.png') || file.type === 'image/png') return 'png'
+  if (lower.endsWith('.webp') || file.type === 'image/webp') return 'webp'
+  if (FITS_SUFFIX.test(lower) || file.type === 'image/fits' || file.type === 'application/fits') return 'fits'
   return 'unknown'
 }
 
@@ -53,7 +58,11 @@ function componentTypeByteLength(componentType: string): number {
   }
 }
 
-interface ItkImport {
+/**
+ * 各解码器（ITK / FITS / 原生位图）的统一产物：无标定默认值的中间表示。
+ * 由 `datasetFromDecoded` 组装成 Dataset + Storage。
+ */
+export interface DecodedImage {
   dtype: Dtype
   axes: Dataset['axes']
   shape: number[]
@@ -66,7 +75,7 @@ interface ItkImport {
 }
 
 /** 把 itk Image 规整为单分量、x 最快的行优先缓冲。 */
-function normalizeItkImage(image: ItkImage): ItkImport {
+function normalizeItkImage(image: ItkImage): DecodedImage {
   if (!image.data) throw new Error('ITK 图像缺少像素数据')
   const warnings: string[] = []
   const components = image.imageType.components
@@ -136,7 +145,7 @@ function originOf(image: ItkImage): [number, number, number] {
   return [origin[0] ?? 0, origin[1] ?? 0, origin[2] ?? 0]
 }
 
-function datasetFromItk(file: File, imported: ItkImport): ImportResult {
+function datasetFromDecoded(file: File, imported: DecodedImage, decodedWith: string): ImportResult {
   const calibrated = imported.spacing.some((s) => s !== 1) || imported.origin.some((o) => o !== 0)
   const dataset = createDataset({
     dtype: imported.dtype,
@@ -152,7 +161,7 @@ function datasetFromItk(file: File, imported: ItkImport): ImportResult {
     channels: imported.channels,
     componentKind: imported.componentKind,
     source: makeSource(file, formatFor(file)),
-    metadata: { decodedWith: 'itk-wasm' },
+    metadata: { decodedWith },
   })
   const storageMeta: StorageMetadata = {
     dtype: dataset.dtype,
@@ -281,14 +290,19 @@ async function tryTiffStack(file: File): Promise<ImportResult | null> {
 /**
  * 导入文件。
  *
- * TIFF 优先走惰性页栈：整卷像素不驻留内存，翻页时按页读取。
- * 其余格式先尝试 ITK-Wasm；失败后回退内置 8 位 TIFF 解码器。
- * 可用 `decoder` 覆盖 ITK 解码器（测试注入），不影响 TIFF 惰性路径。
+ * 先按扩展名分派自研解码器：FITS 走 `fits/`，WebP 走浏览器原生位图。
+ * 其余文件 TIFF 优先走惰性页栈（整卷像素不驻留内存，翻页时按页读取）；
+ * 再尝试 ITK-Wasm；失败后回退内置 8 位 TIFF 解码器。
+ * 可用 `decoder` 覆盖 ITK 解码器（测试注入），不影响 TIFF / FITS / WebP 路径。
  */
 export async function importFile(
   file: File,
   decoder?: (file: File) => Promise<ItkImage | null>,
 ): Promise<ImportResult> {
+  const format = formatFor(file)
+  if (format === 'fits') return importFits(file)
+  if (format === 'webp') return importWebp(file)
+
   const stack = await tryTiffStack(file)
   if (stack) return stack
 
@@ -296,7 +310,7 @@ export async function importFile(
   if (decode) {
     try {
       const image = await decode(file)
-      if (image) return datasetFromItk(file, normalizeItkImage(image))
+      if (image) return datasetFromDecoded(file, normalizeItkImage(image), 'itk-wasm')
     } catch (error) {
       // 继续走回退路径，但保留提示。
       const fallback = await fallbackTiff(file)
@@ -309,7 +323,21 @@ export async function importFile(
   }
   const fallback = await fallbackTiff(file)
   if (fallback) return fallback
-  throw new Error('无法解码该文件：既不是可按页读取的 TIFF，也不是 ITK 支持的格式')
+  throw new Error('无法解码该文件：既不是可解码的 TIFF / FITS / WebP，也不是 ITK 支持的格式')
+}
+
+/** FITS：自研解析器，保留整数 / 浮点精度与多维 z 栈。 */
+async function importFits(file: File): Promise<ImportResult> {
+  const { decodeFitsFile } = await import('./fits/source.ts')
+  return datasetFromDecoded(file, await decodeFitsFile(file), 'fits')
+}
+
+/** WebP：ITK 不覆盖，交由浏览器原生解码（OffscreenCanvas / Canvas）。 */
+async function importWebp(file: File): Promise<ImportResult> {
+  const { decodeWebpFile } = await import('./bitmap.ts')
+  const decoded = await decodeWebpFile(file)
+  if (!decoded) throw new Error('当前环境不支持原生 WebP 解码（缺少 createImageBitmap / Canvas）')
+  return datasetFromDecoded(file, decoded, 'webp-native')
 }
 
 function defaultItkDecoder(): (file: File) => Promise<ItkImage | null> {
