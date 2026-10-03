@@ -291,10 +291,10 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
     if (!canvas) return
 
     const draw = () => {
-      const prepared = prepareChartCanvas(canvas, 112)
+      const prepared = prepareChartCanvas(canvas, 96)
       if (!prepared) return
       const { context, width: cssWidth } = prepared
-      const cssHeight = 112
+      const cssHeight = 96
       const padLeft = 6
       const padRight = 6
       const padTop = 14
@@ -394,16 +394,16 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
   /* ---------------- 右栏：卡片式视图（一个卡片 = 一个可视化） ---------------- */
 
   const viewCards = views.length ? (
-    <div className="grid gap-4">
+    <div className="grid gap-2">
       {views.map((card) => (
-        <section key={card.id} className="grid gap-2 rounded-[calc(var(--radius-box)+0.25rem)] bg-muted/50 p-4">
-          <div className="flex items-center justify-between gap-2">
+        <section key={card.id} className="grid gap-1.5 rounded-[var(--radius-box)] bg-muted/50 p-2.5">
+          <div className="flex items-center justify-between gap-1">
             <h3 className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{viewTitle(card.type)}</h3>
             <button
               type="button"
               aria-label={copy.close}
               onClick={() => removeView(card.id)}
-              className="rounded-[var(--radius-field)] p-1 text-base-content/50 transition hover:bg-base-200 hover:text-base-content"
+              className="rounded-[var(--radius-field)] p-0.5 text-base-content/50 transition hover:bg-base-200 hover:text-base-content"
             >
               <X size={14} />
             </button>
@@ -413,7 +413,7 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
             !hasImage ? (
               <p className="text-sm text-base-content/55">{copy.emptyDescription}</p>
             ) : stats ? (
-              <dl className="grid grid-cols-2 gap-2">
+              <dl className="grid grid-cols-2 gap-1.5">
                 {[
                   [copy.stats.pixels, stats.count.toLocaleString()],
                   [copy.stats.area, stats.area.toLocaleString()],
@@ -422,9 +422,9 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
                   [copy.stats.max, String(stats.max)],
                   [copy.stats.stdDev, stats.stdDev.toFixed(2)],
                 ].map(([label, value]) => (
-                  <div key={label} className="rounded-[var(--radius-field)] bg-base-100 px-3 py-2">
-                    <dt className="text-[11px] text-base-content/55">{label}</dt>
-                    <dd className="font-mono text-sm font-semibold tabular-nums text-base-content">{value}</dd>
+                  <div key={label} className="rounded-[var(--radius-field)] bg-base-100 px-2 py-1">
+                    <dt className="text-[10px] text-base-content/55">{label}</dt>
+                    <dd className="font-mono text-[13px] font-semibold tabular-nums text-base-content">{value}</dd>
                   </div>
                 ))}
               </dl>
@@ -437,7 +437,7 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
             <div className="rounded-[var(--radius-field)] bg-base-100">
               <HistogramChart
                 data={stats ? { counts: stats.histogram, min: stats.histogramMin, max: stats.histogramMax } : null}
-                height={112}
+                height={96}
                 color="var(--foreground)"
                 labels={{ count: copy.stats.pixel, cumulative: copy.stats.cumulative, level: copy.stats.level, frequency: copy.stats.frequency, empty: stats ? '' : copy.status.loading }}
                 ariaLabel={copy.views.histogram}
@@ -447,8 +447,8 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
 
           {card.type === 'profile' ? (
             <div className="grid gap-1">
-              <canvas ref={profileCanvasRef} className="block w-full rounded-[var(--radius-field)] bg-base-100" style={{ height: 112 }} />
-              <p className="text-[11px] text-base-content/55">{copy.views.profileNote}</p>
+              <canvas ref={profileCanvasRef} className="block w-full rounded-[var(--radius-field)] bg-base-100" style={{ height: 96 }} />
+              <p className="text-[10px] text-base-content/55">{copy.views.profileNote}</p>
             </div>
           ) : null}
 
@@ -692,7 +692,7 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
 
         {/* 右栏「分析」：卡片式视图（一个卡片一个可视化）+ 导出 */}
         <aside className="order-3 flex min-h-0 flex-col border-t border-base-300 bg-base-100 lg:order-none lg:h-full lg:border-t-0 lg:border-l">
-          <header className="flex shrink-0 items-center justify-between gap-2 border-b border-base-300 px-3 py-2">
+          <header className="flex shrink-0 items-center justify-between gap-2 border-b border-base-300 px-2 py-1.5">
             {hasImage ? (
               <span className="inline-flex rounded-[var(--radius-field)] bg-base-200 p-0.5">
                 {(['image', 'roi'] as const).map((value) => (
@@ -733,9 +733,9 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
             </DropdownMenu>
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">{viewCards}</div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">{viewCards}</div>
 
-          <footer className="shrink-0 border-t border-base-300 px-2.5 py-2">
+          <footer className="shrink-0 border-t border-base-300 px-2 py-1.5">
             <div className="grid gap-1.5">
               <Button type="button" variant="outline" size="sm" className="h-8" disabled={!hasImage || busy} onClick={exportPng}>
                 <Download size={14} />
