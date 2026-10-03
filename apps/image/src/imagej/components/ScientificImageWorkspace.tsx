@@ -67,7 +67,7 @@ function prepareChartCanvas(
   return { context, width: cssWidth }
 }
 
-function ImageDocumentView({ runtime, onOpenImage }: { runtime: ImageRuntime; onOpenImage(file: File): void }) {
+function ImageDocumentView({ runtime, onOpenImage, tabsHeader }: { runtime: ImageRuntime; onOpenImage(file: File): void; tabsHeader?: ReactNode }) {
   const { language } = useI18n()
   const copy = useMemo(() => createImagejCopy(language), [language])
   const state = useRuntimeState(runtime)
@@ -518,11 +518,6 @@ function ImageDocumentView({ runtime, onOpenImage }: { runtime: ImageRuntime; on
               <ImageIcon size={14} strokeWidth={2.2} />
               {copy.openImage}
             </Button>
-            {sourceName ? (
-              <span className="hidden max-w-48 shrink-0 truncate rounded-[var(--radius-field)] bg-muted px-1.5 py-1 text-[11px] text-base-content/70 sm:inline">
-                {sourceName}
-              </span>
-            ) : null}
 
             <div role="group" aria-label={copy.viewer.tool} className="inline-flex shrink-0 rounded-[var(--radius-field)] bg-muted p-0.5">
               {(['pan', 'roi'] as const).map((value) => (
@@ -633,7 +628,9 @@ function ImageDocumentView({ runtime, onOpenImage }: { runtime: ImageRuntime; on
           </footer>
         </aside>
 
-        <main className="order-1 relative min-h-[60vh] min-w-0 bg-base-100 lg:order-none lg:min-h-0">
+        <main className="order-1 flex min-h-[60vh] min-w-0 flex-col bg-base-100 lg:order-none lg:min-h-0">
+          {tabsHeader}
+          <div className="relative min-h-0 flex-1">
           {error ? (
             <p role="alert" className="absolute left-3 right-3 top-3 z-10 rounded-[var(--radius-box)] border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
@@ -680,6 +677,7 @@ function ImageDocumentView({ runtime, onOpenImage }: { runtime: ImageRuntime; on
               )}
             </>
           ) : null}
+          </div>
         </main>
 
         {/* 右栏「分析」：卡片式视图（一个卡片一个可视化）+ 导出 */}
@@ -868,58 +866,60 @@ export function ScientificImageWorkspace() {
 
   const isLastDocument = (id: string) => documents[documents.length - 1]?.id === id
 
-  return (
-    <Tabs value={activeId ?? ''} onValueChange={setActiveId} className="grid h-screen grid-rows-[auto_minmax(0,1fr)] gap-0">
-      <div className="flex h-9 items-stretch gap-1 border-b border-base-300 bg-base-100 px-1.5">
-        <input ref={fileInputRef} type="file" multiple accept="image/*,.tif,.tiff" className="hidden" onChange={onFileInput} />
-        <TabsList className="h-full min-w-0 flex-1 items-stretch justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0">
-          {documents.map((doc, index) => (
-            <ContextMenu key={doc.id}>
-              <ContextMenuTrigger asChild>
-                <div className="group relative flex shrink-0 items-stretch">
-                  <TabsTrigger
-                    value={doc.id}
-                    title={doc.title}
-                    className="h-full max-w-44 gap-1 rounded-[var(--radius-field)] border border-transparent py-0 pr-6 pl-2 text-xs data-[state=active]:border-base-300 data-[state=active]:bg-base-200">
-                    <span className="truncate">{doc.title}</span>
-                  </TabsTrigger>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`${copy.close} ${doc.title}`}
-                    onClick={(event) => { event.stopPropagation(); closeDocument(doc.id) }}
-                    className="absolute right-0.5 top-1/2 size-5 -translate-y-1/2 rounded-[3px] text-base-content/45 opacity-60 hover:bg-base-300 hover:text-base-content hover:opacity-100">
-                    <X size={11} />
-                  </Button>
-                </div>
-              </ContextMenuTrigger>
-              <ContextMenuContent className="w-56">
-                <ContextMenuItem onSelect={() => closeDocument(doc.id)}>{copy.close}</ContextMenuItem>
-                <ContextMenuSeparator />
-                <ContextMenuItem disabled={documents.length <= 1} onSelect={() => closeOthers(doc.id)}>{copy.tabs.closeOthers}</ContextMenuItem>
-                <ContextMenuItem disabled={isLastDocument(doc.id)} onSelect={() => closeToRight(doc.id)}>{copy.tabs.closeToRight}</ContextMenuItem>
-                <ContextMenuSeparator />
-                <ContextMenuItem disabled={index === 0} onSelect={() => mergeDocuments(documents[index - 1]!.id, doc.id)}>{copy.tabs.mergePrevious}</ContextMenuItem>
-                <ContextMenuItem disabled={index === documents.length - 1} onSelect={() => mergeDocuments(doc.id, documents[index + 1]!.id)}>{copy.tabs.mergeNext}</ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
-          ))}
-        </TabsList>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.openImage} title={copy.openImage} className="my-auto shrink-0">
-              <Plus size={15} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>{copy.openImage}</DropdownMenuItem>
-            <DropdownMenuItem onSelect={pickFolder}>{copy.tabs.openFolder}</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+  const tabsHeader = (
+    <div className="flex h-9 shrink-0 items-stretch gap-1 border-b border-base-300 bg-base-100 px-1.5">
+      <TabsList className="h-full min-w-0 flex-1 items-stretch justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0">
+        {documents.map((doc, index) => (
+          <ContextMenu key={doc.id}>
+            <ContextMenuTrigger asChild>
+              <div className="group relative flex shrink-0 items-stretch">
+                <TabsTrigger
+                  value={doc.id}
+                  title={doc.title}
+                  className="h-full max-w-44 gap-1 rounded-[var(--radius-field)] border border-transparent py-0 pr-6 pl-2 text-xs data-[state=active]:border-base-300 data-[state=active]:bg-base-200">
+                  <span className="truncate">{doc.title}</span>
+                </TabsTrigger>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`${copy.close} ${doc.title}`}
+                  onClick={(event) => { event.stopPropagation(); closeDocument(doc.id) }}
+                  className="absolute right-0.5 top-1/2 size-5 -translate-y-1/2 rounded-[3px] text-base-content/45 opacity-60 hover:bg-base-300 hover:text-base-content hover:opacity-100">
+                  <X size={11} />
+                </Button>
+              </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent className="w-56">
+              <ContextMenuItem onSelect={() => closeDocument(doc.id)}>{copy.close}</ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem disabled={documents.length <= 1} onSelect={() => closeOthers(doc.id)}>{copy.tabs.closeOthers}</ContextMenuItem>
+              <ContextMenuItem disabled={isLastDocument(doc.id)} onSelect={() => closeToRight(doc.id)}>{copy.tabs.closeToRight}</ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem disabled={index === 0} onSelect={() => mergeDocuments(documents[index - 1]!.id, doc.id)}>{copy.tabs.mergePrevious}</ContextMenuItem>
+              <ContextMenuItem disabled={index === documents.length - 1} onSelect={() => mergeDocuments(doc.id, documents[index + 1]!.id)}>{copy.tabs.mergeNext}</ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
+        ))}
+      </TabsList>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.openImage} title={copy.openImage} className="my-auto shrink-0">
+            <Plus size={15} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>{copy.openImage}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={pickFolder}>{copy.tabs.openFolder}</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
 
-      <div className="relative min-h-0">
+  return (
+    <Tabs value={activeId ?? ''} onValueChange={setActiveId} className="h-screen gap-0">
+      <input ref={fileInputRef} type="file" multiple accept="image/*,.tif,.tiff" className="hidden" onChange={onFileInput} />
+      <div className="relative min-h-0 flex-1">
         {documents.length === 0 ? (
           <div
             className="grid h-full place-items-center p-8 text-center"
@@ -938,7 +938,7 @@ export function ScientificImageWorkspace() {
           </div>
         ) : documents.map((doc) => (
           <TabsContent key={doc.id} value={doc.id} forceMount className="m-0 h-full outline-none data-[state=inactive]:hidden">
-            <ImageDocumentView runtime={doc.runtime} onOpenImage={(file) => openFiles([file])} />
+            <ImageDocumentView runtime={doc.runtime} onOpenImage={(file) => openFiles([file])} tabsHeader={doc.id === activeId ? tabsHeader : null} />
           </TabsContent>
         ))}
       </div>
