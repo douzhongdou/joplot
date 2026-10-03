@@ -202,6 +202,8 @@ export function ImageJApp() {
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
   const pendingAnchorRef = useRef<{ imageX: number; imageY: number; offsetX: number; offsetY: number } | null>(null)
+  const wheelAccumRef = useRef(0)
+  const wheelNavRef = useRef<{ count: number; step: (delta: number) => void }>({ count: 0, step: () => {} })
   const [brightness, setBrightness] = useState(0)
   const [contrast, setContrast] = useState(50)
   const [gaussianSigma, setGaussianSigma] = useState(1.5)
@@ -569,6 +571,9 @@ export function ImageJApp() {
     historyRef.current.clear()
     syncHistory()
   }
+
+  // 供视口滚轮翻页读取：每次渲染刷新，避免 effect 反复重绑。
+  wheelNavRef.current = { count: stack?.length ?? 0, step: (delta: number) => selectPage(pageIndex + delta) }
 
   const analyzeCurrentParticles = () => {
     const image = guardImage()
@@ -970,7 +975,7 @@ export function ImageJApp() {
     zoomAt(target, bounds.left + viewport.clientWidth / 2, bounds.top + viewport.clientHeight / 2)
   }
 
-  // 滚轮缩放；非 passive 监听才能 preventDefault 掉浏览器自身滚动。
+  // 滚轮：Ctrl/⌘ + 滚轮缩放；普通滚轮在 Stack 下翻页。非 passive 监听才能 preventDefault 掉浏览器缩放/滚动。
   useEffect(() => {
     const viewport = viewportRef.current
     if (!viewport) return
@@ -978,8 +983,20 @@ export function ImageJApp() {
     const handleWheel = (event: WheelEvent) => {
       if (!current) return
       event.preventDefault()
-      const factor = event.deltaY < 0 ? 1.2 : 1 / 1.2
-      zoomAt(zoomRef.current * factor, event.clientX, event.clientY)
+      if (event.ctrlKey || event.metaKey) {
+        const factor = event.deltaY < 0 ? 1.2 : 1 / 1.2
+        zoomAt(zoomRef.current * factor, event.clientX, event.clientY)
+        return
+      }
+      const nav = wheelNavRef.current
+      if (nav.count <= 1) return
+      const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.clientHeight : 1
+      wheelAccumRef.current += event.deltaY * scale
+      if (Math.abs(wheelAccumRef.current) >= 60) {
+        const direction = wheelAccumRef.current > 0 ? 1 : -1
+        wheelAccumRef.current = 0
+        nav.step(direction)
+      }
     }
 
     viewport.addEventListener('wheel', handleWheel, { passive: false })

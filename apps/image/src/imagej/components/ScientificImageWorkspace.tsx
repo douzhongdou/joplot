@@ -131,6 +131,10 @@ export function ScientificImageWorkspace() {
   // 翻页走 ref：selectPage 每次渲染重建，若作为 effect 依赖会反复重绑监听。
   const selectPageRef = useRef<(index: number) => void>(() => {})
   selectPageRef.current = selectPage
+  const pageIndexRef = useRef(pageIndex)
+  pageIndexRef.current = pageIndex
+  /** 供视口滚轮翻页调用：以当前页为基准步进，越界由 selectPage 夹取。 */
+  const stepPage = (delta: number) => selectPageRef.current(pageIndexRef.current + delta)
   useEffect(() => {
     if (!slice) return
     const onKey = (event: KeyboardEvent) => {
@@ -660,6 +664,7 @@ export function ScientificImageWorkspace() {
                 onRoi={(rect) => { if (!stale) setRoi(rect) }}
                 onProbe={(value) => setProbe(stale ? null : value)}
                 onZoom={setZoom}
+                onStepPage={slice && slice.length > 1 ? stepPage : undefined}
               />
               {stale && (
                 <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-base-100/50">
