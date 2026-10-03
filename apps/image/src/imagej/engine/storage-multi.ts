@@ -134,7 +134,11 @@ export class MultiFileStackStorage implements Storage {
       const target = axis === 'y' ? yAxis : axis === 'x' ? xAxis : axes.indexOf(axis)
       return (region.start[target] ?? 0) === 0 && region.shape[target] === frame.shape[frame.axes.indexOf(axis)]
     })
-    if (whole) return { dtype: frame.dtype, axes, shape: [...region.shape], region: { start: [...region.start], shape: [...region.shape] }, data: frame.data }
+    if (whole) {
+      // 必须返回拷贝：调用方（引擎 worker）会 transfer 这个 buffer 给主线程，
+      // 直接交出缓存里的 buffer 会让缓存条目变成 detached，再次读取即报错。
+      return { dtype: frame.dtype, axes, shape: [...region.shape], region: { start: [...region.start], shape: [...region.shape] }, data: frame.data.slice() }
+    }
     // 需要空间裁剪：复用 MemoryStorage 的行拷贝实现。
     const cropRegion: Region = { start: frame.axes.map((axis) => region.start[axes.indexOf(axis)] ?? 0), shape: frame.axes.map((axis) => region.shape[axes.indexOf(axis)] ?? frame.shape[frame.axes.indexOf(axis)]) }
     const passthrough = new MemoryStorage(this.id, { dtype: frame.dtype, axes: frame.axes, shape: frame.shape, source: this.meta.source }, frame.data)
