@@ -103,7 +103,8 @@ export interface ImagejCopy {
   }
   exportPng: string
   close: string
-  tabs: { closeOthers: string; closeToRight: string; openFolder: string; mergePrevious: string; mergeNext: string }
+  tabs: { closeOthers: string; closeToRight: string; openFolder: string; mergePrevious: string; mergeNext: string; buildStack: string }
+  stackBuilder: { title: string; hint: string; file: string; modified: string; size: string; pages: string; create: string; cancel: string; selectAll: string }
   stack: { page: string; exportCurrent: string; exportAll: string; geometryUnavailable: string; applyAll: string }
   stats: {
     heading: string
@@ -241,7 +242,8 @@ const zhCN: ImagejCopy = {
   },
   exportPng: '导出 PNG',
   close: '关闭',
-  tabs: { closeOthers: '关闭其他', closeToRight: '关闭右侧标签', openFolder: '打开文件夹…', mergePrevious: '与左侧标签合并为 Stack', mergeNext: '与右侧标签合并为 Stack' },
+  tabs: { closeOthers: '关闭其他', closeToRight: '关闭右侧标签', openFolder: '打开文件夹…', mergePrevious: '与左侧标签合并为 Stack', mergeNext: '与右侧标签合并为 Stack', buildStack: '创建 Stack…' },
+  stackBuilder: { title: '创建 Stack', hint: '勾选要合成一个 Stack 的图像（至少 2 个）', file: '文件名', modified: '修改时间', size: '大小', pages: '页数', create: '创建 Stack', cancel: '取消', selectAll: '全选' },
   stack: { page: '切片', exportCurrent: '导出当前 TIFF', exportAll: '导出整个 TIFF 栈', geometryUnavailable: '多页栈暂不支持改变切片尺寸的操作', applyAll: '应用到整个 Stack（关闭时仅当前切片）' },
   stats: {
     heading: '测量与直方图',
@@ -379,7 +381,8 @@ const en: ImagejCopy = {
   },
   exportPng: 'Export PNG',
   close: 'Close',
-  tabs: { closeOthers: 'Close others', closeToRight: 'Close tabs to the right', openFolder: 'Open folder…', mergePrevious: 'Merge with tab on the left into a stack', mergeNext: 'Merge with tab on the right into a stack' },
+  tabs: { closeOthers: 'Close others', closeToRight: 'Close tabs to the right', openFolder: 'Open folder…', mergePrevious: 'Merge with tab on the left into a stack', mergeNext: 'Merge with tab on the right into a stack', buildStack: 'Set up stack…' },
+  stackBuilder: { title: 'Set up stack', hint: 'Select the images to combine into one stack (at least 2)', file: 'File name', modified: 'Modified', size: 'Size', pages: 'Pages', create: 'Create stack', cancel: 'Cancel', selectAll: 'Select all' },
   stack: { page: 'Slice', exportCurrent: 'Export current TIFF', exportAll: 'Export TIFF stack', geometryUnavailable: 'Size-changing operations are unavailable for multi-page stacks', applyAll: 'Apply to the whole Stack (off: current slice only)' },
   stats: {
     heading: 'Measurements & histogram',
@@ -517,7 +520,8 @@ const jaJP: ImagejCopy = {
   },
   exportPng: 'PNG を書き出す',
   close: '閉じる',
-  tabs: { closeOthers: '他を閉じる', closeToRight: '右側を閉じる', openFolder: 'フォルダーを開く…', mergePrevious: '左のタブとスタックに統合', mergeNext: '右のタブとスタックに統合' },
+  tabs: { closeOthers: '他を閉じる', closeToRight: '右側を閉じる', openFolder: 'フォルダーを開く…', mergePrevious: '左のタブとスタックに統合', mergeNext: '右のタブとスタックに統合', buildStack: 'スタックを作成…' },
+  stackBuilder: { title: 'スタックを作成', hint: '1 つのスタックにまとめる画像を選択してください（2 つ以上）', file: 'ファイル名', modified: '更新日時', size: 'サイズ', pages: 'ページ数', create: 'スタックを作成', cancel: 'キャンセル', selectAll: 'すべて選択' },
   stack: { page: 'スライス', exportCurrent: '現在の TIFF を出力', exportAll: 'TIFF スタックを出力', geometryUnavailable: '複数ページのスタックではサイズを変える操作はできません', applyAll: 'スタック全体に適用（オフ：現在のスライス）' },
   stats: {
     heading: '測定とヒストグラム',

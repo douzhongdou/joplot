@@ -5,7 +5,7 @@ import { Check, Download, Image as ImageIcon, Plus, Redo2, Undo2, X, ZoomIn, Zoo
 import { AppNavbar } from '../../components/AppNavbar'
 import { useI18n } from '../../i18n'
 import { Button } from '@joplot/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@joplot/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@joplot/ui/dropdown-menu'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@joplot/ui/context-menu'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@joplot/ui/tabs'
 import { Label } from '@joplot/ui/label'
@@ -24,6 +24,7 @@ import type { ImageRuntime } from '../engine/runtime'
 import { useImageAnalysis } from './useImageAnalysis'
 import { ImageViewport, type ImageViewportHandle, type PixelProbe } from './ImageViewport'
 import { ColorContrastPanel } from './ColorContrastPanel'
+import { StackBuilderDialog, type StackRow } from './StackBuilderDialog'
 import { GaussianCommandPanel, LevelsCommandPanel, ThresholdCommandPanel } from './CommandPanels'
 import { HistogramChart } from './HistogramChart'
 import { applyColorAdjustments, type ColorAdjustment } from '../engine/colorAdjustments'
@@ -772,6 +773,7 @@ export function ScientificImageWorkspace() {
   const documentsRef = useRef(documents); documentsRef.current = documents
   const [dragging, setDragging] = useState(false)
   const dragDepth = useRef(0)
+  const [stackDialog, setStackDialog] = useState(false)
 
   /* 卸载时释放全部文档运行时。 */
   useEffect(() => () => { for (const doc of documentsRef.current) doc.runtime.dispose() }, [])
@@ -816,19 +818,28 @@ export function ScientificImageWorkspace() {
     input.click()
   }
 
-  /** 把左右两个 tab 的文件合成一个新的 Stack tab，并关闭原 tab（分组 = 组成 stack）。 */
-  const mergeDocuments = (leftId: string, rightId: string) => {
-    const left = documents.find((doc) => doc.id === leftId)
-    const right = documents.find((doc) => doc.id === rightId)
-    if (!left || !right) return
-    const files = [...left.files, ...right.files]
-    left.runtime.dispose(); right.runtime.dispose()
+  /** 把任意多个 tab 的文件合成一个新的 Stack tab，并关闭原 tab（分组 = 组成 stack）。 */
+  const mergeSelected = (ids: readonly string[]) => {
+    const selected = documents.filter((doc) => ids.includes(doc.id))
+    if (selected.length < 2) return
+    const files = selected.flatMap((doc) => doc.files)
+    for (const doc of selected) doc.runtime.dispose()
     const runtime = createDocumentRuntime(engine)
     const entry: DocumentEntry = { id: nextDocumentId(), title: `${files.length} images`, files, runtime }
-    setDocuments((docs) => [...docs.filter((doc) => doc.id !== leftId && doc.id !== rightId), entry])
+    setDocuments((docs) => [...docs.filter((doc) => !ids.includes(doc.id)), entry])
     setActiveId(entry.id)
     void runtime.openStack(files)
   }
+
+  const mergeDocuments = (leftId: string, rightId: string) => mergeSelected([leftId, rightId])
+
+  const stackRows: StackRow[] = documents.map((doc) => ({
+    id: doc.id,
+    title: doc.title,
+    modified: doc.files.reduce((max, file) => Math.max(max, file.lastModified || 0), 0),
+    size: doc.files.reduce((sum, file) => sum + file.size, 0),
+    pages: doc.files.length,
+  }))
 
   const closeDocument = (id: string) => {
     const index = documents.findIndex((doc) => doc.id === id)
@@ -925,6 +936,8 @@ export function ScientificImageWorkspace() {
               <ContextMenuSeparator />
               <ContextMenuItem disabled={index === 0} onSelect={() => mergeDocuments(documents[index - 1]!.id, doc.id)}>{copy.tabs.mergePrevious}</ContextMenuItem>
               <ContextMenuItem disabled={index === documents.length - 1} onSelect={() => mergeDocuments(doc.id, documents[index + 1]!.id)}>{copy.tabs.mergeNext}</ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem onSelect={() => setStackDialog(true)}>{copy.tabs.buildStack}</ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
         ))}
@@ -938,6 +951,8 @@ export function ScientificImageWorkspace() {
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>{copy.openImage}</DropdownMenuItem>
           <DropdownMenuItem onSelect={pickFolder}>{copy.tabs.openFolder}</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem disabled={documents.length < 2} onSelect={() => setStackDialog(true)}>{copy.tabs.buildStack}</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -979,6 +994,8 @@ export function ScientificImageWorkspace() {
           <div className="rounded-[var(--radius-box)] border-2 border-dashed border-primary/60 px-6 py-4 text-sm text-base-content/80">{copy.dropHint}</div>
         </div>
       ) : null}
+
+      <StackBuilderDialog open={stackDialog} onOpenChange={setStackDialog} rows={stackRows} copy={copy.stackBuilder} onCreate={mergeSelected} />
     </Tabs>
   )
 }
