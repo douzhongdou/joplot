@@ -103,7 +103,10 @@ export interface ImagejCopy {
   }
   exportPng: string
   close: string
-  tabs: { closeOthers: string; closeToRight: string; openFolder: string; mergePrevious: string; mergeNext: string; buildStack: string }
+  tabs: { closeOthers: string; closeToRight: string; openFolder: string; mergePrevious: string; mergeNext: string; buildStack: string; rename: string; splitStack: string; reorderStack: string }
+  rename: { title: string; label: string; confirm: string; cancel: string }
+  reorder: { title: string; hint: string; apply: string; cancel: string; up: string; down: string }
+  ejectPage: string
   stackBuilder: { title: string; hint: string; file: string; modified: string; size: string; pages: string; create: string; cancel: string; selectAll: string }
   stack: { page: string; exportCurrent: string; exportAll: string; geometryUnavailable: string; applyAll: string }
   stats: {
@@ -242,7 +245,10 @@ const zhCN: ImagejCopy = {
   },
   exportPng: '导出 PNG',
   close: '关闭',
-  tabs: { closeOthers: '关闭其他', closeToRight: '关闭右侧标签', openFolder: '打开文件夹…', mergePrevious: '与左侧标签合并为 Stack', mergeNext: '与右侧标签合并为 Stack', buildStack: '创建 Stack…' },
+  tabs: { closeOthers: '关闭其他', closeToRight: '关闭右侧标签', openFolder: '打开文件夹…', mergePrevious: '与左侧标签合并为 Stack', mergeNext: '与右侧标签合并为 Stack', buildStack: '创建 Stack…', rename: '重命名…', splitStack: '拆分 Stack', reorderStack: '调整顺序…' },
+  rename: { title: '重命名', label: '名称', confirm: '确定', cancel: '取消' },
+  reorder: { title: '调整 Stack 顺序', hint: '用上下箭头调整页面顺序，应用后重建 Stack', apply: '应用', cancel: '取消', up: '上移', down: '下移' },
+  ejectPage: '移出当前切片',
   stackBuilder: { title: '创建 Stack', hint: '勾选要合成一个 Stack 的图像（至少 2 个）', file: '文件名', modified: '修改时间', size: '大小', pages: '页数', create: '创建 Stack', cancel: '取消', selectAll: '全选' },
   stack: { page: '切片', exportCurrent: '导出当前 TIFF', exportAll: '导出整个 TIFF 栈', geometryUnavailable: '多页栈暂不支持改变切片尺寸的操作', applyAll: '应用到整个 Stack（关闭时仅当前切片）' },
   stats: {
@@ -381,7 +387,10 @@ const en: ImagejCopy = {
   },
   exportPng: 'Export PNG',
   close: 'Close',
-  tabs: { closeOthers: 'Close others', closeToRight: 'Close tabs to the right', openFolder: 'Open folder…', mergePrevious: 'Merge with tab on the left into a stack', mergeNext: 'Merge with tab on the right into a stack', buildStack: 'Set up stack…' },
+  tabs: { closeOthers: 'Close others', closeToRight: 'Close tabs to the right', openFolder: 'Open folder…', mergePrevious: 'Merge with tab on the left into a stack', mergeNext: 'Merge with tab on the right into a stack', buildStack: 'Set up stack…', rename: 'Rename…', splitStack: 'Split stack', reorderStack: 'Reorder…' },
+  rename: { title: 'Rename', label: 'Name', confirm: 'OK', cancel: 'Cancel' },
+  reorder: { title: 'Reorder stack', hint: 'Use the arrows to change page order; the stack is rebuilt on apply', apply: 'Apply', cancel: 'Cancel', up: 'Move up', down: 'Move down' },
+  ejectPage: 'Eject current slice',
   stackBuilder: { title: 'Set up stack', hint: 'Select the images to combine into one stack (at least 2)', file: 'File name', modified: 'Modified', size: 'Size', pages: 'Pages', create: 'Create stack', cancel: 'Cancel', selectAll: 'Select all' },
   stack: { page: 'Slice', exportCurrent: 'Export current TIFF', exportAll: 'Export TIFF stack', geometryUnavailable: 'Size-changing operations are unavailable for multi-page stacks', applyAll: 'Apply to the whole Stack (off: current slice only)' },
   stats: {
@@ -520,7 +529,10 @@ const jaJP: ImagejCopy = {
   },
   exportPng: 'PNG を書き出す',
   close: '閉じる',
-  tabs: { closeOthers: '他を閉じる', closeToRight: '右側を閉じる', openFolder: 'フォルダーを開く…', mergePrevious: '左のタブとスタックに統合', mergeNext: '右のタブとスタックに統合', buildStack: 'スタックを作成…' },
+  tabs: { closeOthers: '他を閉じる', closeToRight: '右側を閉じる', openFolder: 'フォルダーを開く…', mergePrevious: '左のタブとスタックに統合', mergeNext: '右のタブとスタックに統合', buildStack: 'スタックを作成…', rename: '名前を変更…', splitStack: 'スタックを分割', reorderStack: '順序を変更…' },
+  rename: { title: '名前を変更', label: '名前', confirm: 'OK', cancel: 'キャンセル' },
+  reorder: { title: 'スタックの順序', hint: '矢印でページ順を変更し、適用すると再構築します', apply: '適用', cancel: 'キャンセル', up: '上へ', down: '下へ' },
+  ejectPage: '現在のスライスを出す',
   stackBuilder: { title: 'スタックを作成', hint: '1 つのスタックにまとめる画像を選択してください（2 つ以上）', file: 'ファイル名', modified: '更新日時', size: 'サイズ', pages: 'ページ数', create: 'スタックを作成', cancel: 'キャンセル', selectAll: 'すべて選択' },
   stack: { page: 'スライス', exportCurrent: '現在の TIFF を出力', exportAll: 'TIFF スタックを出力', geometryUnavailable: '複数ページのスタックではサイズを変える操作はできません', applyAll: 'スタック全体に適用（オフ：現在のスライス）' },
   stats: {

@@ -124,7 +124,7 @@ export function StackBuilderDialog({ open, onOpenChange, rows, copy, onCreate }:
         <DialogFooter>
           <span className="mr-auto self-center text-xs text-base-content/55">{selected.size} / {rows.length}</span>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{copy.cancel}</Button>
-          <Button type="button" disabled={selected.size < 2} onClick={() => { onCreate([...selected]); onOpenChange(false) }}>{copy.create}</Button>
+          <Button type="button" disabled={selected.size < 2} onClick={() => { onCreate(sorted.filter((row) => selected.has(row.id)).map((row) => row.id)); onOpenChange(false) }}>{copy.create}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

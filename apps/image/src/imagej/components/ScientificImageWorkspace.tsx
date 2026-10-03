@@ -25,6 +25,8 @@ import { useImageAnalysis } from './useImageAnalysis'
 import { ImageViewport, type ImageViewportHandle, type PixelProbe } from './ImageViewport'
 import { ColorContrastPanel } from './ColorContrastPanel'
 import { StackBuilderDialog, type StackRow } from './StackBuilderDialog'
+import { StackOrderDialog } from './StackOrderDialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@joplot/ui/dialog'
 import { GaussianCommandPanel, LevelsCommandPanel, ThresholdCommandPanel } from './CommandPanels'
 import { HistogramChart } from './HistogramChart'
 import { applyColorAdjustments, type ColorAdjustment } from '../engine/colorAdjustments'
@@ -69,7 +71,7 @@ function prepareChartCanvas(
   return { context, width: cssWidth }
 }
 
-function ImageDocumentView({ runtime, onOpenImage, tabsHeader }: { runtime: ImageRuntime; onOpenImage(file: File): void; tabsHeader?: ReactNode }) {
+function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { runtime: ImageRuntime; onOpenImage(file: File): void; tabsHeader?: ReactNode; onEjectPage?(pageIndex: number): void }) {
   const { language } = useI18n()
   const copy = useMemo(() => createImagejCopy(language), [language])
   const state = useRuntimeState(runtime)
@@ -591,6 +593,10 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader }: { runtime: Imag
               <input type="range" min={0} max={entry.length - 1} value={entry.index} disabled={busy} onChange={(event) => selectAxis(entry.axis, Number(event.target.value))} aria-label={`${entry.axis} ${copy.stack.page}`} className="w-20 accent-primary" />
             </span>)}
 
+            {onEjectPage && slice && slice.length > 1 ? (
+              <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={busy} onClick={() => onEjectPage(pageIndex)}>{copy.ejectPage}</Button>
+            ) : null}
+
             <span className="ml-auto hidden shrink-0 truncate pl-2 font-mono text-[11px] text-base-content/55 md:inline">
               {probe ? `(${probe.x}, ${probe.y}) = ${probe.value} · ` : ''}{roiLabel}
             </span>
@@ -774,6 +780,9 @@ export function ScientificImageWorkspace() {
   const [dragging, setDragging] = useState(false)
   const dragDepth = useRef(0)
   const [stackDialog, setStackDialog] = useState(false)
+  const [renameId, setRenameId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [reorderId, setReorderId] = useState<string | null>(null)
 
   /* 卸载时释放全部文档运行时。 */
   useEffect(() => () => { for (const doc of documentsRef.current) doc.runtime.dispose() }, [])
@@ -840,6 +849,70 @@ export function ScientificImageWorkspace() {
     size: doc.files.reduce((sum, file) => sum + file.size, 0),
     pages: doc.files.length,
   }))
+
+  const renameDoc = documents.find((doc) => doc.id === renameId) ?? null
+  const reorderDoc = documents.find((doc) => doc.id === reorderId) ?? null
+
+  /** 用新的文件列表重建文档（重新导入；该文档的处理记录不会保留）。 */
+  const rebuildDocument = (doc: DocumentEntry, files: File[], title: string): DocumentEntry => {
+    doc.runtime.dispose()
+    const runtime = createDocumentRuntime(engine)
+    if (files.length > 1) void runtime.openStack(files)
+    else if (files.length === 1) void runtime.openFile(files[0]!)
+    return { ...doc, runtime, files, title }
+  }
+
+  const commitRename = () => {
+    if (!renameId) return
+    const next = renameValue.trim()
+    if (next) setDocuments((docs) => docs.map((doc) => (doc.id === renameId ? { ...doc, title: next } : doc)))
+    setRenameId(null)
+  }
+
+  /** 把 Stack 拆成每个文件一个独立 tab。 */
+  const splitDocument = (id: string) => {
+    const index = documents.findIndex((doc) => doc.id === id)
+    if (index < 0) return
+    const doc = documents[index]!
+    if (doc.files.length < 2) return
+    doc.runtime.dispose()
+    const created: DocumentEntry[] = doc.files.map((file) => {
+      const runtime = createDocumentRuntime(engine)
+      void runtime.openFile(file)
+      return { id: nextDocumentId(), title: file.name, files: [file], runtime }
+    })
+    setDocuments((docs) => [...docs.slice(0, index), ...created, ...docs.slice(index + 1)])
+    if (activeId === id) setActiveId(created[0]!.id)
+  }
+
+  /** 把当前页从 Stack 移出：剩下仍是 Stack（或降级为单图），被移出的成为独立 tab。 */
+  const extractPage = (id: string, pageIndex: number) => {
+    const index = documents.findIndex((doc) => doc.id === id)
+    if (index < 0) return
+    const doc = documents[index]!
+    if (doc.files.length < 2) return
+    const file = doc.files[pageIndex]
+    if (!file) return
+    const remaining = doc.files.filter((_, i) => i !== pageIndex)
+    const updated = remaining.length > 0 ? rebuildDocument(doc, remaining, remaining.length > 1 ? doc.title : remaining[0]!.name) : null
+    if (remaining.length === 0) doc.runtime.dispose()
+    const ejected: DocumentEntry = { id: nextDocumentId(), title: file.name, files: [file], runtime: createDocumentRuntime(engine) }
+    void ejected.runtime.openFile(file)
+    setDocuments((docs) => {
+      const before = docs.slice(0, index), after = docs.slice(index + 1)
+      return [...before, ...(updated ? [updated] : []), ejected, ...after]
+    })
+    setActiveId(ejected.id)
+  }
+
+  /** 按新的顺序重建 Stack。 */
+  const reorderDocument = (id: string, order: readonly number[]) => {
+    const doc = documents.find((entry) => entry.id === id)
+    if (!doc || order.length !== doc.files.length) return
+    const files = order.map((fileIndex) => doc.files[fileIndex]!)
+    const next = rebuildDocument(doc, files, doc.title)
+    setDocuments((docs) => docs.map((entry) => (entry.id === id ? next : entry)))
+  }
 
   const closeDocument = (id: string) => {
     const index = documents.findIndex((doc) => doc.id === id)
@@ -938,6 +1011,10 @@ export function ScientificImageWorkspace() {
               <ContextMenuItem disabled={index === documents.length - 1} onSelect={() => mergeDocuments(doc.id, documents[index + 1]!.id)}>{copy.tabs.mergeNext}</ContextMenuItem>
               <ContextMenuSeparator />
               <ContextMenuItem onSelect={() => setStackDialog(true)}>{copy.tabs.buildStack}</ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem onSelect={() => { setRenameId(doc.id); setRenameValue(doc.title) }}>{copy.tabs.rename}</ContextMenuItem>
+              <ContextMenuItem disabled={doc.files.length < 2} onSelect={() => splitDocument(doc.id)}>{copy.tabs.splitStack}</ContextMenuItem>
+              <ContextMenuItem disabled={doc.files.length < 2} onSelect={() => setReorderId(doc.id)}>{copy.tabs.reorderStack}</ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
         ))}
@@ -985,7 +1062,7 @@ export function ScientificImageWorkspace() {
           </div>
         ) : documents.map((doc) => (
           <TabsContent key={doc.id} value={doc.id} forceMount className="m-0 h-full outline-none data-[state=inactive]:hidden">
-            <ImageDocumentView runtime={doc.runtime} onOpenImage={(file) => openFiles([file])} tabsHeader={doc.id === activeId ? tabsHeader : null} />
+            <ImageDocumentView runtime={doc.runtime} onOpenImage={(file) => openFiles([file])} tabsHeader={doc.id === activeId ? tabsHeader : null} onEjectPage={doc.files.length > 1 ? (index) => extractPage(doc.id, index) : undefined} />
           </TabsContent>
         ))}
       </div>
@@ -996,6 +1073,35 @@ export function ScientificImageWorkspace() {
       ) : null}
 
       <StackBuilderDialog open={stackDialog} onOpenChange={setStackDialog} rows={stackRows} copy={copy.stackBuilder} onCreate={mergeSelected} />
+
+      <Dialog open={Boolean(renameDoc)} onOpenChange={(open) => { if (!open) setRenameId(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{copy.rename.title}</DialogTitle>
+          </DialogHeader>
+          <input
+            value={renameValue}
+            autoFocus
+            aria-label={copy.rename.label}
+            onChange={(event) => setRenameValue(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') commitRename(); else if (event.key === 'Escape') setRenameId(null) }}
+            className="h-9 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setRenameId(null)}>{copy.rename.cancel}</Button>
+            <Button type="button" onClick={commitRename}>{copy.rename.confirm}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <StackOrderDialog
+        open={Boolean(reorderDoc)}
+        onOpenChange={(open) => { if (!open) setReorderId(null) }}
+        names={reorderDoc ? reorderDoc.files.map((file) => file.name) : []}
+        fileLabel={copy.stackBuilder.file}
+        copy={copy.reorder}
+        onApply={(order) => { if (reorderDoc) reorderDocument(reorderDoc.id, order) }}
+      />
     </Tabs>
   )
 }
