@@ -135,7 +135,7 @@ test('压缩页被明确拒绝，而不是产出错误像素', async () => {
   const problems = reader.unsupportedPages()
   assert.equal(problems.length, 1)
   assert.match(problems[0]!.reason, /Compression=5/)
-  await assert.rejects(() => reader.readPage(0), /解压暂未实现/)
+  await assert.rejects(() => reader.readPage(0), /暂不支持解压/)
 })
 
 test('不受支持的位深被明确拒绝', async () => {

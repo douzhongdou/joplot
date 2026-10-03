@@ -8,9 +8,9 @@ import type { Image as ItkImage } from 'itk-wasm'
 import { createDataset, nextDatasetId, type Dataset } from './dataset.ts'
 import { MemoryStorage, type Storage, type StorageMetadata } from './storage.ts'
 import { TiffStackStorage } from './storage-tiff.ts'
-import { MultiFrameStorage, frameSignature } from './storage-multi.ts'
+import { MultiFileStackStorage, pageSignature } from './storage-multi.ts'
 import { TiffPageSource, dtypeOf } from './tiff/source.ts'
-import { type Dtype, type ChannelInfo, uncalibratedSpatialTransform, allocateBuffer, type PixelArray } from './types.ts'
+import { type Dtype, type ChannelInfo, type ImageBlock, uncalibratedSpatialTransform, allocateBuffer, type PixelArray } from './types.ts'
 import { decodeTiff } from '../lib/tiff.ts'
 import type { GrayImage } from '../lib/processor.ts'
 
@@ -39,12 +39,16 @@ function makeSource(file: File, format: StorageMetadata['source']['format']) {
 /** FITS 常见扩展名：.fits / .fit / .fts。 */
 const FITS_SUFFIX = /\.(fits|fit|fts)$/
 
+/** 相机 RAW 扩展名；非 TIFF 容器会在解码时给出明确错误。 */
+const RAW_SUFFIX = /\.(dng|cr2|crw|nef|nrw|arw|srf|sr2|orf|rw2|pef|srw|raf|3fr|fff|iiq|mrw|dcr|kdc|rwl|x3f|erf|mef|mos|mfw)$/i
+
 function formatFor(file: File): StorageMetadata['source']['format'] {
   const lower = file.name.toLowerCase()
   if (lower.endsWith('.tif') || lower.endsWith('.tiff') || file.type === 'image/tiff') return 'tiff'
   if (lower.endsWith('.png') || file.type === 'image/png') return 'png'
   if (lower.endsWith('.webp') || file.type === 'image/webp') return 'webp'
   if (FITS_SUFFIX.test(lower) || file.type === 'image/fits' || file.type === 'application/fits') return 'fits'
+  if (RAW_SUFFIX.test(lower)) return 'raw'
   return 'unknown'
 }
 
@@ -145,7 +149,7 @@ function originOf(image: ItkImage): [number, number, number] {
   return [origin[0] ?? 0, origin[1] ?? 0, origin[2] ?? 0]
 }
 
-function datasetFromDecoded(file: File, imported: DecodedImage, decodedWith: string): ImportResult {
+function datasetFromDecoded(file: File, imported: DecodedImage, decodedWith: string, extraMetadata?: Readonly<Record<string, string | number | boolean>>): ImportResult {
   const calibrated = imported.spacing.some((s) => s !== 1) || imported.origin.some((o) => o !== 0)
   const dataset = createDataset({
     dtype: imported.dtype,
@@ -161,7 +165,7 @@ function datasetFromDecoded(file: File, imported: DecodedImage, decodedWith: str
     channels: imported.channels,
     componentKind: imported.componentKind,
     source: makeSource(file, formatFor(file)),
-    metadata: { decodedWith },
+    metadata: { decodedWith, ...extraMetadata },
   })
   const storageMeta: StorageMetadata = {
     dtype: dataset.dtype,
@@ -302,6 +306,7 @@ export async function importFile(
   const format = formatFor(file)
   if (format === 'fits') return importFits(file)
   if (format === 'webp') return importWebp(file)
+  if (format === 'raw') return importRaw(file)
 
   const stack = await tryTiffStack(file)
   if (stack) return stack
@@ -340,6 +345,13 @@ async function importWebp(file: File): Promise<ImportResult> {
   return datasetFromDecoded(file, decoded, 'webp-native')
 }
 
+/** RAW：自研解码，输出单通道 CFA 马赛克灰度 + CFA 元数据，彩色由 debayer 算子还原。 */
+async function importRaw(file: File): Promise<ImportResult> {
+  const { decodeRawFile } = await import('./raw/index.ts')
+  const { decoded, metadata } = await decodeRawFile(file)
+  return datasetFromDecoded(file, decoded, 'raw-tiff', metadata)
+}
+
 function defaultItkDecoder(): (file: File) => Promise<ItkImage | null> {
   return async (file: File) => {
     const { decodeImageFile } = await import('./compute/itk.ts')
@@ -357,45 +369,52 @@ async function fallbackTiff(file: File): Promise<ImportResult | null> {
 }
 
 /**
- * 把多个图像文件合成一个 Stack。
+ * 把多个图像文件合成一个 Stack（惰性）。
  *
- * 页映射为 z 轴切片（与 `storage-tiff.ts` 的轴映射一致）。要求所有来源同 dtype、
- * 同 y/x 尺寸、同分量语义，且各自都是单帧；否则抛出可读错误交给 UI 展示。
+ * 页映射为 z 轴切片（与 `storage-tiff.ts` 的轴映射一致）。导入时**只解码第一页**拿到
+ * dtype / 尺寸 / 分量，其余页在翻到时才解码并按字节预算缓存；因此 12 张 36MB 的 JPEG
+ * 不会在导入时一次性占满内存。要求各页同 dtype、同 y/x 尺寸、同分量语义且均为单帧，
+ * 不一致会在该页首次被读到时抛出可读错误。
  */
 export async function importImageStack(
   files: readonly File[],
   decoder?: (file: File) => Promise<ItkImage | null>,
 ): Promise<ImportResult> {
   if (files.length < 2) throw new Error('合成 Stack 至少需要两张图像')
-  const results = await Promise.all(files.map((file) => importFile(file, decoder)))
-  const first = results[0]!
-  const signature = frameSignature(first.storage.metadata())
-  const warnings: string[] = []
-  for (let index = 0; index < results.length; index += 1) {
-    const result = results[index]!
-    const sig = frameSignature(result.storage.metadata())
-    if (sig.multiFrame) throw new Error(`第 ${index + 1} 张「${files[index]!.name}」本身是多页 Stack，不能再合成 Stack`)
-    if (sig.dtype !== signature.dtype || sig.width !== signature.width || sig.height !== signature.height || sig.componentKind !== signature.componentKind) {
-      throw new Error(`第 ${index + 1} 张「${files[index]!.name}」的位深 / 尺寸 / 分量与第一张不一致，无法合成 Stack`)
+
+  /** 解码某一页为原生块（读完整帧后释放临时存储）。 */
+  const decodePage = async (file: File): Promise<ImageBlock> => {
+    const result = await importFile(file, decoder)
+    const meta = result.storage.metadata()
+    const region = { start: meta.axes.map(() => 0), shape: [...meta.shape] }
+    try {
+      return await result.storage.readRegion(region)
+    } finally {
+      result.storage.release()
     }
-    warnings.push(...result.warnings)
+  }
+
+  const firstBlock = await decodePage(files[0]!)
+  const signature = pageSignature(firstBlock)
+  if (signature.componentKind === 'scalar' && firstBlock.axes.some((axis, index) => (axis === 'z' || axis === 't') && (firstBlock.shape[index] ?? 1) > 1)) {
+    throw new Error(`第 1 张「${files[0]!.name}」本身是多页 Stack，不能再合成 Stack`)
   }
 
   const rgb = signature.componentKind === 'rgb'
   const axes: Dataset['axes'] = rgb ? ['c', 'z', 'y', 'x'] : ['z', 'y', 'x']
   const shape = rgb ? [3, files.length, signature.height, signature.width] : [files.length, signature.height, signature.width]
-  const channels = rgb
+  const channels: ChannelInfo[] = rgb
     ? [
-      { index: 0, name: 'Red', kind: 'rgb' as const, displayColor: [255, 0, 0] as [number, number, number] },
-      { index: 1, name: 'Green', kind: 'rgb' as const, displayColor: [0, 255, 0] as [number, number, number] },
-      { index: 2, name: 'Blue', kind: 'rgb' as const, displayColor: [0, 0, 255] as [number, number, number] },
+      { index: 0, name: 'Red', kind: 'rgb', displayColor: [255, 0, 0] },
+      { index: 1, name: 'Green', kind: 'rgb', displayColor: [0, 255, 0] },
+      { index: 2, name: 'Blue', kind: 'rgb', displayColor: [0, 0, 255] },
     ]
-    : first.dataset.channels
+    : [{ index: 0, name: 'Channel 1', kind: 'other' }]
   const dataset = createDataset({
     dtype: signature.dtype,
     axes,
     shape,
-    spatialTransform: first.dataset.spatialTransform,
+    spatialTransform: uncalibratedSpatialTransform(),
     channels,
     componentKind: signature.componentKind,
     source: {
@@ -404,7 +423,7 @@ export async function importImageStack(
       format: 'unknown',
       fingerprint: `stack:${files.map(fileFingerprint).join('|')}`,
     },
-    metadata: { decodedWith: 'multi-file', pages: files.length },
+    metadata: { decodedWith: 'multi-file', pages: files.length, lazy: true },
   })
   const storageMeta: StorageMetadata = {
     dtype: dataset.dtype,
@@ -414,11 +433,10 @@ export async function importImageStack(
     channels: dataset.channels,
     source: dataset.source,
   }
-  warnings.unshift(`已把 ${files.length} 张图像合成 Stack（z 轴 ${files.length} 页）`)
   return {
     dataset,
-    storage: new MultiFrameStorage(nextDatasetId('store'), storageMeta, results.map((result) => result.storage)),
-    warnings,
+    storage: new MultiFileStackStorage(nextDatasetId('store'), storageMeta, files, decodePage, { index: 0, block: firstBlock }),
+    warnings: [`已按需懒加载 ${files.length} 页：翻页时才解码（导入只解码第 1 页取尺寸）`],
   }
 }
 

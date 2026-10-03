@@ -25,13 +25,64 @@ import type { Dtype, ImageBlock, PixelArray } from '../types.ts'
 import { DTYPE_BYTES, allocateBuffer } from '../types.ts'
 import type { IndexedTiff, TiffIndex, TiffPage } from './index.ts'
 import { pageAt } from './index.ts'
-import { indexTiff } from './indexer.ts'
+import { indexTiff, type TiffIndexOptions } from './indexer.ts'
 
 /** 平台字节序。 */
 const PLATFORM_LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1
 
 /** Compression=1 表示未压缩。 */
 const COMPRESSION_NONE = 1
+/** Adobe Deflate / Deflate（zlib 流）。 */
+const COMPRESSION_DEFLATE = 8
+const COMPRESSION_DEFLATE_OLD = 32946
+
+/** 本模块能够按页读出的压缩方式。 */
+const READABLE_COMPRESSION = new Set([COMPRESSION_NONE, COMPRESSION_DEFLATE, COMPRESSION_DEFLATE_OLD])
+
+/** 解压一段分段数据。未压缩原样返回；Deflate 走浏览器 / Node 原生 DecompressionStream。 */
+async function inflateSegment(bytes: Uint8Array, compression: number): Promise<Uint8Array> {
+  if (compression === COMPRESSION_NONE) return bytes
+  if (compression === COMPRESSION_DEFLATE || compression === COMPRESSION_DEFLATE_OLD) {
+    if (typeof DecompressionStream === 'undefined') {
+      throw new Error('当前环境缺少 DecompressionStream，无法解压 Deflate 压缩的 TIFF / RAW')
+    }
+    const stream = new Blob([bytes as unknown as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate'))
+    return new Uint8Array(await new Response(stream).arrayBuffer())
+  }
+  throw new Error(`暂不支持的 TIFF 压缩方式 Compression=${compression}`)
+}
+
+/**
+ * 反演 Predictor=2（水平差分）。
+ *
+ * 对每一行，第 i 个样本还原为「前面所有样本之和」；行间重置。按位累加后用掩码截断，
+ * 对无符号与二进制补码有符号整数都成立。
+ */
+function undoHorizontalPredictor(bytes: Uint8Array, rowSamples: number, rowCount: number, bytesPerSample: number, littleEndian: boolean): void {
+  if (rowSamples < 2 || rowCount < 1) return
+  if (bytesPerSample === 1) {
+    for (let row = 0; row < rowCount; row += 1) {
+      const base = row * rowSamples
+      for (let i = 1; i < rowSamples; i += 1) bytes[base + i] = (bytes[base + i]! + bytes[base + i - 1]!) & 0xff
+    }
+    return
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  for (let row = 0; row < rowCount; row += 1) {
+    const base = row * rowSamples * bytesPerSample
+    for (let i = 1; i < rowSamples; i += 1) {
+      const at = base + i * bytesPerSample
+      const prev = at - bytesPerSample
+      if (bytesPerSample === 2) {
+        view.setUint16(at, (view.getUint16(at, littleEndian) + view.getUint16(prev, littleEndian)) & 0xffff, littleEndian)
+      } else if (bytesPerSample === 4) {
+        view.setUint32(at, (view.getUint32(at, littleEndian) + view.getUint32(prev, littleEndian)) >>> 0, littleEndian)
+      } else {
+        throw new Error(`暂不支持 ${bytesPerSample * 8} 位样本的 Predictor=2`)
+      }
+    }
+  }
+}
 
 /** PhotometricInterpretation 取值。本模块不改变像素值，反相由显示层决定。 */
 export const PHOTOMETRIC_WHITE_IS_ZERO = 0
@@ -113,8 +164,8 @@ export class TiffPageSource {
   }
 
   /** 为 `Blob` 建立索引并返回按页读取器。 */
-  static async open(blob: Blob): Promise<TiffPageSource> {
-    return new TiffPageSource(await indexTiff(blob))
+  static async open(blob: Blob, options?: TiffIndexOptions): Promise<TiffPageSource> {
+    return new TiffPageSource(await indexTiff(blob, options))
   }
 
   /** 用已有索引构造，避免重复建索引。 */
@@ -167,13 +218,16 @@ export class TiffPageSource {
    */
   async readPage(page: number): Promise<TiffFrame> {
     const meta = pageAt(this.handle.index, page)
-    if (meta.compression !== COMPRESSION_NONE) {
-      throw new Error(`第 ${page} 页为压缩 TIFF（Compression=${meta.compression}），解压暂未实现`)
+    if (!READABLE_COMPRESSION.has(meta.compression)) {
+      throw new Error(`第 ${page} 页 Compression=${meta.compression} 暂不支持解压`)
     }
     const dtype = dtypeOf(meta)
     if (!dtype) throw new Error(`第 ${page} 页位深 ${meta.bitsPerSample} 位 SampleFormat=${meta.sampleFormat} 暂不支持`)
     if (meta.components !== 1 && meta.components !== 3) {
       throw new Error(`第 ${page} 页分量数 ${meta.components} 暂不支持`)
+    }
+    if (meta.predictor !== 1 && meta.predictor !== 2) {
+      throw new Error(`第 ${page} 页 Predictor=${meta.predictor} 暂不支持`)
     }
 
     const sampleBytes = meta.bitsPerSample / 8
@@ -182,10 +236,16 @@ export class TiffPageSource {
 
     for (const segment of meta.segments) {
       const need = segment.height * rowBytes
-      if (segment.byteLength < need) {
-        throw new Error(`第 ${page} 页分段字节不足：期望 ${need}，实际 ${segment.byteLength}（offset=${segment.offset}）`)
+      // 未压缩时 byteLength 即原始字节数；Deflate 时读入的是压缩流，先解压再反预测。
+      const stored = await this.handle.read(segment.offset, segment.byteLength)
+      const bytes = await inflateSegment(stored, meta.compression)
+      if (meta.predictor === 2) {
+        const rowSamples = (meta.layout === 'tile' ? meta.tileWidth : meta.width) * meta.components
+        undoHorizontalPredictor(bytes, rowSamples, segment.height, sampleBytes, meta.littleEndian)
       }
-      const bytes = await this.handle.read(segment.offset, need)
+      if (bytes.byteLength < need) {
+        throw new Error(`第 ${page} 页分段字节不足：期望 ${need}，实际 ${bytes.byteLength}（offset=${segment.offset}）`)
+      }
       for (let row = 0; row < segment.height; row += 1) {
         const from = row * rowBytes
         raw.set(bytes.subarray(from, from + rowBytes), (segment.y + row) * rowBytes)

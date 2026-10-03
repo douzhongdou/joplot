@@ -14,7 +14,7 @@ async function fileFrom(block: ImageBlock, name: string): Promise<File> {
   return new File([blob], name)
 }
 
-test('importImageStack 把多个单帧文件合成 z 轴 Stack', async () => {
+test('importImageStack 惰性合成 z 轴 Stack 并按页读取', async () => {
   const files = [await fileFrom(page(10), 'a.tif'), await fileFrom(page(200), 'b.tif')]
   const result = await importImageStack(files)
   assert.deepEqual([...result.dataset.axes], ['z', 'y', 'x'])
@@ -42,9 +42,13 @@ test('importImageStack 支持空间子区域读取并按页定位', async () => 
   result.storage.release()
 })
 
-test('importImageStack 拒绝尺寸不一致的来源', async () => {
+test('importImageStack 惰性校验：尺寸不一致的页在首次读取时才报错', async () => {
   const files = [await fileFrom(page(10, 32, 32), 'a.tif'), await fileFrom(page(200, 16, 16), 'b.tif')]
-  await assert.rejects(() => importImageStack(files), /不一致|无法合成/)
+  // 导入只解码第一页，因此这里不会失败
+  const result = await importImageStack(files)
+  assert.deepEqual([...result.dataset.shape], [2, 32, 32])
+  // 翻到第二页（尺寸不符）时才拒绝
+  await assert.rejects(() => result.storage.readRegion({ start: [1, 0, 0], shape: [1, 32, 32] }), /不一致|无法/)
 })
 
 test('importImageStack 少于两张时拒绝', async () => {

@@ -63,6 +63,12 @@ export interface ImagejCopy {
     otsu: string
     otsuResult: string
   }
+  debayer: {
+    pattern: string
+    algorithm: string
+    apply: string
+    patternAuto: string
+  }
   filters: {
     heading: string
     mean: string
@@ -103,7 +109,7 @@ export interface ImagejCopy {
   }
   exportPng: string
   close: string
-  tabs: { closeOthers: string; closeToRight: string; openFolder: string; mergePrevious: string; mergeNext: string; buildStack: string; rename: string; splitStack: string; reorderStack: string }
+  tabs: { closeOthers: string; closeToRight: string; openFolder: string; mergePrevious: string; mergeNext: string; buildStack: string; rename: string; splitStack: string; reorderStack: string; autoDebayer: string }
   rename: { title: string; label: string; confirm: string; cancel: string }
   reorder: { title: string; hint: string; apply: string; cancel: string; up: string; down: string; drag: string }
   ejectPage: string
@@ -189,13 +195,13 @@ const zhCN: ImagejCopy = {
     needsGray: '此步骤需要灰度图，请先添加「转灰度」步骤。',
     categories: { format: '格式', adjust: '显示', threshold: '阈值', filter: '滤波', morphology: '形态学', geometry: '几何', analysis: '分析' },
     ops: {
-      grayscale: '转灰度', invert: '反相', levels: '亮度/对比度', threshold: '阈值', otsu: 'Otsu 自动阈值',
+      grayscale: '转灰度', debayer: '去马赛克（Debayer）', invert: '反相', levels: '亮度/对比度', threshold: '阈值', otsu: 'Otsu 自动阈值',
       mean3x3: '3×3 均值', median3x3: '3×3 中值', sharpen3x3: '锐化', sobel: 'Sobel 边缘', minimum3x3: '3×3 最小', maximum3x3: '3×3 最大',
       gaussian: '高斯模糊', erode: '腐蚀', dilate: '膨胀', open: '开运算', close: '闭运算', fillHoles: '填孔',
       crop: '裁剪', flipH: '水平翻转', flipV: '垂直翻转', rotateCW: '顺时针 90°', rotateCCW: '逆时针 90°',
       measure: '测量与直方图', particles: '粒子分析',
     },
-    params: { brightness: '亮度', contrast: '对比度', level: '阈值', sigma: 'σ', minArea: '最小面积', x: 'X', y: 'Y', width: '宽', height: '高' },
+    params: { brightness: '亮度', contrast: '对比度', level: '阈值', sigma: 'σ', minArea: '最小面积', x: 'X', y: 'Y', width: '宽', height: '高', pattern: '滤镜序列', algorithm: '算法' },
   },
   roi: {
     draw: '矩形 ROI',
@@ -216,6 +222,12 @@ const zhCN: ImagejCopy = {
     thresholdApply: '应用阈值',
     otsu: '自动 Otsu 阈值',
     otsuResult: 'Otsu 阈值',
+  },
+  debayer: {
+    pattern: '滤镜序列',
+    algorithm: '算法',
+    apply: '执行 Debayer',
+    patternAuto: '自动（来自 RAW 元数据）',
   },
   filters: {
     heading: '3×3 滤波',
@@ -245,7 +257,7 @@ const zhCN: ImagejCopy = {
   },
   exportPng: '导出 PNG',
   close: '关闭',
-  tabs: { closeOthers: '关闭其他', closeToRight: '关闭右侧标签', openFolder: '打开文件夹…', mergePrevious: '与左侧标签合并为 Stack', mergeNext: '与右侧标签合并为 Stack', buildStack: '创建 Stack…', rename: '重命名…', splitStack: '拆分 Stack', reorderStack: '调整顺序…' },
+  tabs: { closeOthers: '关闭其他', closeToRight: '关闭右侧标签', openFolder: '打开文件夹…', mergePrevious: '与左侧标签合并为 Stack', mergeNext: '与右侧标签合并为 Stack', buildStack: '创建 Stack…', rename: '重命名…', splitStack: '拆分 Stack', reorderStack: '调整顺序…', autoDebayer: '打开 RAW 时自动去马赛克' },
   rename: { title: '重命名', label: '名称', confirm: '确定', cancel: '取消' },
   reorder: { title: '调整 Stack 顺序', hint: '拖拽行调整页面顺序，应用后重建 Stack', apply: '应用', cancel: '取消', up: '上移', down: '下移', drag: '拖拽排序' },
   ejectPage: '移出当前切片',
@@ -331,13 +343,13 @@ const en: ImagejCopy = {
     needsGray: 'This step needs a grayscale image — add a “Convert to grayscale” step first.',
     categories: { format: 'Format', adjust: 'Display', threshold: 'Threshold', filter: 'Filter', morphology: 'Morphology', geometry: 'Geometry', analysis: 'Analysis' },
     ops: {
-      grayscale: 'Convert to grayscale', invert: 'Invert', levels: 'Brightness/contrast', threshold: 'Threshold', otsu: 'Auto Otsu threshold',
+      grayscale: 'Convert to grayscale', debayer: 'Debayer', invert: 'Invert', levels: 'Brightness/contrast', threshold: 'Threshold', otsu: 'Auto Otsu threshold',
       mean3x3: '3×3 mean', median3x3: '3×3 median', sharpen3x3: 'Sharpen', sobel: 'Sobel edges', minimum3x3: '3×3 minimum', maximum3x3: '3×3 maximum',
       gaussian: 'Gaussian blur', erode: 'Erode', dilate: 'Dilate', open: 'Open', close: 'Close', fillHoles: 'Fill holes',
       crop: 'Crop', flipH: 'Flip horizontal', flipV: 'Flip vertical', rotateCW: 'Rotate 90° CW', rotateCCW: 'Rotate 90° CCW',
       measure: 'Measurements & histogram', particles: 'Particle analysis',
     },
-    params: { brightness: 'Brightness', contrast: 'Contrast', level: 'Level', sigma: 'σ', minArea: 'Minimum area', x: 'X', y: 'Y', width: 'Width', height: 'Height' },
+    params: { brightness: 'Brightness', contrast: 'Contrast', level: 'Level', sigma: 'σ', minArea: 'Minimum area', x: 'X', y: 'Y', width: 'Width', height: 'Height', pattern: 'CFA pattern', algorithm: 'Algorithm' },
   },
   roi: {
     draw: 'Rectangle ROI',
@@ -358,6 +370,12 @@ const en: ImagejCopy = {
     thresholdApply: 'Apply threshold',
     otsu: 'Auto Otsu threshold',
     otsuResult: 'Otsu level',
+  },
+  debayer: {
+    pattern: 'CFA pattern',
+    algorithm: 'Algorithm',
+    apply: 'Run debayer',
+    patternAuto: 'Auto (from RAW metadata)',
   },
   filters: {
     heading: '3×3 filters',
@@ -387,7 +405,7 @@ const en: ImagejCopy = {
   },
   exportPng: 'Export PNG',
   close: 'Close',
-  tabs: { closeOthers: 'Close others', closeToRight: 'Close tabs to the right', openFolder: 'Open folder…', mergePrevious: 'Merge with tab on the left into a stack', mergeNext: 'Merge with tab on the right into a stack', buildStack: 'Set up stack…', rename: 'Rename…', splitStack: 'Split stack', reorderStack: 'Reorder…' },
+  tabs: { closeOthers: 'Close others', closeToRight: 'Close tabs to the right', openFolder: 'Open folder…', mergePrevious: 'Merge with tab on the left into a stack', mergeNext: 'Merge with tab on the right into a stack', buildStack: 'Set up stack…', rename: 'Rename…', splitStack: 'Split stack', reorderStack: 'Reorder…', autoDebayer: 'Debayer RAW automatically on open' },
   rename: { title: 'Rename', label: 'Name', confirm: 'OK', cancel: 'Cancel' },
   reorder: { title: 'Reorder stack', hint: 'Drag rows to change page order; the stack is rebuilt on apply', apply: 'Apply', cancel: 'Cancel', up: 'Move up', down: 'Move down', drag: 'Drag to reorder' },
   ejectPage: 'Eject current slice',
@@ -473,13 +491,13 @@ const jaJP: ImagejCopy = {
     needsGray: 'このステップにはグレースケール画像が必要です。先に「グレースケール変換」を追加してください。',
     categories: { format: '形式', adjust: '表示', threshold: 'しきい値', filter: 'フィルタ', morphology: '形態学', geometry: '幾何', analysis: '解析' },
     ops: {
-      grayscale: 'グレースケール変換', invert: '反転', levels: '明るさ/コントラスト', threshold: 'しきい値', otsu: 'Otsu 自動しきい値',
+      grayscale: 'グレースケール変換', debayer: 'デベイヤ', invert: '反転', levels: '明るさ/コントラスト', threshold: 'しきい値', otsu: 'Otsu 自動しきい値',
       mean3x3: '3×3 平均', median3x3: '3×3 中央値', sharpen3x3: 'シャープ', sobel: 'Sobel エッジ', minimum3x3: '3×3 最小', maximum3x3: '3×3 最大',
       gaussian: 'ガウスぼかし', erode: '収縮', dilate: '膨張', open: '開', close: '閉', fillHoles: '穴埋め',
       crop: '切り抜き', flipH: '水平反転', flipV: '垂直反転', rotateCW: '時計回り 90°', rotateCCW: '反時計回り 90°',
       measure: '測定とヒストグラム', particles: '粒子解析',
     },
-    params: { brightness: '明るさ', contrast: 'コントラスト', level: 'しきい値', sigma: 'σ', minArea: '最小面積', x: 'X', y: 'Y', width: '幅', height: '高さ' },
+    params: { brightness: '明るさ', contrast: 'コントラスト', level: 'しきい値', sigma: 'σ', minArea: '最小面積', x: 'X', y: 'Y', width: '幅', height: '高さ', pattern: 'CFA パターン', algorithm: 'アルゴリズム' },
   },
   roi: {
     draw: '矩形 ROI',
@@ -500,6 +518,12 @@ const jaJP: ImagejCopy = {
     thresholdApply: 'しきい値を適用',
     otsu: '自動 Otsu しきい値',
     otsuResult: 'Otsu しきい値',
+  },
+  debayer: {
+    pattern: 'CFA パターン',
+    algorithm: 'アルゴリズム',
+    apply: 'デベイヤ実行',
+    patternAuto: '自動（RAW メタデータ）',
   },
   filters: {
     heading: '3×3 フィルタ',
@@ -529,7 +553,7 @@ const jaJP: ImagejCopy = {
   },
   exportPng: 'PNG を書き出す',
   close: '閉じる',
-  tabs: { closeOthers: '他を閉じる', closeToRight: '右側を閉じる', openFolder: 'フォルダーを開く…', mergePrevious: '左のタブとスタックに統合', mergeNext: '右のタブとスタックに統合', buildStack: 'スタックを作成…', rename: '名前を変更…', splitStack: 'スタックを分割', reorderStack: '順序を変更…' },
+  tabs: { closeOthers: '他を閉じる', closeToRight: '右側を閉じる', openFolder: 'フォルダーを開く…', mergePrevious: '左のタブとスタックに統合', mergeNext: '右のタブとスタックに統合', buildStack: 'スタックを作成…', rename: '名前を変更…', splitStack: 'スタックを分割', reorderStack: '順序を変更…', autoDebayer: 'RAW を開いたら自動でデベイヤ' },
   rename: { title: '名前を変更', label: '名前', confirm: 'OK', cancel: 'キャンセル' },
   reorder: { title: 'スタックの順序', hint: '行をドラッグしてページ順を変更し、適用すると再構築します', apply: '適用', cancel: 'キャンセル', up: '上へ', down: '下へ', drag: 'ドラッグで並べ替え' },
   ejectPage: '現在のスライスを出す',

@@ -13,6 +13,7 @@ type MenuGroup = { label: string; items: MenuItem[] }
  * 分析类操作（测量/粒子）在右栏「分析」区，这里不放。
  */
 const GROUPS: MenuGroup[] = [
+  { label: 'RAW', items: [{ label: 'Debayer', op: 'debayer' }] },
   { label: 'Type', items: [{ label: '8-bit', op: 'grayscale' }, { label: '16-bit' }, { label: '32-bit' }, { label: 'RGB Color' }] },
   { label: 'Adjust', items: [{ label: 'Brightness/Contrast', op: 'levels' }, { label: 'Threshold', op: 'threshold' }, { label: 'Auto Threshold', op: 'otsu' }, { label: 'Color Balance' }] },
   { label: 'Transform', items: [{ label: 'Crop', op: 'crop' }, { label: 'Flip Horizontally', op: 'flipH' }, { label: 'Flip Vertically', op: 'flipV' }, { label: 'Rotate 90° Right', op: 'rotateCW' }, { label: 'Rotate 90° Left', op: 'rotateCCW' }, { label: 'Scale' }] },
@@ -31,16 +32,16 @@ const LABELS: Record<Language, {
   empty: string
 }> = {
   'zh-CN': {
-    groups: { Type: '类型', Adjust: '调整', Transform: '变换', Stacks: '图像栈', Math: '数学运算', Filters: '滤镜', Binary: '二值化', 'Find Edges': '寻找边缘' },
-    items: { '8-bit': '8 位', '16-bit': '16 位', '32-bit': '32 位', 'RGB Color': 'RGB 彩色', 'Brightness/Contrast': '亮度/对比度', Threshold: '阈值', 'Auto Threshold': '自动阈值', 'Color Balance': '色彩平衡', Crop: '裁剪', 'Flip Horizontally': '水平翻转', 'Flip Vertically': '垂直翻转', 'Rotate 90° Right': '顺时针旋转 90°', 'Rotate 90° Left': '逆时针旋转 90°', Scale: '缩放尺寸', 'Next Slice': '下一切片', 'Previous Slice': '上一切片', 'Z Project': 'Z 投影', Invert: '反相', Add: '加', Subtract: '减', Multiply: '乘', Mean: '均值', Median: '中值', 'Gaussian Blur': '高斯模糊', Minimum: '最小值', Maximum: '最大值', Sharpen: '锐化', 'Unsharp Mask': '反锐化蒙版', Erode: '腐蚀', Dilate: '膨胀', Open: '开运算', Close: '闭运算', 'Fill Holes': '填孔', Skeletonize: '骨架化', Watershed: '分水岭', Sobel: 'Sobel 边缘' },
+    groups: { RAW: 'RAW', Type: '类型', Adjust: '调整', Transform: '变换', Stacks: '图像栈', Math: '数学运算', Filters: '滤镜', Binary: '二值化', 'Find Edges': '寻找边缘' },
+    items: { Debayer: '去马赛克', '8-bit': '8 位', '16-bit': '16 位', '32-bit': '32 位', 'RGB Color': 'RGB 彩色', 'Brightness/Contrast': '亮度/对比度', Threshold: '阈值', 'Auto Threshold': '自动阈值', 'Color Balance': '色彩平衡', Crop: '裁剪', 'Flip Horizontally': '水平翻转', 'Flip Vertically': '垂直翻转', 'Rotate 90° Right': '顺时针旋转 90°', 'Rotate 90° Left': '逆时针旋转 90°', Scale: '缩放尺寸', 'Next Slice': '下一切片', 'Previous Slice': '上一切片', 'Z Project': 'Z 投影', Invert: '反相', Add: '加', Subtract: '减', Multiply: '乘', Mean: '均值', Median: '中值', 'Gaussian Blur': '高斯模糊', Minimum: '最小值', Maximum: '最大值', Sharpen: '锐化', 'Unsharp Mask': '反锐化蒙版', Erode: '腐蚀', Dilate: '膨胀', Open: '开运算', Close: '闭运算', 'Fill Holes': '填孔', Skeletonize: '骨架化', Watershed: '分水岭', Sobel: 'Sobel 边缘' },
     search: '搜索命令', unavailable: '尚未接入', empty: '没有匹配的命令',
   },
   en: {
     groups: {}, items: {}, search: 'Search commands', unavailable: 'Not available yet', empty: 'No matching commands',
   },
   'ja-JP': {
-    groups: { Type: '形式', Adjust: '調整', Transform: '変換', Stacks: 'スタック', Math: '演算', Filters: 'フィルタ', Binary: '二値化', 'Find Edges': 'エッジ検出' },
-    items: {}, search: 'コマンドを検索', unavailable: '未対応', empty: '該当するコマンドがありません',
+    groups: { RAW: 'RAW', Type: '形式', Adjust: '調整', Transform: '変換', Stacks: 'スタック', Math: '演算', Filters: 'フィルタ', Binary: '二値化', 'Find Edges': 'エッジ検出' },
+    items: { Debayer: 'デベイヤ' }, search: 'コマンドを検索', unavailable: '未対応', empty: '該当するコマンドがありません',
   },
 }
 

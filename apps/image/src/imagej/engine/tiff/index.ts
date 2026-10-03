@@ -20,6 +20,24 @@
 /** 分段布局方式。strip 为逐行条带，tile 为矩形块。 */
 export type TiffLayout = 'strip' | 'tile'
 
+/** PhotometricInterpretation 的 CFA 取值（DNG 与多数相机 RAW）。 */
+export const PHOTOMETRIC_CFA = 32803
+/** PhotometricInterpretation 的 LinearRaw 取值。 */
+export const PHOTOMETRIC_LINEAR_RAW = 34892
+
+/**
+ * CFA（Bayer 马赛克）信息。
+ *
+ * 来自 DNG 的 `CFARepeatPatternDim`(33421) 与 `CFAPattern`(33422)；厂商私有 RAW 往往缺失，
+ * 此时由导入层或 debayer 算子按用户选择补齐。
+ */
+export interface TiffCfaInfo {
+  /** 重复图案的 `[行, 列]`，通常 `[2, 2]`。 */
+  repeat: readonly [number, number]
+  /** 图案原值：0=Red、1=Green、2=Blue，行优先展开。 */
+  pattern: readonly number[]
+}
+
 /**
  * 一个像素分段（strip 或 tile）在文件中的字节位置与覆盖区域。
  *
@@ -77,6 +95,22 @@ export interface TiffPage {
   frames: number
   /** 单帧解压后的像素字节数。 */
   pixelByteLength: number
+  /** NewSubfileType(254)：0 为完整分辨率，1 为缩略图等降采样图；缺省按 0。 */
+  subfileType: number
+  /** 是否由某个 IFD 的 SubIFD(330) 链解析而来。 */
+  subIfd: boolean
+  /** CFA 信息；仅当 PhotometricInterpretation 为 CFA(32803) / LinearRaw(34892)。 */
+  cfa?: TiffCfaInfo
+  /** BlackLevel(50714)。 */
+  blackLevel?: number
+  /** WhiteLevel(50717)。 */
+  whiteLevel?: number
+  /** ActiveArea(50829)：`[top, left, bottom, right]`。 */
+  activeArea?: readonly number[]
+  /** DefaultCropOrigin(50719)。 */
+  defaultCropOrigin?: readonly number[]
+  /** DefaultCropSize(50720)。 */
+  defaultCropSize?: readonly number[]
 }
 
 /** 整个文件的索引。 */

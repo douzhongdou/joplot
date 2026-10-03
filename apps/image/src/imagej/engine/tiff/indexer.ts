@@ -10,14 +10,16 @@
  * 典型单页 IO 由十余次降到 2 次。
  */
 
-import type { IndexedTiff, TiffIndex, TiffLayout, TiffPage, TiffSegment } from './index.ts'
+import { PHOTOMETRIC_CFA, PHOTOMETRIC_LINEAR_RAW, type IndexedTiff, type TiffCfaInfo, type TiffIndex, type TiffLayout, type TiffPage, type TiffSegment } from './index.ts'
 
 /** TIFF 字段类型编号。 */
 const TYPE_BYTE = 1
 const TYPE_SHORT = 3
 const TYPE_LONG = 4
+const TYPE_RATIONAL = 5
 const TYPE_SSHORT = 8
 const TYPE_SLONG = 9
+const TYPE_SRATIONAL = 10
 
 /** 各字段类型的字节数；未列出的类型不支持读取 tag 值。 */
 const FIELD_SIZE: Record<number, number> = {
@@ -55,6 +57,14 @@ const TAG_TILE_LENGTH = 323
 const TAG_TILE_OFFSETS = 324
 const TAG_TILE_BYTE_COUNTS = 325
 const TAG_SAMPLE_FORMAT = 339
+const TAG_NEW_SUBFILE_TYPE = 254
+const TAG_SUB_IFDS = 330
+const TAG_CFA_REPEAT_PATTERN_DIM = 33421
+const TAG_CFA_PATTERN = 33422
+const TAG_BLACK_LEVEL = 50714
+const TAG_WHITE_LEVEL = 50717
+const TAG_DEFAULT_CROP_ORIGIN = 50719
+const TAG_DEFAULT_CROP_SIZE = 50720
 
 /** 一个已解析的 IFD 条目，值可能内联也可能位于文件中。 */
 interface RawEntry {
@@ -153,6 +163,18 @@ function decodeValues(bytes: Uint8Array, type: number, count: number, littleEndi
       case TYPE_LONG: values.push(view.getUint32(i * 4, littleEndian)); break
       case TYPE_SSHORT: values.push(view.getInt16(i * 2, littleEndian)); break
       case TYPE_SLONG: values.push(view.getInt32(i * 4, littleEndian)); break
+      case TYPE_RATIONAL: {
+        const numerator = view.getUint32(i * 8, littleEndian)
+        const denominator = view.getUint32(i * 8 + 4, littleEndian)
+        values.push(denominator === 0 ? 0 : numerator / denominator)
+        break
+      }
+      case TYPE_SRATIONAL: {
+        const numerator = view.getInt32(i * 8, littleEndian)
+        const denominator = view.getInt32(i * 8 + 4, littleEndian)
+        values.push(denominator === 0 ? 0 : numerator / denominator)
+        break
+      }
       default:
         if (big && (type === 13 || type === 16 || type === 17 || type === 18)) {
           values.push(Number(view.getBigUint64(i * 8, littleEndian)))
@@ -178,7 +200,7 @@ function mergeRanges(ranges: Array<{ start: number; end: number }>): Array<{ sta
 }
 
 /** 将一个 IFD 的条目解析为 `TiffPage`。 */
-async function parsePage(read: ByteReader, entries: RawEntry[], big: boolean, littleEndian: boolean, byteLength: number): Promise<TiffPage> {
+async function parsePage(read: ByteReader, entries: RawEntry[], big: boolean, littleEndian: boolean, byteLength: number, subIfd: boolean): Promise<TiffPage> {
   const byTag = new Map<number, RawEntry>()
   for (const entry of entries) if (!byTag.has(entry.tag)) byTag.set(entry.tag, entry)
 
@@ -284,6 +306,11 @@ async function parsePage(read: ByteReader, entries: RawEntry[], big: boolean, li
   }
 
   const bitsTotal = bits * components
+  const photometric = first(TAG_PHOTOMETRIC) ?? 1
+  // DNG / 相机 RAW 的 CFA 与 LinearRaw 都携带 Bayer 图案描述。
+  const cfa = cfaInfo(photometric, all(TAG_CFA_REPEAT_PATTERN_DIM), all(TAG_CFA_PATTERN))
+  const blackValues = all(TAG_BLACK_LEVEL)
+  const whiteValues = all(TAG_WHITE_LEVEL)
   return {
     width,
     height,
@@ -292,7 +319,7 @@ async function parsePage(read: ByteReader, entries: RawEntry[], big: boolean, li
     components,
     sampleFormat: first(TAG_SAMPLE_FORMAT) ?? 1,
     compression: first(TAG_COMPRESSION) ?? 1,
-    photometric: first(TAG_PHOTOMETRIC) ?? 1,
+    photometric,
     predictor: first(TAG_PREDICTOR) ?? 1,
     layout,
     tileWidth,
@@ -302,26 +329,86 @@ async function parsePage(read: ByteReader, entries: RawEntry[], big: boolean, li
     // 此处把帧数显式记录下来，交由调用方决定如何寻址。
     frames: Math.max(1, first(297) ?? 1),
     pixelByteLength: Math.ceil((width * height * bitsTotal) / 8),
+    subfileType: first(TAG_NEW_SUBFILE_TYPE) ?? 0,
+    subIfd,
+    cfa,
+    blackLevel: blackValues.length > 0 ? blackValues[0] : undefined,
+    whiteLevel: whiteValues.length > 0 ? whiteValues[0] : undefined,
+    activeArea: arrayOrUndefined(all(50829)),
+    defaultCropOrigin: arrayOrUndefined(all(TAG_DEFAULT_CROP_ORIGIN)),
+    defaultCropSize: arrayOrUndefined(all(TAG_DEFAULT_CROP_SIZE)),
   }
 }
 
+/** 由 tag 值构造 CFA 信息；图案不完整时返回 undefined。 */
+function cfaInfo(photometric: number, repeat: number[], pattern: number[]): TiffCfaInfo | undefined {
+  if (photometric !== PHOTOMETRIC_CFA && photometric !== PHOTOMETRIC_LINEAR_RAW) return undefined
+  if (repeat.length < 2) return undefined
+  const rows = repeat[0]!
+  const cols = repeat[1]!
+  if (rows <= 0 || cols <= 0 || pattern.length < rows * cols) return undefined
+  return { repeat: [rows, cols], pattern: pattern.slice(0, rows * cols) }
+}
+
+function arrayOrUndefined(values: number[]): number[] | undefined {
+  return values.length > 0 ? values : undefined
+}
+
+/** 建立索引的选项。 */
+export interface TiffIndexOptions {
+  /**
+   * 是否递归解析 SubIFD(330)。
+   *
+   * DNG 与多数相机 RAW 把原始 CFA 数据放在 SubIFD，而主 IFD 只是缩略图 / 预览，
+   * 因此 RAW 路径需要开启；普通 TIFF 页栈保持默认关闭，避免改变既有页序。
+   */
+  subIfds?: boolean
+}
+
 /** 遍历 IFD 链并建立索引。 */
-export async function buildTiffIndex(read: ByteReader, byteLength: number): Promise<TiffIndex> {
+export async function buildTiffIndex(read: ByteReader, byteLength: number, options: TiffIndexOptions = {}): Promise<TiffIndex> {
   const { littleEndian, big, firstIfd } = await readHeader(read, byteLength)
   const pages: TiffPage[] = []
   const seen = new Set<number>()
-  let offset = firstIfd
-  while (offset > 0) {
-    if (seen.has(offset)) throw new Error(`TIFF IFD 链出现环：offset=${offset}`)
-    seen.add(offset)
-    const { entries, next } = await readIfd(read, offset, big, littleEndian, byteLength)
-    if (entries.length === 0) break
-    pages.push(await parsePage(read, entries, big, littleEndian, byteLength))
-    if (pages.length > 1_000_000) throw new Error('TIFF 页数异常，疑似 IFD 链损坏')
-    offset = next
+  const queue: Array<{ offset: number; subIfd: boolean }> = [{ offset: firstIfd, subIfd: false }]
+  while (queue.length > 0) {
+    const item = queue.shift()!
+    let offset = item.offset
+    while (offset > 0) {
+      if (seen.has(offset)) {
+        // SubIFD 的 tag 330 可能与主链重叠，容忍；主链成环则视为损坏。
+        if (item.subIfd) break
+        throw new Error(`TIFF IFD 链出现环：offset=${offset}`)
+      }
+      seen.add(offset)
+      const { entries, next } = await readIfd(read, offset, big, littleEndian, byteLength)
+      if (entries.length === 0) break
+      pages.push(await parsePage(read, entries, big, littleEndian, byteLength, item.subIfd))
+      if (pages.length > 1_000_000) throw new Error('TIFF 页数异常，疑似 IFD 链损坏')
+      if (options.subIfds) {
+        const entry = entries.find((candidate) => candidate.tag === TAG_SUB_IFDS)
+        if (entry) {
+          for (const sub of await readEntryValues(read, entry, big, littleEndian)) {
+            if (sub > 0) queue.push({ offset: sub, subIfd: true })
+          }
+        }
+      }
+      // SubIFD 只解析单个 IFD：同链的其余子图已由父 IFD 的 tag 330 数组列出。
+      if (item.subIfd) break
+      offset = next
+    }
   }
   if (pages.length === 0) throw new Error('TIFF 未包含任何页面')
   return { big, littleEndian, byteLength, pages }
+}
+
+/** 读取 tag 值数组，供索引阶段提取 SubIFD 偏移等标量列表。 */
+async function readEntryValues(read: ByteReader, entry: RawEntry, big: boolean, littleEndian: boolean): Promise<number[]> {
+  if (entry.inline) return decodeValues(entry.inline, entry.type, entry.count, littleEndian, big)
+  const unit = fieldSize(entry.type, big)
+  if (unit === undefined || entry.count <= 0) return []
+  const bytes = await readBytes(read, entry.offset!, entry.count * unit)
+  return decodeValues(bytes, entry.type, entry.count, littleEndian, big)
 }
 
 /**
@@ -329,11 +416,11 @@ export async function buildTiffIndex(read: ByteReader, byteLength: number): Prom
  *
  * 读取完全惰性：建索引阶段只读 IFD 区域。
  */
-export async function indexTiff(blob: Blob): Promise<IndexedTiff> {
+export async function indexTiff(blob: Blob, options?: TiffIndexOptions): Promise<IndexedTiff> {
   const reader: ByteReader = async (offset, length) => {
     const end = Math.min(blob.size, offset + length)
     if (end <= offset) return new Uint8Array(0)
     return new Uint8Array(await blob.slice(offset, end).arrayBuffer())
   }
-  return { read: reader, index: await buildTiffIndex(reader, blob.size) }
+  return { read: reader, index: await buildTiffIndex(reader, blob.size, options) }
 }

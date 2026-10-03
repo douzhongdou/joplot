@@ -174,3 +174,54 @@ export function GaussianCommandPanel({ copy, sigma, disabled, onSigma, onApply, 
     </CommandPanelShell>
   )
 }
+
+/** 「去马赛克」：滤镜序列（CFA 图案）+ 算法，供 RAW 的 CFA 数据还原彩色。 */
+export function DebayerCommandPanel({ copy, pattern, algorithm, disabled, onPattern, onAlgorithm, onApply, onClose }: {
+  copy: ImagejCopy
+  pattern: string
+  algorithm: string
+  disabled: boolean
+  onPattern(value: string): void
+  onAlgorithm(value: string): void
+  onApply(): void
+  onClose(): void
+}) {
+  const selectClass = 'h-8 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary'
+  return (
+    <CommandPanelShell close={onClose} closeLabel={copy.close} disabled={disabled}>
+      <div className="grid gap-2">
+        <div className="grid gap-1">
+          <Label htmlFor="imagej-debayer-pattern" className="text-xs">{copy.debayer.pattern}</Label>
+          <select
+            id="imagej-debayer-pattern"
+            value={pattern}
+            disabled={disabled}
+            onChange={(event) => onPattern(event.target.value)}
+            className={selectClass}
+          >
+            <option value="auto">{copy.debayer.patternAuto}</option>
+            {['rggb', 'bggr', 'grbg', 'gbrg'].map((value) => (
+              <option key={value} value={value}>{value.toUpperCase()}</option>
+            ))}
+          </select>
+        </div>
+        <div className="grid gap-1">
+          <Label htmlFor="imagej-debayer-algorithm" className="text-xs">{copy.debayer.algorithm}</Label>
+          <select
+            id="imagej-debayer-algorithm"
+            value={algorithm}
+            disabled={disabled}
+            onChange={(event) => onAlgorithm(event.target.value)}
+            className={selectClass}
+          >
+            <option value="malvar">Malvar-He-Cutler</option>
+            <option value="bilinear">Bilinear</option>
+          </select>
+        </div>
+        <Button type="button" size="sm" className="h-8" disabled={disabled} onClick={onApply}>
+          {copy.debayer.apply}
+        </Button>
+      </div>
+    </CommandPanelShell>
+  )
+}

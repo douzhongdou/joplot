@@ -91,7 +91,7 @@ export interface ChannelInfo {
   displayColor?: [number, number, number]
 }
 
-export type SourceFormat = 'tiff' | 'png' | 'webp' | 'fits' | 'memory' | 'unknown'
+export type SourceFormat = 'tiff' | 'png' | 'webp' | 'fits' | 'raw' | 'memory' | 'unknown'
 
 export interface SourceRef {
   kind: 'file' | 'memory'

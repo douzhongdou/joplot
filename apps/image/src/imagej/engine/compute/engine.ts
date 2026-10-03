@@ -17,6 +17,7 @@ import { fullRegion } from '../storage.ts'
 import type { ChannelStats, ParticleRow } from '../../lib/engineTypes.ts'
 import { allocateBuffer, elementCount, type ImageBlock, type Region } from '../types.ts'
 import * as ops from './pureOps.ts'
+import { demosaicToDtype, type CfaPatternName } from '../debayer.ts'
 import { computeWindowLevel } from '../render/rgba.ts'
 import { applyColorAdjustments, type ColorChannel } from '../colorAdjustments.ts'
 import type { ImageAnalysis } from '../analysis.ts'
@@ -262,6 +263,7 @@ export class PureComputeEngine implements ComputeEngine {
     }
     switch (step.op) {
       case 'grayscale': return { image: this.grayscale(block) }
+      case 'debayer': return { image: this.debayer(block, context.dataset.metadata, step.params) }
       case 'invert': return { image: ops.invert(block) }
       case 'levels': return { image: step.params.mode === 'rgb-range' ? applyColorAdjustments(block, [{ min: Number(step.params.minimum), max: Number(step.params.maximum), channel: step.params.channel as ColorChannel }]) : ops.levels(block, params.brightness ?? 0, params.contrast ?? 50) }
       case 'threshold': return { image: ops.threshold(block, params.level ?? 128) }
@@ -353,6 +355,46 @@ export class PureComputeEngine implements ComputeEngine {
       data,
     }
   }
+
+  /**
+   * CFA 马赛克 → 三通道 RGB（debayer）。
+   *
+   * 滤镜序列优先取算子参数，其次 dataset 元数据（RAW 导入时写入 `cfaPattern`），最后默认 RGGB。
+   * 输出在 `c` 轴前插入 3 个通道，与本项目 RGB 块布局一致。
+   */
+  private debayer(source: ImageBlock, metadata: Readonly<Record<string, string | number | boolean>> | undefined, params: Readonly<Record<string, number | string>>): ImageBlock {
+    if (isMultiChannel(source)) throw new ops.ComputeError('unsupported', 'debayer 需要单通道 CFA 图像，不能作用在彩色图上')
+    const xi = source.axes.indexOf('x')
+    const yi = source.axes.indexOf('y')
+    const width = source.shape[xi]!
+    const height = source.shape[yi]!
+    const algorithm = params.algorithm === 'bilinear' ? 'bilinear' : 'malvar'
+    const data = demosaicToDtype(source.data, width, height, source.dtype, {
+      pattern: resolveCfaPattern(params.pattern, metadata),
+      algorithm,
+    })
+    return {
+      dtype: source.dtype,
+      axes: ['c', ...source.axes] as ImageBlock['axes'],
+      shape: [3, ...source.shape],
+      region: { start: [0, ...source.region.start], shape: [3, ...source.region.shape] },
+      data,
+    }
+  }
+}
+
+const CFA_PATTERNS: readonly CfaPatternName[] = ['rggb', 'bggr', 'grbg', 'gbrg']
+
+/** 解析生效的滤镜序列：算子参数 > dataset 元数据 > RGGB。 */
+function resolveCfaPattern(
+  option: string | number | undefined,
+  metadata?: Readonly<Record<string, string | number | boolean>>,
+): CfaPatternName {
+  const chosen = String(option ?? 'auto')
+  if ((CFA_PATTERNS as readonly string[]).includes(chosen)) return chosen as CfaPatternName
+  const declared = metadata?.cfaPattern
+  if (typeof declared === 'string' && (CFA_PATTERNS as readonly string[]).includes(declared)) return declared as CfaPatternName
+  return 'rggb'
 }
 
 /** 内存中重新分配一个与输入同形的块，供引擎测试使用。 */
