@@ -84,6 +84,7 @@ async function handle(request: WorkerRequest): Promise<void> {
       const lastTable = [...outcome.results].reverse().find((result) => result.table)?.table
       if (lastStats) response.stats = lastStats
       if (lastTable) response.table = lastTable
+      if (outcome.analysis) response.analysis = outcome.analysis
       scope.postMessage(response, transfer)
       return
     }

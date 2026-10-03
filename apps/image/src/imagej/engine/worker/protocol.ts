@@ -9,6 +9,7 @@ import type { SliceSelection } from '../dataset.ts'
 import type { Recipe, StepScope } from '../recipe.ts'
 import type { ChannelStats, ParticleRow } from '../../lib/engineTypes.ts'
 import type { Dtype, Axes, Region } from '../types.ts'
+import type { ImageAnalysis } from '../analysis.ts'
 
 export interface SerializedBlock {
   dtype: Dtype
@@ -48,6 +49,7 @@ export interface RunRequest {
   selection: SliceSelection
   roi?: Region
   throughStepId?: string
+  analyze?: boolean
 }
 
 export interface CancelRequest {
@@ -77,6 +79,7 @@ export interface ResultResponse {
   image: SerializedBlock | null
   stats?: ChannelStats[]
   table?: ParticleRow[]
+  analysis?: ImageAnalysis
   ms: number
   estimatedBytes: number
 }

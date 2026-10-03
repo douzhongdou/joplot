@@ -8,6 +8,7 @@ import type { Dataset, SliceSelection } from '../dataset.ts'
 import type { Recipe } from '../recipe.ts'
 import type { Dtype, ImageBlock, PixelArray, Region } from '../types.ts'
 import type { ChannelStats, ParticleRow } from '../../lib/engineTypes.ts'
+import type { ImageAnalysis } from '../analysis.ts'
 import type { ResultResponse, SerializedBlock, StepOutcomeWire, WorkerRequest, WorkerResponse } from './protocol.ts'
 import { EngineHost } from './host.ts'
 
@@ -17,6 +18,8 @@ export interface EngineRunOptions {
   selection: SliceSelection
   roi?: Region
   throughStepId?: string
+  /** 请求引擎顺带产出整帧分析。 */
+  analyze?: boolean
 }
 
 export interface EngineResult {
@@ -24,6 +27,7 @@ export interface EngineResult {
   image: ImageBlock | null
   stats?: ChannelStats[]
   table?: ParticleRow[]
+  analysis?: ImageAnalysis
   ms: number
   estimatedBytes: number
 }
@@ -114,12 +118,14 @@ class WorkerEngineClient implements EngineClient {
       selection: options.selection,
       roi: options.roi,
       throughStepId: options.throughStepId,
+      analyze: options.analyze,
     })) as ResultResponse
     return {
       results: response.results,
       image: response.image ? deserializeBlock(response.image) : null,
       stats: response.stats,
       table: response.table,
+      analysis: response.analysis,
       ms: response.ms,
       estimatedBytes: response.estimatedBytes,
     }
@@ -160,6 +166,7 @@ class InlineEngineClient implements EngineClient {
       image: outcome.image,
       stats: [...outcome.results].reverse().find((result) => result.stats)?.stats,
       table: [...outcome.results].reverse().find((result) => result.table)?.table,
+      analysis: outcome.analysis,
       ms: outcome.ms,
       estimatedBytes: outcome.estimatedBytes,
     }

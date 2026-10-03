@@ -114,7 +114,12 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
   const pageIndex = slice?.index ?? 0
   const levelsActive = brightness !== 0 || contrast !== 50
   const paramOp = paramCommand ? COMMAND_OPS[paramCommand] : null
-  const analysisResult = useImageAnalysis(image, scope === 'roi' ? roi : null, views.some((view) => view.type === 'particles'), minParticleArea, roi, isRgb && colorPreview.length ? 'all' : undefined, colorPreview)
+  const particlesRequested = views.some((view) => view.type === 'particles')
+  const analysisChannel = isRgb && colorPreview.length ? 'all' as const : undefined
+  /* 引擎在 run 里已顺带算好整帧分析：整图、无 ROI、无粒子、无通道调整时直接用，免复制、免第二个 Worker。 */
+  const engineCovered = scope === 'image' && !roi && !particlesRequested && !analysisChannel
+  const workerAnalysis = useImageAnalysis(image, scope === 'roi' ? roi : null, particlesRequested, minParticleArea, roi, analysisChannel, colorPreview, !engineCovered)
+  const analysisResult = engineCovered ? { analysis: state.analysis } : workerAnalysis
   const status = busy || (image && !analysisResult.analysis) ? copy.status.loading : state.dataset ? copy.status.ready : ''
   const stats = scope === 'roi' && !roi ? undefined : analysisResult.analysis
   const particles = analysisResult.particles ?? null

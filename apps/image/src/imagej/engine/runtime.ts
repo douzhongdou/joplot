@@ -9,6 +9,7 @@ import { appendStep, createRecipe, makeStep, RecipeHistory, recipeVersionKey, re
 import { ByteCache } from './scheduler/cache.ts'
 import { TASK_PRIORITY, TaskQueue, VersionGuard, type SchedulerTask } from './scheduler/queue.ts'
 import type { ChannelStats, ParticleRow } from '../lib/engineTypes.ts'
+import type { ImageAnalysis } from './analysis.ts'
 import type { ImageBlock } from './types.ts'
 import { defaultOperatorParams, getOperator, validateOperatorParams } from './operators.ts'
 import type { EngineClient, EngineResult } from './worker/client.ts'
@@ -34,6 +35,8 @@ export interface RuntimeState {
   results: StepOutcomeWire[]
   stats?: ChannelStats[]
   table?: ParticleRow[]
+  /** 当前帧的整帧分析（直方图 / 剖面 / 统计），由引擎顺带产出。 */
+  analysis?: ImageAnalysis
   status: RuntimeStatus
   error?: string
   lastRunMs?: number
@@ -149,6 +152,7 @@ export class ImageRuntime {
         results: [],
         stats: undefined,
         table: undefined,
+        analysis: undefined,
         status: 'ready',
         estimatedBytes: 0,
       })
@@ -280,7 +284,7 @@ export class ImageRuntime {
     const cached = this.cache.get(key)
     if (cached) {
       this.cache.pin(key)
-      this.emit({ image: cached.image, imageStale: false, results: cached.results, stats: cached.stats, table: cached.table, lastRunMs: cached.ms, estimatedBytes: cached.estimatedBytes, status: 'ready' })
+      this.emit({ image: cached.image, imageStale: false, results: cached.results, stats: cached.stats, table: cached.table, analysis: cached.analysis, lastRunMs: cached.ms, estimatedBytes: cached.estimatedBytes, status: 'ready' })
       this.schedulePrefetch()
       return
     }
@@ -290,6 +294,7 @@ export class ImageRuntime {
         recipe,
         selection: this.state.selection,
         throughStepId: this.state.throughStepId,
+        analyze: true,
       })
       if (this.guard.version() !== version) return // 过期结果不覆盖当前画面
       if (result.image) {
@@ -302,6 +307,7 @@ export class ImageRuntime {
         results: result.results,
         stats: result.stats,
         table: result.table,
+        analysis: result.analysis,
         status: result.results.some((step) => step.status === 'error') ? 'error' : 'ready',
         error: result.results.find((step) => step.status === 'error')?.error,
         lastRunMs: result.ms,
@@ -350,6 +356,7 @@ export class ImageRuntime {
             recipe,
             selection,
             throughStepId,
+            analyze: true,
           })
           if (result.image && !result.results.some((step) => step.status === 'error')) {
             this.cache.set(key, result, result.image.data.byteLength)

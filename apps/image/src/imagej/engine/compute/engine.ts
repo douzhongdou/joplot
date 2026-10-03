@@ -19,6 +19,7 @@ import { allocateBuffer, elementCount, type ImageBlock, type Region } from '../t
 import * as ops from './pureOps.ts'
 import { computeWindowLevel } from '../render/rgba.ts'
 import { applyColorAdjustments, type ColorChannel } from '../colorAdjustments.ts'
+import type { ImageAnalysis } from '../analysis.ts'
 
 export interface ExecuteContext {
   dataset: Dataset
@@ -49,6 +50,8 @@ export interface EngineRunResult {
   ms: number
   /** 估算峰值：本帧输入 + 每步输出的字节之和。 */
   estimatedBytes: number
+  /** 整帧分析（直方图 / 剖面 / 统计）；由宿主按需附带，见 `HostRunRequest.analyze`。 */
+  analysis?: ImageAnalysis
 }
 
 export interface ComputeEngine {
