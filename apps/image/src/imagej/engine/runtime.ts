@@ -78,6 +78,8 @@ export class ImageRuntime {
   private state: RuntimeState
   private history: RecipeHistory | null = null
   private pumping = false
+  private runPromise: Promise<void> | null = null
+  private runQueued = false
   private disposed = false
 
   constructor(options: ImageRuntimeOptions) {
@@ -271,6 +273,27 @@ export class ImageRuntime {
   }
 
   async run(): Promise<void> {
+    // 合并高频请求：一批连续调用只跑「最新一次」。已有 drain 在途时挂到同一个 promise，
+    // 因此 `await run()` 依然会等到（含后续合并进来的）执行真正结束——测试与 openWith 依赖这一点。
+    this.runQueued = true
+    if (this.runPromise) return this.runPromise
+    this.runPromise = this.drainRuns()
+    return this.runPromise
+  }
+
+  private async drainRuns(): Promise<void> {
+    try {
+      while (this.runQueued && !this.disposed) {
+        this.runQueued = false
+        await this.runOnce()
+      }
+    } finally {
+      this.runPromise = null
+      if (this.runQueued && !this.disposed) this.runPromise = this.drainRuns()
+    }
+  }
+
+  private async runOnce(): Promise<void> {
     const dataset = this.state.dataset
     const recipe = this.currentRecipe()
     if (!dataset || !recipe || this.disposed) return
@@ -333,6 +356,8 @@ export class ImageRuntime {
     const dataset = this.state.dataset
     const recipe = this.currentRecipe()
     if (!this.prefetchEnabled || !dataset || !recipe) return
+    // 用户正在快速翻页（还有待跑的 run）时不抢引擎，等停下来再补预取。
+    if (this.runQueued) return
     const axis = (['z', 't', 'c'] as const).find((candidate) => !(candidate === 'c' && dataset.componentKind === 'rgb') && (dataset.shape[dataset.axes.indexOf(candidate)] ?? 1) > 1)
     if (!axis) return
     const length = dataset.shape[dataset.axes.indexOf(axis)]!

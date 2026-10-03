@@ -104,6 +104,8 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
   const current = image ? { width: image.shape[image.axes.indexOf('x')]!, height: image.shape[image.axes.indexOf('y')]!, data: image.data } : null
   const sourceName = state.dataset?.source.name ?? ''
   const busy = state.status === 'importing' || state.status === 'running' || exporting
+  /* 翻页导航只受导入 / 导出影响：切片切换很轻，不应因正在计算而变灰（否则滚动时工具栏一直灰）。 */
+  const navBusy = state.status === 'importing' || exporting
   // 切片切换后新像素就绪前，视口里仍是上一帧。此时不显示新页码，
   // 也不接受探查与 ROI，避免把旧页像素当成新页使用（架构方案第 1 节）。
   const stale = Boolean(state.imageStale && state.image)
@@ -597,10 +599,10 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
 
             {slices.map((entry) => <span key={entry.axis} className="inline-flex shrink-0 items-center gap-1">
               <span className="text-[11px] uppercase text-base-content/55">{entry.axis}</span>
-              <Button type="button" variant="outline" size="icon-sm" disabled={busy || entry.index === 0} aria-label={`${entry.axis} previous slice`} onClick={() => selectAxis(entry.axis, entry.index - 1)}>←</Button>
+              <Button type="button" variant="outline" size="icon-sm" disabled={navBusy || entry.index === 0} aria-label={`${entry.axis} previous slice`} onClick={() => selectAxis(entry.axis, entry.index - 1)}>←</Button>
               <span className="text-[11px] tabular-nums">{stale ? '…' : entry.index + 1} / {entry.length}</span>
-              <Button type="button" variant="outline" size="icon-sm" disabled={busy || entry.index + 1 >= entry.length} aria-label={`${entry.axis} next slice`} onClick={() => selectAxis(entry.axis, entry.index + 1)}>→</Button>
-              <input type="range" min={0} max={entry.length - 1} value={entry.index} disabled={busy} onChange={(event) => selectAxis(entry.axis, Number(event.target.value))} aria-label={`${entry.axis} ${copy.stack.page}`} className="w-20 accent-primary" />
+              <Button type="button" variant="outline" size="icon-sm" disabled={navBusy || entry.index + 1 >= entry.length} aria-label={`${entry.axis} next slice`} onClick={() => selectAxis(entry.axis, entry.index + 1)}>→</Button>
+              <input type="range" min={0} max={entry.length - 1} value={entry.index} disabled={navBusy} onChange={(event) => selectAxis(entry.axis, Number(event.target.value))} aria-label={`${entry.axis} ${copy.stack.page}`} className="w-20 accent-primary" />
             </span>)}
 
             <span className="ml-auto hidden shrink-0 truncate pl-2 font-mono text-[11px] text-base-content/55 md:inline">
