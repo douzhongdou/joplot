@@ -572,25 +572,25 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
               </div>
             ) : null}
 
-            <Button type="button" variant={showOriginal ? 'secondary' : 'outline'} size="sm" aria-pressed={showOriginal} disabled={!original || busy} onClick={() => { setShowOriginal(!showOriginal); closeParamCommand() }}>{copy.original}</Button>
+            <Button type="button" variant={showOriginal ? 'secondary' : 'outline'} size="sm" aria-pressed={showOriginal} disabled={!original || navBusy} onClick={() => { setShowOriginal(!showOriginal); closeParamCommand() }}>{copy.original}</Button>
 
             <span className="inline-flex shrink-0 items-center gap-0.5 rounded-[var(--radius-field)] bg-muted p-0.5">
-              <button type="button" aria-label={copy.zoomOut} disabled={!hasImage || busy} onClick={() => zoomByStep(-1)}
+              <button type="button" aria-label={copy.zoomOut} disabled={!hasImage || navBusy} onClick={() => zoomByStep(-1)}
                 className="flex size-6 items-center justify-center rounded-[calc(var(--radius-field)-2px)] text-base-content/70 transition hover:bg-base-100 hover:text-base-content disabled:opacity-40">
                 <ZoomOut size={14} />
               </button>
               <span className="min-w-9 shrink-0 text-center text-[11px] tabular-nums text-base-content/70">
                 {Math.round(zoom * 100)}%
               </span>
-              <button type="button" aria-label={copy.zoomIn} disabled={!hasImage || busy} onClick={() => zoomByStep(1)}
+              <button type="button" aria-label={copy.zoomIn} disabled={!hasImage || navBusy} onClick={() => zoomByStep(1)}
                 className="flex size-6 items-center justify-center rounded-[calc(var(--radius-field)-2px)] text-base-content/70 transition hover:bg-base-100 hover:text-base-content disabled:opacity-40">
                 <ZoomIn size={14} />
               </button>
             </span>
-            <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={!hasImage || busy} onClick={showActualSize}>
+            <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={!hasImage || navBusy} onClick={showActualSize}>
               {copy.viewer.actualSize}
             </Button>
-            <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={!hasImage || busy} onClick={fitToWindow}>
+            <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={!hasImage || navBusy} onClick={fitToWindow}>
               {copy.fit}
             </Button>
             <Button type="button" variant="ghost" size="sm" className="shrink-0" disabled={!roi} onClick={() => setRoi(null)}>
