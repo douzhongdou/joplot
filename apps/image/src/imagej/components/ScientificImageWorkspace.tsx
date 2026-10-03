@@ -5,7 +5,7 @@ import { Check, Download, Image as ImageIcon, Plus, Redo2, Undo2, X, ZoomIn, Zoo
 import { AppNavbar } from '../../components/AppNavbar'
 import { useI18n } from '../../i18n'
 import { Button } from '@joplot/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@joplot/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@joplot/ui/dropdown-menu'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@joplot/ui/context-menu'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@joplot/ui/tabs'
 import { Label } from '@joplot/ui/label'
@@ -123,7 +123,7 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
   const engineCovered = scope === 'image' && !roi && !particlesRequested && !analysisChannel
   const workerAnalysis = useImageAnalysis(image, scope === 'roi' ? roi : null, particlesRequested, minParticleArea, roi, analysisChannel, colorPreview, !engineCovered)
   const analysisResult = engineCovered ? { analysis: state.analysis } : workerAnalysis
-  const status = busy || (image && !analysisResult.analysis) ? copy.status.loading : state.dataset ? copy.status.ready : ''
+  const status = state.status === 'importing' ? copy.status.loading : state.dataset ? copy.status.ready : ''
   const stats = scope === 'roi' && !roi ? undefined : analysisResult.analysis
   const particles = analysisResult.particles ?? null
   const profileData = analysisResult.analysis?.profile ?? null
@@ -676,13 +676,6 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
                 onZoom={setZoom}
                 onStepPage={slice && slice.length > 1 ? stepPage : undefined}
               />
-              {stale && (
-                <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-base-100/50">
-                  <span className="rounded-[var(--radius-box)] bg-base-200 px-2 py-1 text-[11px] text-base-content/70">
-                    {copy.status.loading}
-                  </span>
-                </div>
-              )}
             </>
           ) : null}
           </div>
@@ -767,6 +760,9 @@ interface DocumentEntry { id: string; title: string; files: File[]; runtime: Ima
 /** 文件夹导入时按扩展名筛选图片。 */
 const IMAGE_FILE = /\.(png|jpe?g|webp|tiff?|bmp|gif|fits?|fts|dng|cr2|crw|nef|nrw|arw|srf|sr2|orf|rw2|pef|srw|raf|3fr|fff|iiq|mrw|dcr|kdc|rwl|x3f|erf|mef|mos|mfw)$/i
 
+/** 相机 RAW 扩展名；用于「打开 RAW 时自动去马赛克」的导入选项。 */
+const RAW_FILE = /\.(dng|cr2|crw|nef|nrw|arw|srf|sr2|orf|rw2|pef|srw|raf|3fr|fff|iiq|mrw|dcr|kdc|rwl|x3f|erf|mef|mos|mfw)$/i
+
 const byNameNatural = (a: File, b: File) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
 
 let documentCounter = 0
@@ -789,6 +785,7 @@ export function ScientificImageWorkspace() {
   if (!engineRef.current) engineRef.current = createWorkspaceEngine()
   const engine = engineRef.current
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [autoDebayer, setAutoDebayer] = useState(false)
   const [documents, setDocuments] = useState<DocumentEntry[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const documentsRef = useRef(documents); documentsRef.current = documents
@@ -802,13 +799,19 @@ export function ScientificImageWorkspace() {
   /* 卸载时释放全部文档运行时。 */
   useEffect(() => () => { for (const doc of documentsRef.current) doc.runtime.dispose() }, [])
 
+  const openInto = (runtime: ImageRuntime, file: File) => {
+    const opened = runtime.openFile(file)
+    if (autoDebayer && RAW_FILE.test(file.name)) void opened.then(() => runtime.addStep('debayer', { pattern: 'auto', algorithm: 'malvar' }, { kind: 'stack' }))
+    else void opened
+  }
+
   const openFiles = (files: readonly File[]) => {
     if (!files.length) return
     const created: DocumentEntry[] = []
     for (const file of files) {
       const runtime = createDocumentRuntime(engine)
       created.push({ id: nextDocumentId(), title: file.name, files: [file], runtime })
-      void runtime.openFile(file)
+      openInto(runtime, file)
     }
     setDocuments((docs) => [...docs, ...created])
     setActiveId(created[created.length - 1]!.id)
@@ -821,7 +824,9 @@ export function ScientificImageWorkspace() {
     const entry: DocumentEntry = { id: nextDocumentId(), title: title ?? `${files.length} images`, files: [...files], runtime }
     setDocuments((docs) => [...docs, entry])
     setActiveId(entry.id)
-    void runtime.openStack(files)
+    const opened = runtime.openStack(files)
+    if (autoDebayer && files.some((file) => RAW_FILE.test(file.name))) void opened.then(() => runtime.addStep('debayer', { pattern: 'auto', algorithm: 'malvar' }, { kind: 'stack' }))
+    else void opened
   }
 
   /** 选择文件夹：过滤图片、按文件名自然排序后合成一个 Stack。 */
@@ -1043,6 +1048,8 @@ export function ScientificImageWorkspace() {
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>{copy.openImage}</DropdownMenuItem>
           <DropdownMenuItem onSelect={pickFolder}>{copy.tabs.openFolder}</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuCheckboxItem checked={autoDebayer} onCheckedChange={(value) => setAutoDebayer(value === true)}>{copy.tabs.autoDebayer}</DropdownMenuCheckboxItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem disabled={documents.length < 2} onSelect={() => setStackDialog(true)}>{copy.tabs.buildStack}</DropdownMenuItem>
         </DropdownMenuContent>
