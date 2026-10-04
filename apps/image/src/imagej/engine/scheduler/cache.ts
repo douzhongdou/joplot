@@ -39,7 +39,7 @@ export function cacheKey(parts: CacheKeyParts): string {
 
 export class ByteCache<T> {
   private readonly entries = new Map<string, CacheEntry<T>>()
-  private readonly maxBytes: number
+  private maxBytes: number
   private clock = 0
   private bytes = 0
   private hits = 0
@@ -49,6 +49,23 @@ export class ByteCache<T> {
   constructor(maxBytes: number) {
     if (!Number.isFinite(maxBytes) || maxBytes <= 0) throw new RangeError('ByteCache maxBytes 必须为正数')
     this.maxBytes = maxBytes
+  }
+
+  budget(): number {
+    return this.maxBytes
+  }
+
+  /**
+   * 调整字节预算（只增不减的调用方应自行判断）。
+   *
+   * 多页 Stack 打开时按「页数 × 单页字节」临时放宽预算，否则整卷预热会被
+   * 自身预算不断淘汰，等于白热。超预算时立即按 LRU 淘汰。
+   */
+  setBudget(maxBytes: number): void {
+    if (!Number.isFinite(maxBytes) || maxBytes <= 0) throw new RangeError('ByteCache maxBytes 必须为正数')
+    if (maxBytes === this.maxBytes) return
+    this.maxBytes = maxBytes
+    this.evictIfNeeded()
   }
 
   get(key: string): T | undefined {

@@ -1,7 +1,7 @@
 /**
  * ImageJ 8-bit 灰度算法移植（纯 TypeScript，无 Java 运行时依赖）。
  *
- * 只读参考源码（E:\Project\tool\imagej）：
+ * 只读参考源码（ImageJ 1.54u；各开发机的 checkout 路径见 apps/image/README.md「ImageJ 上游源码路径」）：
  * - ij/process/ByteProcessor.java：convolve3x3 / filter（均值、中值、Sobel 边缘）、
  *   threshold、flipVertical、rotate、getHistogram、crop。
  * - ij/process/ImageProcessor.java：sharpen 核、findEdges、flipHorizontal、
@@ -15,6 +15,7 @@
  */
 
 import { gaussianInto } from './gaussian.ts'
+import { isRoi, rectangleRoi, roiBounds, roiMask, type Roi } from './roi.ts'
 
 /** 8 位灰度图像。 */
 export interface GrayImage {
@@ -141,6 +142,20 @@ export function cloneImage(image: GrayImage): GrayImage {
  * ROI
  * ------------------------------------------------------------------ */
 
+/**
+ * ROI 输入：既接受旧的矩形字面量（`Rect`），也接受新的多形状 ROI。
+ *
+ * 迁移期两种都收，调用方可以逐个换成 `Roi` 而不必一次性改完。
+ * 统计 / 算子按**掩码语义**处理（椭圆不会算上四角、多边形不会算上凹口），
+ * 裁剪按**包围盒**处理（裁剪本就是矩形操作）。
+ */
+export type RoiInput = Rect | Roi
+
+/** 归一化成统一 ROI；`Rect` 视为矩形 ROI。 */
+export function toRoi(input: RoiInput): Roi {
+  return isRoi(input) ? input : rectangleRoi(input.x, input.y, input.width, input.height)
+}
+
 /** 把 ROI 夹取到图像范围内；无交集返回 null。 */
 export function clampRect(rect: Rect, image: GrayImage): Rect | null {
   if (![rect.x, rect.y, rect.width, rect.height].every((value) => Number.isFinite(value))) {
@@ -174,11 +189,11 @@ export function resolveRoi(image: GrayImage, rect: Rect | null): { image: GrayIm
   return { image, rect: clamped }
 }
 
-/** 裁剪：返回 ROI 内的新图像（ByteProcessor.crop 语义）。 */
-export function cropImage(image: GrayImage, rect: Rect): GrayImage {
-  const { rect: roi } = resolveRoi(image, rect)
+/** 裁剪：返回 ROI 包围盒内的新图像（ByteProcessor.crop 语义，裁剪天然是矩形）。 */
+export function cropImage(image: GrayImage, input: RoiInput): GrayImage {
+  const roi = clampRect(roiBounds(toRoi(input)), image)
   if (!roi) {
-    return cloneImage(image)
+    throw new ImagejError('empty-roi', 'ROI 与图像没有交集')
   }
 
   const out = createImage(roi.width, roi.height)
@@ -189,27 +204,49 @@ export function cropImage(image: GrayImage, rect: Rect): GrayImage {
   return out
 }
 
-/** 只把处理结果写回矩形 ROI。滤波可读取 ROI 外的相邻像素；翻转可选择先裁剪 ROI。 */
+/**
+ * 只把处理结果写回 ROI。
+ *
+ * 矩形走整行拷贝（与旧行为完全一致，也是最常见的路径）；
+ * 其他形状按掩码逐像素写回 —— 椭圆只改椭圆内的像素，多边形不会改到凹口。
+ * 滤波可读取 ROI 外的相邻像素；翻转可选择先裁剪 ROI。
+ */
 export function applyWithinRoi(
   image: GrayImage,
-  rect: Rect | null,
+  input: RoiInput | null,
   operation: (source: GrayImage) => GrayImage,
   cropBeforeProcessing = false,
 ): GrayImage {
-  const roi = rect ? resolveRoi(image, rect).rect : null
-  if (!roi) return operation(image)
+  if (!input) return operation(image)
+  const roi = toRoi(input)
+  const raster = roiMask(roi, image.width, image.height)
+  if (!raster) throw new ImagejError('empty-roi', 'ROI 与图像没有交集')
+  const { bounds, mask } = raster
 
-  const source = cropBeforeProcessing ? cropImage(image, roi) : image
+  const source = cropBeforeProcessing ? cropImage(image, bounds) : image
   const processed = operation(source)
   if (processed.width !== source.width || processed.height !== source.height) {
     throw new ImagejError('invalid-size', 'ROI 操作不能改变图像尺寸')
   }
 
   const out = cloneImage(image)
-  for (let y = 0; y < roi.height; y += 1) {
-    const targetStart = (roi.y + y) * image.width + roi.x
-    const sourceStart = cropBeforeProcessing ? y * roi.width : targetStart
-    out.data.set(processed.data.subarray(sourceStart, sourceStart + roi.width), targetStart)
+  if (roi.kind === 'rectangle') {
+    // 矩形是最常见的路径：整行拷贝，与旧行为逐位一致。
+    for (let row = 0; row < bounds.height; row += 1) {
+      const targetStart = (bounds.y + row) * image.width + bounds.x
+      const sourceStart = cropBeforeProcessing ? row * bounds.width : targetStart
+      out.data.set(processed.data.subarray(sourceStart, sourceStart + bounds.width), targetStart)
+    }
+    return out
+  }
+  for (let row = 0; row < bounds.height; row += 1) {
+    const targetRowStart = (bounds.y + row) * image.width + bounds.x
+    const sourceRowStart = cropBeforeProcessing ? row * bounds.width : targetRowStart
+    const maskRowStart = row * bounds.width
+    for (let column = 0; column < bounds.width; column += 1) {
+      if (!mask[maskRowStart + column]) continue
+      out.data[targetRowStart + column] = processed.data[sourceRowStart + column]!
+    }
   }
   return out
 }
@@ -679,22 +716,27 @@ export function sobelEdges(image: GrayImage): GrayImage {
  * 直方图与测量
  * ------------------------------------------------------------------ */
 
-/** 计算 256 级直方图；`rect` 为 null 表示整图（ByteProcessor.getHistogram）。 */
-export function histogram(image: GrayImage, rect: Rect | null = null): Uint32Array {
+/** 计算 256 级直方图；`input` 为 null 表示整图（ByteProcessor.getHistogram）。 */
+export function histogram(image: GrayImage, input: RoiInput | null = null): Uint32Array {
   const bins = new Uint32Array(256)
-  const roi = rect ? resolveRoi(image, rect).rect : null
 
-  if (!roi) {
+  if (!input) {
     for (let i = 0; i < image.data.length; i += 1) {
-      bins[image.data[i]] += 1
+      bins[image.data[i]!] += 1
     }
     return bins
   }
 
-  for (let y = roi.y; y < roi.y + roi.height; y += 1) {
-    const rowStart = y * image.width + roi.x
-    for (let x = 0; x < roi.width; x += 1) {
-      bins[image.data[rowStart + x]] += 1
+  const roi = toRoi(input)
+  const raster = roiMask(roi, image.width, image.height)
+  if (!raster) throw new ImagejError('empty-roi', 'ROI 与图像没有交集')
+  const { bounds, mask } = raster
+  for (let row = 0; row < bounds.height; row += 1) {
+    const rowStart = (bounds.y + row) * image.width + bounds.x
+    const maskRowStart = row * bounds.width
+    for (let column = 0; column < bounds.width; column += 1) {
+      if (!mask[maskRowStart + column]) continue
+      bins[image.data[rowStart + column]!] += 1
     }
   }
   return bins
@@ -704,8 +746,8 @@ export function histogram(image: GrayImage, rect: Rect | null = null): Uint32Arr
  * 测量面积、均值、最小/最大与标准差（整图或 ROI）。
  * 标准差按 ImageJ 的样本标准差口径：sqrt((n*Σx² - (Σx)²)/n/(n-1))。
  */
-export function measure(image: GrayImage, rect: Rect | null = null): ImageStats {
-  const bins = histogram(image, rect)
+export function measure(image: GrayImage, input: RoiInput | null = null): ImageStats {
+  const bins = histogram(image, input)
 
   let count = 0
   let sum = 0

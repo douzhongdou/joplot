@@ -15,3 +15,5 @@ tsconfig.tsbuildinfo
 .zcode-shots
 .dsh-acl-recovery
 public/spike-duckdb/
+
+.tmp-shot

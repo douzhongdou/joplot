@@ -69,6 +69,66 @@ async function handle(request: WorkerRequest): Promise<void> {
       scope.postMessage({ type: 'analysis', id: request.id, analysis })
       return
     }
+    case 'stack-stats': {
+      const stats = await host.stackStats(request)
+      scope.postMessage({ type: 'stack-stats', id: request.id, stats })
+      return
+    }
+    case 'project': {
+      const dataset = await host.project(request)
+      scope.postMessage({ type: 'project', id: request.id, dataset })
+      return
+    }
+    case 'montage': {
+      const dataset = await host.montage(request)
+      scope.postMessage({ type: 'montage', id: request.id, dataset })
+      return
+    }
+    case 'montage-to-stack': {
+      const dataset = await host.montageToStack(request)
+      scope.postMessage({ type: 'montage-to-stack', id: request.id, dataset })
+      return
+    }
+    case 'reslice': {
+      const dataset = await host.reslice(request)
+      scope.postMessage({ type: 'reslice', id: request.id, dataset })
+      return
+    }
+    case 'orthogonal': {
+      const datasets = await host.orthogonal(request)
+      scope.postMessage({ type: 'orthogonal', id: request.id, datasets })
+      return
+    }
+    case 'stack-profiles': {
+      const profiles = await host.stackProfiles(request)
+      scope.postMessage({ type: 'stack-profiles', id: request.id, profiles })
+      return
+    }
+    case 'restructure': {
+      const dataset = await host.restructure(request)
+      scope.postMessage({ type: 'restructure', id: request.id, dataset })
+      return
+    }
+    case 'combine': {
+      const dataset = await host.combine(request)
+      scope.postMessage({ type: 'combine', id: request.id, dataset })
+      return
+    }
+    case 'label': {
+      const dataset = await host.labelStack(request)
+      scope.postMessage({ type: 'label', id: request.id, dataset })
+      return
+    }
+    case 'project-3d': {
+      const dataset = await host.project3d(request)
+      scope.postMessage({ type: 'project-3d', id: request.id, dataset })
+      return
+    }
+    case 'remontage': {
+      const dataset = await host.remontage(request)
+      scope.postMessage({ type: 'remontage', id: request.id, dataset })
+      return
+    }
     case 'run': {
       const outcome = await host.run(request)
       const response: ResultResponse = {

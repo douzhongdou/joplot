@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ImageBlock } from '../engine/types'
 import type { ImageAnalysis } from '../engine/analysis'
-import type { Rect } from '../lib/processor'
+import type { RoiInput } from '../lib/processor'
 import type { Particle } from '../lib/binary'
 import type { ColorAdjustment, ColorChannel } from '../engine/colorAdjustments'
 const NO_ADJUSTMENTS: readonly ColorAdjustment[] = []
@@ -15,7 +15,7 @@ const EMPTY: { analysis?: ImageAnalysis; autoAnalysis?: ImageAnalysis; particles
  * 整帧分析，主线程直接读 `runtime.analysis` 即可 —— 此时传 `enabled=false`，
  * 本 hook 不会创建 Worker、也不会复制整帧像素。
  */
-export function useImageAnalysis(block: ImageBlock | null, roi: Rect | null, particles: boolean, minArea: number, profileRoi: Rect | null = roi, channel?: ColorChannel, adjustments: readonly ColorAdjustment[] = NO_ADJUSTMENTS, enabled = true) {
+export function useImageAnalysis(block: ImageBlock | null, roi: RoiInput | null, particles: boolean, minArea: number, profileRoi: RoiInput | null = roi, channel?: ColorChannel, adjustments: readonly ColorAdjustment[] = NO_ADJUSTMENTS, enabled = true) {
   const workerRef = useRef<Worker | null>(null), lastBlock = useRef<ImageBlock | null>(null), version = useRef(0)
   const [result, setResult] = useState<{ analysis?: ImageAnalysis; autoAnalysis?: ImageAnalysis; particles?: Particle[]; error?: string }>({})
   useEffect(() => {

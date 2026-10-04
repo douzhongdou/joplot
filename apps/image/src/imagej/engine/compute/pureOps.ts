@@ -22,8 +22,9 @@ import {
   sharpen3x3 as libSharpen3x3,
   sobelEdges,
   type GrayImage,
-  type Rect,
+  type RoiInput,
 } from '../../lib/processor.ts'
+import { isRoi, roiBounds } from '../../lib/roi.ts'
 import { analyzeParticles, closeBinary, dilate as libDilate, erode as libErode, fillHoles as libFillHoles, openBinary } from '../../lib/binary.ts'
 import { gaussianBlur as libGaussian } from '../../lib/filters.ts'
 import { gaussianInto } from '../../lib/gaussian.ts'
@@ -371,7 +372,9 @@ export function fillHoles(block: ImageBlock): ImageBlock {
  * 几何算子
  * ------------------------------------------------------------------ */
 
-export function crop(block: ImageBlock, rect: Rect): ImageBlock {
+/** 裁剪到 ROI 的包围盒（裁剪本身是矩形语义；统计类请用掩码，见 `analysis.ts`）。 */
+export function crop(block: ImageBlock, input: RoiInput): ImageBlock {
+  const rect = isRoi(input) ? roiBounds(input) : input
   const { width, height } = plane2d(block)
   const x = Math.max(0, Math.min(width - 1, Math.floor(rect.x)))
   const y = Math.max(0, Math.min(height - 1, Math.floor(rect.y)))

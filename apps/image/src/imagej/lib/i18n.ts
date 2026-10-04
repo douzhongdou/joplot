@@ -114,7 +114,13 @@ export interface ImagejCopy {
   reorder: { title: string; hint: string; apply: string; cancel: string; up: string; down: string; drag: string }
   ejectPage: string
   stackBuilder: { title: string; hint: string; file: string; modified: string; size: string; pages: string; create: string; cancel: string; selectAll: string }
-  stack: { page: string; exportCurrent: string; exportAll: string; geometryUnavailable: string; applyAll: string }
+  stack: { page: string; exportCurrent: string; exportAll: string; geometryUnavailable: string; applyAll: string; preloading: string }
+  tools: {
+    hand: string; zoom: string; dropper: string; rectangle: string; oval: string
+    line: string; arrow: string; polyline: string; polygon: string; freehand: string
+    point: string; multipoint: string; angle: string
+    variantsHint: string; finishHint: string; cancelHint: string
+  }
   stats: {
     heading: string
     pixels: string
@@ -138,6 +144,108 @@ export interface ImagejCopy {
     particles: string
     empty: string
     profileNote: string
+    zprofile: string
+    stackMeasure: string
+    stackStatistics: string
+    zProfileNote: string
+    xyProfile: string
+    xyProfileNote: string
+  }
+  /** Image ▸ Stacks 的跨帧处理（Z 投影 / 整栈统计）。 */
+  stackOps: {
+    zProject: string
+    plotXyProfile: string
+    groupedZProject: string
+    plotZProfile: string
+    measureStack: string
+    statistics: string
+    method: string
+    startSlice: string
+    stopSlice: string
+    groupSize: string
+    groupHint: string
+    run: string
+    needsStack: string
+    slice: string
+    voxels: string
+    median: string
+    mode: string
+    summary: string
+    stale: string
+    factors: string
+    allTimeFrames: string
+    montage: string
+    montageToStack: string
+    reslice: string
+    outputSpacing: string
+    startAt: string
+    startTop: string
+    startLeft: string
+    startBottom: string
+    startRight: string
+    flipVertically: string
+    rotate90: string
+    orthogonalViews: string
+    pointX: string
+    pointY: string
+    reverse: string
+    reduce: string
+    substack: string
+    addSlice: string
+    deleteSlice: string
+    factor: string
+    pages: string
+    pagesHint: string
+    insert: string
+    combine: string
+    concatenate: string
+    sourceDocument: string
+    pasteX: string
+    pasteY: string
+    vertical: string
+    needSecondDocument: string
+    animationStart: string
+    animationStop: string
+    animationOptions: string
+    fps: string
+    firstFrame: string
+    lastFrame: string
+    loopBackAndForth: string
+    startAnimation: string
+    setLabel: string
+    removeSliceLabels: string
+    labelValue: string
+    labelSlices: string
+    magicMontage: string
+    sourceColumns: string
+    sourceRows: string
+    label: string
+    labelFormat: string
+    labelStart: string
+    labelInterval: string
+    labelText: string
+    labelX: string
+    labelY: string
+    labelFontSize: string
+    labelFormats: { number: string; zeroPadded: string; mmss: string; hhmmss: string; text: string; label: string }
+    project3d: string
+    projection3dMethod: string
+    projection3dAxis: string
+    initialAngle: string
+    totalRotation: string
+    angleIncrement: string
+    opacity: string
+    surfaceCueing: string
+    interiorCueing: string
+    methods3d: { nearest: string; brightest: string; mean: string }
+    axes3d: { x: string; y: string; z: string }
+    columns: string
+    rows: string
+    scale: string
+    border: string
+    increment: string
+    auto: string
+    methods: { average: string; max: string; min: string; sum: string; sd: string; median: string }
   }
   status: {
     ready: string
@@ -262,7 +370,13 @@ const zhCN: ImagejCopy = {
   reorder: { title: '调整 Stack 顺序', hint: '拖拽行调整页面顺序，应用后重建 Stack', apply: '应用', cancel: '取消', up: '上移', down: '下移', drag: '拖拽排序' },
   ejectPage: '移出当前切片',
   stackBuilder: { title: '创建 Stack', hint: '勾选要合成一个 Stack 的图像（至少 2 个）', file: '文件名', modified: '修改时间', size: '大小', pages: '页数', create: '创建 Stack', cancel: '取消', selectAll: '全选' },
-  stack: { page: '切片', exportCurrent: '导出当前 TIFF', exportAll: '导出整个 TIFF 栈', geometryUnavailable: '多页栈暂不支持改变切片尺寸的操作', applyAll: '应用到整个 Stack（关闭时仅当前切片）' },
+  stack: { page: '切片', exportCurrent: '导出当前 TIFF', exportAll: '导出整个 TIFF 栈', geometryUnavailable: '多页栈暂不支持改变切片尺寸的操作', applyAll: '应用到整个 Stack（关闭时仅当前切片）', preloading: '正在载入 Stack' },
+  tools: {
+    hand: '平移', zoom: '放大镜', dropper: '取色器', rectangle: '矩形', oval: '椭圆',
+    line: '直线', arrow: '箭头', polyline: '折线', polygon: '多边形', freehand: '手绘',
+    point: '点', multipoint: '多点', angle: '角度',
+    variantsHint: '双击图标切换子类型', finishHint: '双击或回车结束', cancelHint: 'Esc 取消',
+  },
   stats: {
     heading: '测量与直方图',
     pixels: '像素数',
@@ -286,6 +400,107 @@ const zhCN: ImagejCopy = {
     particles: '粒子分析',
     empty: '还没有视图——点右上「添加视图」新建',
     profileNote: '沿 ROI（无选区时为图像）的水平中线采样',
+    zprofile: 'Z 轴剖面',
+    stackMeasure: '整栈测量',
+    stackStatistics: '整栈统计',
+    zProfileNote: '逐切片取均值（有选区时取选区内的）',
+    xyProfile: '逐页剖面',
+    xyProfileNote: '每页取同一条剖面，共用同一纵轴',
+  },
+  stackOps: {
+    zProject: 'Z 投影…',
+    plotXyProfile: '逐页剖面…',
+    groupedZProject: '分组 Z 投影…',
+    plotZProfile: 'Z 轴剖面图',
+    measureStack: '整栈测量…',
+    statistics: '统计',
+    method: '投影方式',
+    startSlice: '起始切片',
+    stopSlice: '结束切片',
+    groupSize: '组大小',
+    groupHint: '组大小需整除页数',
+    run: '执行',
+    needsStack: '该命令需要多页 Stack',
+    slice: '切片',
+    voxels: '体素数',
+    median: '中位数',
+    mode: '众数',
+    summary: '整栈汇总',
+    stale: '结果已过期，请重新运行该命令',
+    factors: '可整除的组大小',
+    allTimeFrames: '全部时间帧',
+    montage: '制作蒙太奇…',
+    montageToStack: '蒙太奇转 Stack…',
+    reslice: '重切…',
+    outputSpacing: '输出间距',
+    startAt: '起始位置',
+    startTop: '上',
+    startLeft: '左',
+    startBottom: '下',
+    startRight: '右',
+    flipVertically: '垂直翻转',
+    rotate90: '旋转 90°',
+    orthogonalViews: '正交视图',
+    pointX: '交叉点 X',
+    pointY: '交叉点 Y',
+    reverse: '反转顺序',
+    reduce: '抽稀…',
+    substack: '子栈…',
+    addSlice: '插入空白切片',
+    deleteSlice: '删除当前切片',
+    factor: '步长',
+    pages: '切片列表',
+    pagesHint: '例如 1-3,5（从 1 开始计数）',
+    insert: '插入图像…',
+    combine: '合并拼接…',
+    concatenate: '首尾拼接全部',
+    sourceDocument: '来源文档',
+    pasteX: '粘贴位置 X',
+    pasteY: '粘贴位置 Y',
+    vertical: '垂直拼接',
+    needSecondDocument: '需要至少两个已打开的文档',
+    animationStart: '开始动画',
+    animationStop: '停止动画',
+    animationOptions: '动画选项…',
+    fps: '帧率 (fps)',
+    firstFrame: '起始帧',
+    lastFrame: '结束帧',
+    loopBackAndForth: '来回循环',
+    startAnimation: '立即开始',
+    setLabel: '设置标签…',
+    removeSliceLabels: '清除切片标签',
+    labelValue: '标签文本',
+    labelSlices: '标注切片',
+    magicMontage: '蒙太奇工具…',
+    sourceColumns: '源列数',
+    sourceRows: '源行数',
+    label: '标注切片…',
+    labelFormat: '格式',
+    labelStart: '起始值',
+    labelInterval: '步长',
+    labelText: '附加文本',
+    labelX: 'X 位置',
+    labelY: 'Y 位置',
+    labelFontSize: '字号',
+    labelFormats: { number: '数值', zeroPadded: '零填充', mmss: '分:秒', hhmmss: '时:分:秒', text: '文本', label: '切片标签' },
+    project3d: '3D 投影…',
+    projection3dMethod: '投影方式',
+    projection3dAxis: '旋转轴',
+    initialAngle: '初始角度',
+    totalRotation: '总旋转角度',
+    angleIncrement: '角度增量',
+    opacity: '不透明度 (%)',
+    surfaceCueing: '表面深度提示 (%)',
+    interiorCueing: '内部深度提示 (%)',
+    methods3d: { nearest: '最近点', brightest: '最亮点', mean: '均值' },
+    axes3d: { x: 'X 轴', y: 'Y 轴', z: 'Z 轴' },
+    columns: '列数',
+    rows: '行数',
+    scale: '缩放',
+    border: '边框宽度',
+    increment: '步长',
+    auto: '自动',
+    methods: { average: '均值', max: '最大值', min: '最小值', sum: '求和', sd: '标准差', median: '中位数' },
   },
   status: {
     ready: '就绪',
@@ -410,7 +625,13 @@ const en: ImagejCopy = {
   reorder: { title: 'Reorder stack', hint: 'Drag rows to change page order; the stack is rebuilt on apply', apply: 'Apply', cancel: 'Cancel', up: 'Move up', down: 'Move down', drag: 'Drag to reorder' },
   ejectPage: 'Eject current slice',
   stackBuilder: { title: 'Set up stack', hint: 'Select the images to combine into one stack (at least 2)', file: 'File name', modified: 'Modified', size: 'Size', pages: 'Pages', create: 'Create stack', cancel: 'Cancel', selectAll: 'Select all' },
-  stack: { page: 'Slice', exportCurrent: 'Export current TIFF', exportAll: 'Export TIFF stack', geometryUnavailable: 'Size-changing operations are unavailable for multi-page stacks', applyAll: 'Apply to the whole Stack (off: current slice only)' },
+  stack: { page: 'Slice', exportCurrent: 'Export current TIFF', exportAll: 'Export TIFF stack', geometryUnavailable: 'Size-changing operations are unavailable for multi-page stacks', applyAll: 'Apply to the whole Stack (off: current slice only)', preloading: 'Loading Stack' },
+  tools: {
+    hand: 'Pan', zoom: 'Zoom', dropper: 'Color picker', rectangle: 'Rectangle', oval: 'Oval',
+    line: 'Line', arrow: 'Arrow', polyline: 'Polyline', polygon: 'Polygon', freehand: 'Freehand',
+    point: 'Point', multipoint: 'Multi-point', angle: 'Angle',
+    variantsHint: 'Double-click the icon to switch variant', finishHint: 'Double-click or Enter to finish', cancelHint: 'Esc to cancel',
+  },
   stats: {
     heading: 'Measurements & histogram',
     pixels: 'Pixels',
@@ -434,6 +655,107 @@ const en: ImagejCopy = {
     particles: 'Particle analysis',
     empty: 'No views yet — use “Add view” above',
     profileNote: 'Sampled along the horizontal midline of the ROI (or image)',
+    zprofile: 'Z-axis profile',
+    stackMeasure: 'Stack measurements',
+    stackStatistics: 'Stack statistics',
+    zProfileNote: 'Mean per slice (inside the ROI when one is set)',
+    xyProfile: 'Stack profiles',
+    xyProfileNote: 'Same profile per slice, shared vertical scale',
+  },
+  stackOps: {
+    zProject: 'Z Project…',
+    plotXyProfile: 'Plot XY Profile…',
+    groupedZProject: 'Grouped Z Project…',
+    plotZProfile: 'Plot Z-axis Profile',
+    measureStack: 'Measure Stack…',
+    statistics: 'Statistics',
+    method: 'Projection type',
+    startSlice: 'Start slice',
+    stopSlice: 'Stop slice',
+    groupSize: 'Group size',
+    groupHint: 'Group size must divide the stack size',
+    run: 'Run',
+    needsStack: 'This command requires a multi-slice stack',
+    slice: 'Slice',
+    voxels: 'Voxels',
+    median: 'Median',
+    mode: 'Mode',
+    summary: 'Stack summary',
+    stale: 'Result is out of date — run the command again',
+    factors: 'Valid group sizes',
+    allTimeFrames: 'All time frames',
+    montage: 'Make Montage…',
+    montageToStack: 'Montage to Stack…',
+    reslice: 'Reslice…',
+    outputSpacing: 'Output spacing',
+    startAt: 'Start at',
+    startTop: 'Top',
+    startLeft: 'Left',
+    startBottom: 'Bottom',
+    startRight: 'Right',
+    flipVertically: 'Flip vertically',
+    rotate90: 'Rotate 90 degrees',
+    orthogonalViews: 'Orthogonal Views',
+    pointX: 'Crosshair X',
+    pointY: 'Crosshair Y',
+    reverse: 'Reverse',
+    reduce: 'Reduce…',
+    substack: 'Make Substack…',
+    addSlice: 'Add Slice',
+    deleteSlice: 'Delete Slice',
+    factor: 'Factor',
+    pages: 'Slices',
+    pagesHint: 'e.g. 1-3,5 (1-based)',
+    insert: 'Insert…',
+    combine: 'Combine…',
+    concatenate: 'Concatenate all',
+    sourceDocument: 'Source document',
+    pasteX: 'X location',
+    pasteY: 'Y location',
+    vertical: 'Combine vertically',
+    needSecondDocument: 'At least two open documents are required',
+    animationStart: 'Start Animation',
+    animationStop: 'Stop Animation',
+    animationOptions: 'Animation Options…',
+    fps: 'Speed (fps)',
+    firstFrame: 'First frame',
+    lastFrame: 'Last frame',
+    loopBackAndForth: 'Loop back and forth',
+    startAnimation: 'Start animation',
+    setLabel: 'Set Label…',
+    removeSliceLabels: 'Remove Slice Labels',
+    labelValue: 'Label',
+    labelSlices: 'Label slices',
+    magicMontage: 'Magic Montage Tools…',
+    sourceColumns: 'Source columns',
+    sourceRows: 'Source rows',
+    label: 'Label…',
+    labelFormat: 'Format',
+    labelStart: 'Starting value',
+    labelInterval: 'Interval',
+    labelText: 'Text',
+    labelX: 'X location',
+    labelY: 'Y location',
+    labelFontSize: 'Font size',
+    labelFormats: { number: 'Number', zeroPadded: 'Zero padded', mmss: 'mm:ss', hhmmss: 'hh:mm:ss', text: 'Text', label: 'Slice label' },
+    project3d: '3D Project…',
+    projection3dMethod: 'Projection method',
+    projection3dAxis: 'Axis of rotation',
+    initialAngle: 'Initial angle',
+    totalRotation: 'Total rotation',
+    angleIncrement: 'Rotation angle increment',
+    opacity: 'Opacity (%)',
+    surfaceCueing: 'Surface depth-cueing (%)',
+    interiorCueing: 'Interior depth-cueing (%)',
+    methods3d: { nearest: 'Nearest Point', brightest: 'Brightest Point', mean: 'Mean Value' },
+    axes3d: { x: 'X-Axis', y: 'Y-Axis', z: 'Z-Axis' },
+    columns: 'Columns',
+    rows: 'Rows',
+    scale: 'Scale factor',
+    border: 'Border width',
+    increment: 'Increment',
+    auto: 'Auto',
+    methods: { average: 'Average Intensity', max: 'Max Intensity', min: 'Min Intensity', sum: 'Sum Slices', sd: 'Standard Deviation', median: 'Median' },
   },
   status: {
     ready: 'Ready',
@@ -558,7 +880,13 @@ const jaJP: ImagejCopy = {
   reorder: { title: 'スタックの順序', hint: '行をドラッグしてページ順を変更し、適用すると再構築します', apply: '適用', cancel: 'キャンセル', up: '上へ', down: '下へ', drag: 'ドラッグで並べ替え' },
   ejectPage: '現在のスライスを出す',
   stackBuilder: { title: 'スタックを作成', hint: '1 つのスタックにまとめる画像を選択してください（2 つ以上）', file: 'ファイル名', modified: '更新日時', size: 'サイズ', pages: 'ページ数', create: 'スタックを作成', cancel: 'キャンセル', selectAll: 'すべて選択' },
-  stack: { page: 'スライス', exportCurrent: '現在の TIFF を出力', exportAll: 'TIFF スタックを出力', geometryUnavailable: '複数ページのスタックではサイズを変える操作はできません', applyAll: 'スタック全体に適用（オフ：現在のスライス）' },
+  stack: { page: 'スライス', exportCurrent: '現在の TIFF を出力', exportAll: 'TIFF スタックを出力', geometryUnavailable: '複数ページのスタックではサイズを変える操作はできません', applyAll: 'スタック全体に適用（オフ：現在のスライス）', preloading: 'スタックを読み込み中' },
+  tools: {
+    hand: '移動', zoom: 'ズーム', dropper: 'スポイト', rectangle: '矩形', oval: '楕円',
+    line: '直線', arrow: '矢印', polyline: '折れ線', polygon: '多角形', freehand: 'フリーハンド',
+    point: '点', multipoint: '多点', angle: '角度',
+    variantsHint: 'アイコンをダブルクリックで切り替え', finishHint: 'ダブルクリックまたは Enter で確定', cancelHint: 'Esc でキャンセル',
+  },
   stats: {
     heading: '測定とヒストグラム',
     pixels: 'ピクセル数',
@@ -582,6 +910,107 @@ const jaJP: ImagejCopy = {
     particles: '粒子解析',
     empty: 'ビューがありません。右上の「ビューを追加」から追加してください',
     profileNote: 'ROI（なければ画像）の水平中心線に沿ってサンプリング',
+    zprofile: 'Z 軸プロファイル',
+    stackMeasure: 'スタック測定',
+    stackStatistics: 'スタック統計',
+    zProfileNote: 'スライスごとの平均（ROI がある場合は ROI 内）',
+    xyProfile: 'スタックプロファイル',
+    xyProfileNote: '各スライスで同じプロファイル、縦軸は共通',
+  },
+  stackOps: {
+    zProject: 'Z 投影…',
+    plotXyProfile: 'スタックプロファイル…',
+    groupedZProject: 'グループ Z 投影…',
+    plotZProfile: 'Z 軸プロファイル',
+    measureStack: 'スタック測定…',
+    statistics: '統計',
+    method: '投影方法',
+    startSlice: '開始スライス',
+    stopSlice: '終了スライス',
+    groupSize: 'グループサイズ',
+    groupHint: 'グループサイズはページ数を割り切れる必要があります',
+    run: '実行',
+    needsStack: '複数ページのスタックが必要です',
+    slice: 'スライス',
+    voxels: 'ボクセル数',
+    median: '中央値',
+    mode: '最頻値',
+    summary: 'スタック集計',
+    stale: '結果が古くなっています。コマンドを再実行してください',
+    factors: '割り切れるグループサイズ',
+    allTimeFrames: 'すべてのタイムフレーム',
+    montage: 'モンタージュ作成…',
+    montageToStack: 'モンタージュからスタック…',
+    reslice: 'リズライス…',
+    outputSpacing: '出力間隔',
+    startAt: '開始位置',
+    startTop: '上',
+    startLeft: '左',
+    startBottom: '下',
+    startRight: '右',
+    flipVertically: '垂直反転',
+    rotate90: '90 度回転',
+    orthogonalViews: '直交ビュー',
+    pointX: '交点 X',
+    pointY: '交点 Y',
+    reverse: '順序を反転',
+    reduce: '間引き…',
+    substack: 'サブスタック…',
+    addSlice: '空白スライスを挿入',
+    deleteSlice: '現在のスライスを削除',
+    factor: '間隔',
+    pages: 'スライス',
+    pagesHint: '例：1-3,5（1 始まり）',
+    insert: '画像を挿入…',
+    combine: '結合…',
+    concatenate: 'すべて連結',
+    sourceDocument: '元のドキュメント',
+    pasteX: '貼り付け位置 X',
+    pasteY: '貼り付け位置 Y',
+    vertical: '垂直に結合',
+    needSecondDocument: '2 つ以上のドキュメントが必要です',
+    animationStart: 'アニメーション開始',
+    animationStop: 'アニメーション停止',
+    animationOptions: 'アニメーション設定…',
+    fps: '速度 (fps)',
+    firstFrame: '開始フレーム',
+    lastFrame: '終了フレーム',
+    loopBackAndForth: '往復ループ',
+    startAnimation: 'すぐに開始',
+    setLabel: 'ラベル設定…',
+    removeSliceLabels: 'スライスラベルを削除',
+    labelValue: 'ラベル',
+    labelSlices: 'スライスにラベル',
+    magicMontage: 'モンタージュツール…',
+    sourceColumns: '元の列数',
+    sourceRows: '元の行数',
+    label: 'ラベル付け…',
+    labelFormat: '形式',
+    labelStart: '開始値',
+    labelInterval: '間隔',
+    labelText: '追加テキスト',
+    labelX: 'X 位置',
+    labelY: 'Y 位置',
+    labelFontSize: 'フォントサイズ',
+    labelFormats: { number: '数値', zeroPadded: 'ゼロ埋め', mmss: '分:秒', hhmmss: '時:分:秒', text: 'テキスト', label: 'スライスラベル' },
+    project3d: '3D 投影…',
+    projection3dMethod: '投影方法',
+    projection3dAxis: '回転軸',
+    initialAngle: '初期角度',
+    totalRotation: '総回転角度',
+    angleIncrement: '角度の刻み',
+    opacity: '不透明度 (%)',
+    surfaceCueing: '表面深度キュー (%)',
+    interiorCueing: '内部深度キュー (%)',
+    methods3d: { nearest: '最近点', brightest: '最輝点', mean: '平均値' },
+    axes3d: { x: 'X 軸', y: 'Y 軸', z: 'Z 軸' },
+    columns: '列数',
+    rows: '行数',
+    scale: '倍率',
+    border: '境界線の幅',
+    increment: '増分',
+    auto: '自動',
+    methods: { average: '平均', max: '最大値', min: '最小値', sum: '合計', sd: '標準偏差', median: '中央値' },
   },
   status: {
     ready: '準備完了',

@@ -36,6 +36,19 @@ function fileClient(): EngineClient {
       return imported.dataset
     },
     async importStack() { throw new Error('测试客户端不支持 importStack') },
+    async analyze() { return undefined },
+    async stackStats() { return undefined },
+    async stackProfiles() { return undefined },
+    async restructure() { return undefined },
+    async combine() { return undefined },
+    async label() { return undefined },
+    async project3d() { return undefined },
+    async remontage() { return undefined },
+    async project() { return undefined },
+    async montage() { return undefined },
+    async montageToStack() { return undefined },
+    async reslice() { return undefined },
+    async orthogonal() { return [] },
     async run(options): Promise<EngineResult> {
       const source = imported!
       const outcome = await engine.runRecipe(

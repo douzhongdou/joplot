@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
-import { Check, Download, Image as ImageIcon, Plus, Redo2, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Download, Image as ImageIcon, Plus, Redo2, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { AppNavbar } from '../../components/AppNavbar'
 import { useI18n } from '../../i18n'
 import { Button } from '@joplot/ui/button'
@@ -11,11 +11,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@joplot/ui/tabs'
 import { Label } from '@joplot/ui/label'
 import { createImagejCopy } from '../lib/i18n'
 import { readDroppedContent } from '../lib/dropFiles'
-import { levelsRange, type Rect } from '../lib/processor'
+import { levelsRange, toRoi, type RoiInput } from '../lib/processor'
+import { animationInterval, nextAnimationStep } from '../lib/animation'
+import { clampRoi, isRoi, roiBounds, roiPoints, type Roi } from '../lib/roi'
+import { TOOLS, VARIANT_ICONS, toolByShortcut, type ToolDefinition, type ToolId } from '../lib/tools'
 import { getOperator, toUiRegistry } from '../engine/operators'
 import { stepAppliesToSelection, type StepScope } from '../engine/recipe'
 import { computeWindowLevel } from '../engine/render/rgba'
 import { displayBlock as toDisplayBlock } from '../engine/render/display'
+import type { Dataset } from '../engine/dataset'
 import type { ImageBlock } from '../engine/types'
 import { encodeTiffStack } from '../engine/tiff'
 import { ImageJSidebar } from './ImageJSidebar'
@@ -27,7 +31,7 @@ import { ColorContrastPanel } from './ColorContrastPanel'
 import { StackBuilderDialog, type StackRow } from './StackBuilderDialog'
 import { StackOrderDialog } from './StackOrderDialog'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@joplot/ui/dialog'
-import { DebayerCommandPanel, GaussianCommandPanel, LevelsCommandPanel, ThresholdCommandPanel } from './CommandPanels'
+import { AnimationCommandPanel, CombineCommandPanel, DebayerCommandPanel, GaussianCommandPanel, LabelCommandPanel, LevelsCommandPanel, MontageCommandPanel, MontageToStackCommandPanel, OrthogonalCommandPanel, Project3dCommandPanel, ReduceCommandPanel, RemontageCommandPanel, ResliceCommandPanel, SetLabelCommandPanel, SubstackCommandPanel, ThresholdCommandPanel, ZProjectCommandPanel } from './CommandPanels'
 import { HistogramChart } from './HistogramChart'
 import { applyColorAdjustments, type ColorAdjustment } from '../engine/colorAdjustments'
 
@@ -49,14 +53,121 @@ const OP_COMMANDS: Record<ParamOp, ParamCommand> = {
   gaussian: 'Gaussian Blur',
   debayer: 'Debayer',
 }
-type ViewType = 'measurement' | 'histogram' | 'profile' | 'particles'
+type ViewType = 'measurement' | 'histogram' | 'profile' | 'particles' | 'zprofile' | 'stackMeasure' | 'stackStatistics' | 'xyProfile'
 interface ViewCard { id: number; type: ViewType }
 const VIEW_TYPES: ViewType[] = ['measurement', 'histogram', 'profile', 'particles']
+/**
+ * 栈命令 → 它打开的视图卡片。
+ *
+ * 这些卡片不进「添加视图」下拉：它们由 Image ▸ Stacks 的命令唤起 —— 前三张共用
+ * `runtime.measureStack()` 的一次整栈统计，`Plot XY Profile` 用 `runtime.loadStackProfiles()`。
+ */
+const STACK_VIEW_COMMANDS: Record<string, ViewType> = {
+  'plot-z-profile': 'zprofile',
+  'measure-stack': 'stackMeasure',
+  'stack-statistics': 'stackStatistics',
+  'plot-xy-profile': 'xyProfile',
+}
+type ProjectionMethod = 'average' | 'max' | 'min' | 'sum' | 'sd' | 'median'
+const PROJECT_COMMANDS = ['Z Project...', 'Grouped Z Project...'] as const
+type ProjectCommand = typeof PROJECT_COMMANDS[number]
 function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob), link = document.createElement('a')
   link.href = url; link.download = name; link.click()
   setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
+/** 能整除页数的组大小候选；对齐 ImageJ 的 "Valid factors: ..." 提示行（最多 10 个）。 */
+function groupSizeFactors(count: number): number[] {
+  const factors: number[] = []
+  for (let value = 1; value <= count && factors.length < 10; value += 1) {
+    if (count % value === 0) factors.push(value)
+  }
+  return factors
+}
+
+/**
+ * 解析 ImageJ 风格的切片表达式：`1-3`、`1-100-2`、`7,9,25` → 0-based 下标数组。
+ *
+ * 与 ImageJ 的 SubstackMaker 一样以 1 开始计数，越界的项直接丢弃；结果去重并升序。
+ */
+function parseSliceList(input: string, count: number): number[] {
+  const pages: number[] = []
+  for (const token of input.split(/[,，\s]+/).filter(Boolean)) {
+    const range = /^(\d+)\s*-\s*(\d+)(?:\s*-\s*(\d+))?$/.exec(token)
+    if (range) {
+      const from = Math.max(1, Number(range[1]))
+      const to = Math.min(count, Number(range[2]))
+      const step = range[3] ? Math.max(1, Number(range[3])) : 1
+      for (let value = from; value <= to; value += step) pages.push(value - 1)
+      continue
+    }
+    const single = Number(token)
+    if (Number.isInteger(single) && single >= 1 && single <= count) pages.push(single - 1)
+  }
+  return [...new Set(pages)].sort((a, b) => a - b)
+}
+
+/**
+ * Stack 切片栏：图像窗口底部的一条矮栏（每行 24px）。
+ *
+ * 位置与 ImageJ 的 `StackWindow` 滚动条一致 —— `ImageLayout.moveComponents`
+ * （`ImageLayout.java:59-70`）把画布之后的组件依次排在图像**下方**，
+ * 窗口高度再由 `ImageWindow.getMaximumBounds`（`:556-564`）把滚动条算进去；
+ * 控件本身也对应 `ScrollbarWithLabel`：轴名 + 滚动条 + 位置读数。
+ *
+ * 每个可翻的轴独占一行，因此 hyperstack（c/z/t）也只是几行矮栏，不会挤压图像。
+ * 翻页在途时页码显示 `…`：架构方案第 1 节禁止"新页码配旧像素"。
+ */
+function StackSliceBar({ slices, stale, disabled, pageLabel, onSelect }: {
+  slices: readonly { axis: 't' | 'c' | 'z'; length: number; index: number }[]
+  stale: boolean
+  disabled: boolean
+  pageLabel: string
+  onSelect(axis: 't' | 'c' | 'z', index: number): void
+}) {
+  if (!slices.length) return null
+  return (
+    <div className="flex shrink-0 flex-col border-t border-base-300 bg-base-100">
+      {slices.map((entry) => (
+        <div key={entry.axis} className="flex h-6 items-center gap-1.5 px-2">
+          <span className="w-2.5 shrink-0 text-[10px] font-semibold uppercase text-base-content/55">{entry.axis}</span>
+          <button
+            type="button"
+            aria-label={`${entry.axis} previous slice`}
+            disabled={disabled || entry.index === 0}
+            onClick={() => onSelect(entry.axis, entry.index - 1)}
+            className="flex size-4 shrink-0 items-center justify-center rounded-[calc(var(--radius-field)-3px)] text-base-content/60 transition hover:bg-base-200 hover:text-base-content disabled:opacity-30"
+          >
+            <ChevronLeft size={12} />
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={entry.length - 1}
+            value={entry.index}
+            disabled={disabled}
+            onChange={(event) => onSelect(entry.axis, Number(event.target.value))}
+            aria-label={`${entry.axis} ${pageLabel}`}
+            className="h-1 min-w-0 flex-1 accent-primary"
+          />
+          <button
+            type="button"
+            aria-label={`${entry.axis} next slice`}
+            disabled={disabled || entry.index + 1 >= entry.length}
+            onClick={() => onSelect(entry.axis, entry.index + 1)}
+            className="flex size-4 shrink-0 items-center justify-center rounded-[calc(var(--radius-field)-3px)] text-base-content/60 transition hover:bg-base-200 hover:text-base-content disabled:opacity-30"
+          >
+            <ChevronRight size={12} />
+          </button>
+          <span className="w-14 shrink-0 text-right text-[10px] tabular-nums text-base-content/70">
+            {stale ? '…' : entry.index + 1} / {entry.length}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function prepareChartCanvas(
   canvas: HTMLCanvasElement,
   cssHeight: number,
@@ -73,7 +184,7 @@ function prepareChartCanvas(
   return { context, width: cssWidth }
 }
 
-function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { runtime: ImageRuntime; onOpenImage(file: File): void; tabsHeader?: ReactNode; onEjectPage?(pageIndex: number): void }) {
+function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocuments, tabsHeader, onEjectPage }: { runtime: ImageRuntime; onOpenImage(file: File): void; onOpenDataset?(dataset: Dataset): void; onListDocuments?(): Array<{ id: string; title: string }>; tabsHeader?: ReactNode; onEjectPage?(pageIndex: number): void }) {
   const { language } = useI18n()
   const copy = useMemo(() => createImagejCopy(language), [language])
   const state = useRuntimeState(runtime)
@@ -81,9 +192,12 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const viewportRef = useRef<ImageViewportHandle>(null)
   const profileCanvasRef = useRef<HTMLCanvasElement>(null)
-  const [roi, setRoi] = useState<Rect | null>(null)
+  const [roi, setRoi] = useState<Roi | null>(null)
   const [zoom, setZoom] = useState(1)
-  const [tool, setTool] = useState<'pan' | 'roi'>('pan')
+  /** 当前工具（对齐 ImageJ 工具栏；默认为矩形，与 ImageJ 一致）。 */
+  const [tool, setTool] = useState<ToolId>('rectangle')
+  /** 各工具的子类型：双击工具图标切换（ImageJ 的 Toolbar.getName 子类型机制）。 */
+  const [toolVariants, setToolVariants] = useState<Record<string, string>>({ line: 'line', point: 'point' })
   const [probe, setProbe] = useState<PixelProbe | null>(null)
   const [brightness, setBrightness] = useState(0), [contrast, setContrast] = useState(50)
   const [gaussianSigma, setGaussianSigma] = useState(1.5), [thresholdLevel, setThresholdLevel] = useState(128)
@@ -98,7 +212,65 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
   const [showOriginal, setShowOriginal] = useState(false)
   const [colorPreview, setColorPreview] = useState<readonly ColorAdjustment[]>([])
   const [colorSession, setColorSession] = useState(0)
+  /** 展开中的 Z 投影命令（`Z Project...` / `Grouped Z Project...`）；与算子参数面板互斥。 */
+  const [projectCommand, setProjectCommand] = useState<ProjectCommand | null>(null)
+  const [projectionMethod, setProjectionMethod] = useState<ProjectionMethod>('average')
+  const [projectionStart, setProjectionStart] = useState(1)
+  const [projectionStop, setProjectionStop] = useState(1)
+  const [projectionGroup, setProjectionGroup] = useState(2)
+  const [projectionAllTime, setProjectionAllTime] = useState(false)
+  /** 「制作蒙太奇…」面板的展开状态与参数；0 表示交给引擎按 ImageJ 的自动规则计算。 */
+  const [montageOpen, setMontageOpen] = useState(false)
+  const [montage, setMontage] = useState({ columns: 0, rows: 0, scale: 0, border: 0, start: 1, stop: 1, increment: 1, labelSlices: false, fontSize: 12 })
+  /** 「蒙太奇转 Stack…」面板的展开状态与参数；0 表示沿用蒙太奇元数据里的行列。 */
+  const [montageToStackOpen, setMontageToStackOpen] = useState(false)
+  const [montageToStack, setMontageToStack] = useState({ columns: 0, rows: 0, border: 0 })
+  /** 「重切…」（Reslice）面板的展开状态与参数。 */
+  const [resliceOpen, setResliceOpen] = useState(false)
+  const [reslice, setReslice] = useState({ spacing: 1, startAt: 'top', flip: false, rotate: false })
+  /** 「正交视图」面板的展开状态与交叉点（打开时缺省取图像中心）。 */
+  const [orthogonalOpen, setOrthogonalOpen] = useState(false)
+  const [orthogonalPoint, setOrthogonalPoint] = useState({ x: 0, y: 0 })
+  /** 「抽稀…」与「子栈…」两个结构编辑面板的展开状态与参数。 */
+  const [reduceOpen, setReduceOpen] = useState(false)
+  const [reduceFactor, setReduceFactor] = useState(2)
+  const [substackOpen, setSubstackOpen] = useState(false)
+  const [substackPages, setSubstackPages] = useState('')
+  /** 「插入图像」/「合并拼接」面板的展开状态与参数（候选来自其它已打开文档）。 */
+  const [combineOpen, setCombineOpen] = useState(false)
+  const [combineOp, setCombineOp] = useState<'insert' | 'combine'>('insert')
+  const [combineSource, setCombineSource] = useState('')
+  const [combineVertical, setCombineVertical] = useState(false)
+  const [combineDocuments, setCombineDocuments] = useState<Array<{ id: string; title: string }>>([])
+  const [insertX, setInsertX] = useState(0)
+  const [insertY, setInsertY] = useState(0)
+  /** 动画状态（ImageJ 的 Animator：Start / Stop / Options）。 */
+  const [animationOpen, setAnimationOpen] = useState(false)
+  const [animation, setAnimation] = useState({ running: false, fps: 7, first: 1, last: 0, loop: false, forward: true })
+  /** 「设置标签」面板的展开状态与输入值（打开时填入当前页标签）。 */
+  const [labelOpen, setLabelOpen] = useState(false)
+  const [labelValue, setLabelValue] = useState('')
+  /** 「标注切片」面板的展开状态与参数（Label...，把文本画进像素）。 */
+  const [annotateOpen, setAnnotateOpen] = useState(false)
+  const [annotate, setAnnotate] = useState({ format: 'number', start: 1, interval: 1, text: '', x: 5, y: 20, fontSize: 18 })
+  /** 「3D 投影」面板的展开状态与参数。 */
+  const [project3dOpen, setProject3dOpen] = useState(false)
+  /** 「蒙太奇工具」面板的展开状态与参数（按新行列重排蒙太奇）。 */
+  const [remontageOpen, setRemontageOpen] = useState(false)
+  const [remontage, setRemontage] = useState({ sourceColumns: 0, sourceRows: 0, columns: 2, rows: 2, border: 0, labelSlices: false, fontSize: 12 })
+  const [project3d, setProject3d] = useState({
+    method: 'brightest',
+    axis: 'y',
+    initialAngle: 0,
+    totalRotation: 360,
+    angleIncrement: 10,
+    opacity: 0,
+    surfaceCueing: 100,
+    interiorCueing: 50,
+  })
   const [uiError, setError] = useState(''), [exporting, setExporting] = useState(false)
+  /** Original 帧的在途请求序号：切片切换或重复点击时作废旧读取。 */
+  const originalRequest = useRef(0)
   const image = state.image
   const isRgb = Boolean(image && image.axes.includes('c') && image.shape[image.axes.indexOf('c')] === 3)
   const current = image ? { width: image.shape[image.axes.indexOf('x')]!, height: image.shape[image.axes.indexOf('y')]!, data: image.data } : null
@@ -117,6 +289,47 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
   const stack = frameCount > 1 ? { length: frameCount } : null
   const slice = slices.find((entry) => entry.axis === 'z') ?? slices[0]
   const pageIndex = slice?.index ?? 0
+  /** 切片轴的页数：跨帧命令（Z 投影 / 整栈统计）的作用范围。 */
+  const sliceCount = slice?.length ?? 1
+  /** 时间帧数：大于 1 时 Z 投影才提供「全部时间帧」。 */
+  const timeCount = slices.find((entry) => entry.axis === 't')?.length ?? 1
+  const stackStats = state.stackStats
+  /** 数据集是否有切片轴：结构编辑（Add Slice 等）据此可用，长度 1 的单页栈也算。 */
+  const hasSliceAxis = Boolean(state.dataset && (['z', 't', 'c'] as const).some((axis) => {
+    const dataset = state.dataset!
+    return dataset.axes.includes(axis) && !(axis === 'c' && dataset.componentKind === 'rgb')
+  }))
+  /** 统计卡片的占位文案：区分「没跑过」与「跑过但被切片/Recipe 变更作废」。 */
+  const stackStatsPlaceholder = state.stackStatsStale ? copy.stackOps.stale : copy.status.loading
+  /** Z 轴剖面折线：逐切片均值映射到 0..100 × 0..40 的 SVG 视口坐标。 */
+  const zProfilePoints = useMemo(() => {
+    const values = stackStats?.profile ?? []
+    if (values.length < 2) return ''
+    const min = Math.min(...values)
+    const max = Math.max(...values)
+    const span = max - min || 1
+    return values
+      .map((value, index) => `${((index / (values.length - 1)) * 100).toFixed(2)},${(38 - ((value - min) / span) * 36).toFixed(2)}`)
+      .join(' ')
+  }, [stackStats])
+  /** 曲线纵轴的实际范围，用于卡片脚注。 */
+  const zProfileRange = useMemo<[string, string]>(() => {
+    const values = stackStats?.profile ?? []
+    if (!values.length) return ['—', '—']
+    return [Math.min(...values).toFixed(2), Math.max(...values).toFixed(2)]
+  }, [stackStats])
+  /** 逐页剖面折线：共用同一纵轴（对应 ImageJ 的 ProfilePlot.setMinAndMax），当前切片高亮。 */
+  const profilePolylines = useMemo(() => {
+    const result = state.stackProfiles
+    if (!result || result.length < 2) return []
+    const span = result.max - result.min || 1
+    return result.profiles.map((profile, index) => ({
+      index,
+      points: profile
+        .map((value, x) => `${((x / Math.max(1, profile.length - 1)) * 100).toFixed(2)},${(38 - ((value - result.min) / span) * 36).toFixed(2)}`)
+        .join(' '),
+    }))
+  }, [state.stackProfiles])
   const levelsActive = brightness !== 0 || contrast !== 50
   const paramOp = paramCommand ? COMMAND_OPS[paramCommand] : null
   const particlesRequested = views.some((view) => view.type === 'particles')
@@ -126,6 +339,8 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
   const workerAnalysis = useImageAnalysis(image, scope === 'roi' ? roi : null, particlesRequested, minParticleArea, roi, analysisChannel, colorPreview, !engineCovered)
   const analysisResult = engineCovered ? { analysis: state.analysis } : workerAnalysis
   const status = state.status === 'importing' ? copy.status.loading : state.dataset ? copy.status.ready : ''
+  /** 整卷预热进度：惰性 Stack 打开后后台解码，翻页因此变成缓存命中。 */
+  const preload = state.preload
   const stats = scope === 'roi' && !roi ? undefined : analysisResult.analysis
   const particles = analysisResult.particles ?? null
   const profileData = analysisResult.analysis?.profile ?? null
@@ -147,6 +362,25 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
   const hasImage = Boolean(current)
   // 翻页走 ref：selectPage 每次渲染重建，若作为 effect 依赖会反复重绑监听。
   const selectPageRef = useRef<(index: number) => void>(() => {})
+  /* 动画播放：按帧率推进当前切片；每次翻页后重排定时器，避免请求堆积。 */
+  useEffect(() => {
+    if (!animation.running || sliceCount < 2) return
+    const timer = setTimeout(() => {
+      setAnimation((current) => {
+        if (!current.running) return current
+        const step = nextAnimationStep({
+          current: pageIndex,
+          first: current.first || 1,
+          last: current.last || sliceCount,
+          forward: current.forward,
+          loop: current.loop,
+        }, sliceCount)
+        selectPageRef.current(step.index)
+        return { ...current, forward: step.forward }
+      })
+    }, animationInterval(animation.fps))
+    return () => clearTimeout(timer)
+  }, [animation, pageIndex, sliceCount])
   selectPageRef.current = selectPage
   const pageIndexRef = useRef(pageIndex)
   pageIndexRef.current = pageIndex
@@ -178,16 +412,67 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [slice, pageIndex])
-  const roiLabel = roi ? `${roi.width}×${roi.height} @ (${roi.x}, ${roi.y})` : '—'
+  /**
+   * 工具快捷键独立注册。
+   *
+   * 不能并进下面那个翻页用的 keydown：那个 effect 依赖 `slice`，单图模式下会提前
+   * return，于是"没有切片就切不了工具"。这里只依赖稳定的 setTool。
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return
+      if (!/^[a-z]$/i.test(event.key)) return
+      const shortcutTool = toolByShortcut(event.key)
+      if (!shortcutTool) return
+      event.preventDefault()
+      setTool(shortcutTool.id)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  const roiLabel = useMemo(() => {
+    if (!roi) return '—'
+    const bounds = roiBounds(roi)
+    const tools = copy.tools as Record<string, string>
+    // 直线的 `arrow` 是子类型，`kind` 仍是 line，这里显示用户实际选的那个名字。
+    const name = roi.kind === 'line' && roi.arrow ? tools.arrow ?? roi.kind : tools[roi.kind] ?? roi.kind
+    return `${name} · ${bounds.width}×${bounds.height} @ (${bounds.x}, ${bounds.y})`
+  }, [roi, copy])
+  /**
+   * 当前展开的命令标签。
+   *
+   * 各面板各有自己的状态（参数面板、Z 投影、蒙太奇、Reslice…），侧栏只认一个标签，
+   * 因此在这里把它们合并回读：侧栏据此显示 ▾ 与高亮，也据此判断"再点一次是收起"。
+   */
+  const expandedCommandLabel = useMemo<string | null>(() => {
+    if (paramCommand) return paramCommand
+    if (projectCommand) return projectCommand
+    if (montageOpen) return 'Make Montage...'
+    if (montageToStackOpen) return 'Montage to Stack...'
+    if (resliceOpen) return 'Reslice [/]...'
+    if (orthogonalOpen) return 'Orthogonal Views'
+    if (reduceOpen) return 'Reduce...'
+    if (substackOpen) return 'Make Substack...'
+    if (combineOpen) return combineOp === 'insert' ? 'Insert...' : 'Combine...'
+    if (animationOpen) return 'Animation Options...'
+    if (labelOpen) return 'Set Label...'
+    if (annotateOpen) return 'Label...'
+    if (project3dOpen) return '3D Project...'
+    if (remontageOpen) return 'Magic Montage Tools'
+    return null
+  }, [paramCommand, projectCommand, montageOpen, montageToStackOpen, resliceOpen, orthogonalOpen, reduceOpen, substackOpen, combineOpen, combineOp, animationOpen, labelOpen, annotateOpen, project3dOpen, remontageOpen])
+
   const seedDefaultViews = () => setViews((cards) => cards.length ? cards : [{ id: viewsIdRef.current++, type: 'measurement' }, { id: viewsIdRef.current++, type: 'histogram' }])
   useEffect(() => {
-    let cancelled = false
+    // 翻页作废在途的 Original 读取：Original 改为按需读，见 toggleOriginal。
+    originalRequest.current += 1
     setRoi(null); setScope('image'); setProbe(null); setOriginal(null); setShowOriginal(false); setBrightness(0); setContrast(50); setColorPreview([])
-    if (state.dataset) void runtime.readSourceFrame().then((block) => { if (!cancelled) setOriginal(block) }).catch((error: unknown) => { if (!cancelled) setError(String(error)) })
-    return () => { cancelled = true }
   }, [runtime, state.dataset?.id, state.selection.t, state.selection.c, state.selection.z])
   useEffect(() => {
-    if (current) setRoi((rect) => rect ? { x: Math.min(rect.x, current.width - 1), y: Math.min(rect.y, current.height - 1), width: Math.min(rect.width, current.width - Math.min(rect.x, current.width - 1)), height: Math.min(rect.height, current.height - Math.min(rect.y, current.height - 1)) } : null)
+    if (current) setRoi((target) => target ? clampRoi(target, current.width, current.height) : null)
   }, [current?.width, current?.height])
   /* 数据集就绪后播种默认视图：新建文档由外壳导入，不经过本组件的 loadFile。 */
   useEffect(() => {
@@ -198,12 +483,29 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
   const onFileInput = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]; if (file) onOpenImage(file); event.target.value = ''
   }
-  const stepScope = (rect: Rect | null): StepScope => {
-    const region = image && rect ? { start: image.axes.map((axis) => axis === 'x' ? rect.x : axis === 'y' ? rect.y : 0), shape: image.axes.map((axis, i) => axis === 'x' ? rect.width : axis === 'y' ? rect.height : image.shape[i]!) } : undefined
+  /** 工具显示名：有子类型时用子类型的名字（直线 → 箭头）。 */
+  const toolLabel = (tools: Record<string, string>, entry: ToolDefinition, variantId?: string): string => {
+    const key = variantId ?? entry.id
+    return tools[key] ?? tools[entry.id] ?? entry.id
+  }
+  /** 双击工具图标：在子类型之间循环（对齐 ImageJ 的工具族切换）。 */
+  const cycleToolVariant = (entry: ToolDefinition) => {
+    if (!entry.variants?.length) return
+    const current = toolVariants[entry.id] ?? entry.variants[0]!.id
+    const index = entry.variants.findIndex((variant) => variant.id === current)
+    const next = entry.variants[(index + 1) % entry.variants.length]!.id
+    setToolVariants((prev) => ({ ...prev, [entry.id]: next }))
+    setTool(entry.id)
+  }
+
+  const stepScope = (target: RoiInput | null): StepScope => {
+    // 算子作用域目前是矩形 `Region`，因此取选区包围盒；统计类走掩码语义（见 analysis.ts）。
+    const bounds = target ? roiBounds(toRoi(target)) : null
+    const region = image && bounds ? { start: image.axes.map((axis) => axis === 'x' ? bounds.x : axis === 'y' ? bounds.y : 0), shape: image.axes.map((axis, i) => axis === 'x' ? bounds.width : axis === 'y' ? bounds.height : image.shape[i]!) } : undefined
     if (applyAll) return region ? { kind: 'roi', region } : { kind: 'stack' }
     return { kind: 'frame', selection: { ...state.selection }, region }
   }
-  const submit = (op: string, params: Record<string, number | string> = {}, rect: Rect | null = roi) => {
+  const submit = (op: string, params: Record<string, number | string> = {}, target: RoiInput | null = roi) => {
     if (!image || busy) return
     setError(''); setShowOriginal(false)
     if (colorPreview.length) commitColorPreview(colorPreview, applyAll)
@@ -213,7 +515,7 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
     const outputsRgb = op === 'debayer'
     setShowColor(outputsRgb || (op !== 'grayscale' && !needsGray))
     if (op !== 'grayscale' && !outputsRgb && needsGray && ci >= 0 && (image.shape[ci] ?? 1) > 1) runtime.addStep('grayscale', {}, stepScope(null))
-    runtime.addStep(op, params, stepScope(rect))
+    runtime.addStep(op, params, stepScope(target))
   }
   /** 打开某个命令自己的参数面板（先提交正在预览的色彩调整，并切到合适的显示模式）。 */
   const openParamCommand = (command: ParamCommand) => {
@@ -223,7 +525,363 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
     setShowOriginal(false); setShowColor(op !== 'threshold'); setParamCommand(command)
   }
   /** 命令目录点选：再点一次已展开的命令即收起。 */
+  /** 执行「制作蒙太奇」；结果数据集同样交给外壳另开一个 tab。 */
+  const applyMontage = async () => {
+    if (!image || busy) return
+    setError('')
+    const montaged = await runtime.montageStack({
+      from: Math.max(0, montage.start - 1),
+      to: Math.min(sliceCount - 1, Math.max(montage.start - 1, montage.stop - 1)),
+      increment: Math.max(1, montage.increment),
+      columns: montage.columns > 0 ? montage.columns : undefined,
+      rows: montage.rows > 0 ? montage.rows : undefined,
+      scale: montage.scale > 0 ? montage.scale : undefined,
+      borderWidth: montage.border,
+      labelSlices: montage.labelSlices,
+      fontSize: montage.fontSize,
+    })
+    setMontageOpen(false)
+    if (montaged) onOpenDataset?.(montaged)
+  }
+
+  /** 执行「蒙太奇转 Stack」；结果数据集同样交给外壳另开一个 tab。 */
+  const applyMontageToStack = async () => {
+    if (!image || busy) return
+    setError('')
+    const stacked = await runtime.montageToStack({
+      columns: montageToStack.columns > 0 ? montageToStack.columns : undefined,
+      rows: montageToStack.rows > 0 ? montageToStack.rows : undefined,
+      borderWidth: montageToStack.border,
+    })
+    setMontageToStackOpen(false)
+    if (stacked) onOpenDataset?.(stacked)
+  }
+
+  /** 执行「重切」（Reslice）；结果数据集同样交给外壳另开一个 tab。 */
+  const applyReslice = async () => {
+    if (!image || busy) return
+    setError('')
+    const bounds = roi ? roiBounds(toRoi(roi)) : null
+    const sliced = await runtime.resliceStack({
+      bounds: bounds
+        ? {
+            x: Math.round(bounds.x),
+            y: Math.round(bounds.y),
+            width: Math.max(1, Math.round(bounds.width)),
+            height: Math.max(1, Math.round(bounds.height)),
+          }
+        : undefined,
+      spacing: reslice.spacing,
+      startAt: reslice.startAt as 'top' | 'left' | 'bottom' | 'right',
+      flip: reslice.flip,
+      rotate: reslice.rotate,
+    })
+    setResliceOpen(false)
+    if (sliced) onOpenDataset?.(sliced)
+  }
+
+  /** 执行「正交视图」：XZ 与 YZ 各开一个新 tab。 */
+  const applyOrthogonalViews = async () => {
+    if (!image || busy) return
+    setError('')
+    const views = await runtime.orthogonalViews({ point: orthogonalPoint })
+    setOrthogonalOpen(false)
+    for (const view of views) onOpenDataset?.(view)
+  }
+
+  /** 执行一次结构编辑（Reverse / Reduce / Substack / Delete / Add）；结果数据集另开一个 tab。 */
+  const applyRestructure = async (
+    op: 'reverse' | 'reduce' | 'substack' | 'delete' | 'add',
+    options: { factor?: number; pages?: number[]; at?: number; count?: number } = {},
+  ) => {
+    if (!image || busy) return
+    setError('')
+    const restructured = await runtime.restructureStack({ op, ...options })
+    setReduceOpen(false)
+    setSubstackOpen(false)
+    if (restructured) onOpenDataset?.(restructured)
+    else setError(copy.stackOps.needsStack)
+  }
+  /** 「蒙太奇工具…」：按新行列重排当前蒙太奇图，结果另开一个 tab。 */
+  const applyRemontage = async () => {
+    if (!image || busy) return
+    setError('')
+    const remontaged = await runtime.remontageStack({
+      columns: remontage.columns,
+      rows: remontage.rows,
+      sourceColumns: remontage.sourceColumns || undefined,
+      sourceRows: remontage.sourceRows || undefined,
+      borderWidth: remontage.border,
+      labelSlices: remontage.labelSlices,
+      fontSize: remontage.fontSize,
+    })
+    setRemontageOpen(false)
+    if (remontaged) onOpenDataset?.(remontaged)
+  }
+  /** 「3D 投影…」：逐角度旋转投影，结果数据集另开一个 tab。 */
+  const applyProject3d = async () => {
+    if (!image || busy) return
+    setError('')
+    const projected = await runtime.project3dStack({
+      method: project3d.method as 'nearest' | 'brightest' | 'mean',
+      axis: project3d.axis as 'x' | 'y' | 'z',
+      initialAngle: project3d.initialAngle,
+      totalRotation: project3d.totalRotation,
+      angleIncrement: project3d.angleIncrement,
+      opacity: project3d.opacity,
+      surfaceCueing: project3d.surfaceCueing,
+      interiorCueing: project3d.interiorCueing,
+      from: 0,
+      to: sliceCount - 1,
+    })
+    setProject3dOpen(false)
+    if (projected) onOpenDataset?.(projected)
+  }
+  /** 「标注切片…」：按格式把文本画进像素，结果数据集另开一个 tab。 */
+  const applyAnnotate = async () => {
+    if (!image || busy) return
+    setError('')
+    const labelled = await runtime.labelStack({
+      format: annotate.format as 'number' | 'zero-padded' | 'mm:ss' | 'hh:mm:ss' | 'text' | 'label',
+      start: annotate.start,
+      interval: annotate.interval,
+      text: annotate.text,
+      x: annotate.x,
+      y: annotate.y,
+      fontSize: annotate.fontSize,
+    })
+    setAnnotateOpen(false)
+    if (labelled) onOpenDataset?.(labelled)
+  }
+  /** 「插入图像…」/「合并拼接…」：把当前文档与所选文档合成一个新数据集。 */
+  const applyCombine = async () => {
+    if (!image || busy || !combineSource) return
+    setError('')
+    const combined = await runtime.combineStacks(combineOp === 'insert'
+      ? { op: 'insert', otherDatasetId: combineSource, x: insertX, y: insertY }
+      : { op: 'combine', otherDatasetId: combineSource, vertical: combineVertical })
+    setCombineOpen(false)
+    if (combined) onOpenDataset?.(combined)
+  }
+  /** 「首尾拼接」：把当前文档与其它已打开文档按顺序拼成一个栈。 */
+  const applyConcatenate = async (datasetIds: readonly string[]) => {
+    if (!image || busy) return
+    setError('')
+    const combined = await runtime.combineStacks({ op: 'concatenate', datasetIds: [...datasetIds] })
+    if (combined) onOpenDataset?.(combined)
+  }
+  /** 「抽稀…」：步长来自面板。 */
+  const applyReduce = () => void applyRestructure('reduce', { factor: reduceFactor })
+  /** 「子栈…」：解析切片表达式后执行。 */
+  const applySubstack = () => {
+    const pages = parseSliceList(substackPages, sliceCount)
+    if (pages.length === 0) { setError(`${copy.stackOps.pagesHint}`); return }
+    void applyRestructure('substack', { pages })
+  }
+
+  /** 关闭命令目录里所有可能展开的面板；同一时刻只允许一个命令展开。 */
+  const closeCommandPanels = () => {
+    closeParamCommand()
+    setProjectCommand(null)
+    setMontageOpen(false)
+    setMontageToStackOpen(false)
+    setResliceOpen(false)
+    setOrthogonalOpen(false)
+    setReduceOpen(false)
+    setSubstackOpen(false)
+    setCombineOpen(false)
+    setAnimationOpen(false)
+    setLabelOpen(false)
+    setAnnotateOpen(false)
+    setProject3dOpen(false)
+    setRemontageOpen(false)
+  }
+
+  /** 命令目录点选：再点一次已展开的命令即收起。 */
   const toggleParamCommand = (command: string) => {
+    if (command === 'Magic Montage Tools') {
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageOpen(false)
+      setMontageToStackOpen(false)
+      setResliceOpen(false)
+      setOrthogonalOpen(false)
+      setReduceOpen(false)
+      setSubstackOpen(false)
+      setCombineOpen(false)
+      setAnimationOpen(false)
+      setLabelOpen(false)
+      setAnnotateOpen(false)
+      setProject3dOpen(false)
+      setRemontageOpen((current) => !current)
+      setRemontage((current) => ({
+        ...current,
+        sourceColumns: current.sourceColumns || Number(state.dataset?.metadata.montageColumns ?? 0) || 2,
+        sourceRows: current.sourceRows || Number(state.dataset?.metadata.montageRows ?? 0) || 2,
+      }))
+      return
+    }
+    if (command === '3D Project...') {
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageOpen(false)
+      setMontageToStackOpen(false)
+      setResliceOpen(false)
+      setOrthogonalOpen(false)
+      setReduceOpen(false)
+      setSubstackOpen(false)
+      setCombineOpen(false)
+      setAnimationOpen(false)
+      setLabelOpen(false)
+      setAnnotateOpen(false)
+      setProject3dOpen((current) => !current)
+      return
+    }
+    if (command === 'Label...') {
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageOpen(false)
+      setMontageToStackOpen(false)
+      setResliceOpen(false)
+      setOrthogonalOpen(false)
+      setReduceOpen(false)
+      setSubstackOpen(false)
+      setCombineOpen(false)
+      setAnimationOpen(false)
+      setLabelOpen(false)
+      setAnnotateOpen((current) => !current)
+      return
+    }
+    if (command === 'Set Label...') {
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageOpen(false)
+      setMontageToStackOpen(false)
+      setResliceOpen(false)
+      setOrthogonalOpen(false)
+      setReduceOpen(false)
+      setSubstackOpen(false)
+      setCombineOpen(false)
+      setAnimationOpen(false)
+      setLabelOpen((current) => !current)
+      setLabelValue(runtime.sliceLabel(pageIndex))
+      return
+    }
+    if (command === 'Animation Options...') {
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageOpen(false)
+      setMontageToStackOpen(false)
+      setResliceOpen(false)
+      setOrthogonalOpen(false)
+      setReduceOpen(false)
+      setSubstackOpen(false)
+      setCombineOpen(false)
+      setAnimationOpen((current) => !current)
+      setAnimation((current) => ({ ...current, first: current.first || 1, last: current.last || sliceCount }))
+      return
+    }
+    if (command === 'Insert...' || command === 'Combine...') {
+      const documents = onListDocuments?.() ?? []
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageOpen(false)
+      setMontageToStackOpen(false)
+      setResliceOpen(false)
+      setOrthogonalOpen(false)
+      setReduceOpen(false)
+      setSubstackOpen(false)
+      setCombineDocuments(documents)
+      setCombineSource((current) => documents.some((entry) => entry.id === current) ? current : documents[0]?.id ?? '')
+      setCombineOp(command === 'Insert...' ? 'insert' : 'combine')
+      setCombineOpen((current) => !current)
+      return
+    }
+    if (command === 'Reduce...') {
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageOpen(false)
+      setMontageToStackOpen(false)
+      setResliceOpen(false)
+      setOrthogonalOpen(false)
+      setSubstackOpen(false)
+      setReduceOpen((current) => !current)
+      return
+    }
+    if (command === 'Make Substack...') {
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageOpen(false)
+      setMontageToStackOpen(false)
+      setResliceOpen(false)
+      setOrthogonalOpen(false)
+      setReduceOpen(false)
+      setSubstackOpen((current) => !current)
+      setSubstackPages((current) => current || `1-${sliceCount}`)
+      return
+    }
+    if (command === 'Orthogonal Views') {
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageOpen(false)
+      setMontageToStackOpen(false)
+      setResliceOpen(false)
+      const next = !orthogonalOpen
+      setOrthogonalOpen(next)
+      if (next) {
+        setOrthogonalPoint({
+          x: Math.max(0, Math.round(((current?.width ?? 1) - 1) / 2)),
+          y: Math.max(0, Math.round(((current?.height ?? 1) - 1) / 2)),
+        })
+      }
+      return
+    }
+    if (command === 'Reslice [/]...') {
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageOpen(false)
+      setMontageToStackOpen(false)
+      setOrthogonalOpen(false)
+      setResliceOpen((current) => !current)
+      return
+    }
+    if (command === 'Montage to Stack...') {
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageOpen(false)
+      setResliceOpen(false)
+      setOrthogonalOpen(false)
+      setMontageToStackOpen((current) => !current)
+      return
+    }
+    if (command === 'Make Montage...') {
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageToStackOpen(false)
+      setResliceOpen(false)
+      setOrthogonalOpen(false)
+      setMontageOpen((current) => !current)
+      setMontage((current) => ({ ...current, start: 1, stop: sliceCount, increment: 1 }))
+      return
+    }
+    if ((PROJECT_COMMANDS as readonly string[]).includes(command)) {
+      const next = command as ProjectCommand
+      closeParamCommand()
+      setMontageOpen(false)
+      setMontageToStackOpen(false)
+      setResliceOpen(false)
+      setOrthogonalOpen(false)
+      setProjectCommand((current) => (current === next ? null : next))
+      setProjectionStart(1)
+      setProjectionStop(sliceCount)
+      setProjectionGroup(Math.max(1, Math.min(2, sliceCount)))
+      return
+    }
+    setProjectCommand(null)
+    setMontageOpen(false)
+    setMontageToStackOpen(false)
+    setResliceOpen(false)
+    setOrthogonalOpen(false)
     if (paramCommand === command) { closeParamCommand(); return }
     openParamCommand(command as ParamCommand)
   }
@@ -233,13 +891,226 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
     if (op === 'crop') {
       if (stack) { setError(copy.stack.geometryUnavailable); return }
       if (!roi) { setError(copy.errors.needsRoi); return }
-      submit(op, { ...roi }, null); setRoi(null); return
+      submit(op, { ...roiBounds(roi) }, null); setRoi(null); return
     }
     if (op === 'rotateCW' || op === 'rotateCCW') {
       if (stack) { setError(copy.stack.geometryUnavailable); return }
       submit(op, {}, null); setRoi(null); return
     }
     submit(op, {}, op === 'grayscale' ? null : roi)
+  }
+  /** 矩形 ROI → 引擎侧区域（与 `stepScope` 的换算一致）。 */
+  const roiRegion = (target: RoiInput | null) => {
+    const bounds = image && target ? roiBounds(toRoi(target)) : null
+    return bounds
+      ? {
+          start: image!.axes.map((axis) => (axis === 'x' ? bounds.x : axis === 'y' ? bounds.y : 0)),
+          shape: image!.axes.map((axis, index) => (axis === 'x' ? bounds.width : axis === 'y' ? bounds.height : image!.shape[index]!)),
+        }
+      : undefined
+  }
+  /** 线 / 折线选区 → 引擎侧采样点；矩形选区返回 undefined，走矩形中线口径。 */
+  const lineSamplePoints = (target: RoiInput | null): { points: number[]; closed?: boolean } | undefined => {
+    if (!target || !isRoi(target)) return undefined
+    if (target.kind === 'line') return { points: roiPoints(target) }
+    if (target.kind === 'polyline' || target.kind === 'polygon' || target.kind === 'freehand') {
+      return { points: roiPoints(target), closed: target.kind === 'polygon' }
+    }
+    return undefined
+  }
+  /**
+   * Image ▸ Stacks 的跨帧命令。
+   *
+   * Z 投影两项先展开参数面板；Plot Z-axis Profile / Measure Stack / Statistics 共用一次
+   * `runtime.measureStack()`，只是各自打开不同的视图卡片（同一份逐页统计的三种呈现）。
+   */
+  const runStackCommand = (command: string) => {
+    if (!image || busy) return
+    if (command === 'montage-to-stack') {
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageOpen(false)
+      setMontageToStackOpen((current) => !current)
+      return
+    }
+    if (command === 'orthogonal-views') {
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageOpen(false)
+      setMontageToStackOpen(false)
+      setResliceOpen(false)
+      setOrthogonalOpen((current) => !current)
+      // 交叉点缺省取图像中心，与 ImageJ 的初始位置一致。
+      setOrthogonalPoint({
+        x: Math.max(0, Math.round(((current?.width ?? 1) - 1) / 2)),
+        y: Math.max(0, Math.round(((current?.height ?? 1) - 1) / 2)),
+      })
+      return
+    }
+    if (command === 'reslice') {
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageOpen(false)
+      setMontageToStackOpen(false)
+      setOrthogonalOpen(false)
+      setResliceOpen((current) => !current)
+      return
+    }
+    if (command === 'montage') {
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageToStackOpen(false)
+      setResliceOpen(false)
+      setMontageOpen((current) => !current)
+      setMontage((current) => ({ ...current, start: 1, stop: sliceCount, increment: 1 }))
+      return
+    }
+    if (command === 'z-project' || command === 'grouped-z-project') {
+      const grouped = command === 'grouped-z-project'
+      closeParamCommand()
+      setProjectCommand((active) => (active === (grouped ? 'Grouped Z Project...' : 'Z Project...') ? null : grouped ? 'Grouped Z Project...' : 'Z Project...'))
+      setProjectionStart(1)
+      setProjectionStop(sliceCount)
+      setProjectionGroup(Math.max(1, Math.min(2, sliceCount)))
+      return
+    }
+    if (command === 'remove-slice-labels') {
+      runtime.clearSliceLabels()
+      setLabelOpen(false)
+      return
+    }
+    // 动画：Start / Stop 直接切换播放状态，Options 由可展开命令处理。
+    if (command === 'animation-start') {
+      if (sliceCount < 2) { setError(copy.stackOps.needsStack); return }
+      setError('')
+      setAnimation((current) => ({ ...current, running: true, first: current.first || 1, last: current.last || sliceCount, forward: true }))
+      return
+    }
+    if (command === 'animation-stop') {
+      setAnimation((current) => ({ ...current, running: false }))
+      return
+    }
+    // 跨文档合成：Insert / Combine 先选来源文档，Concatenate 直接拼接全部已打开文档。
+    if (command === 'insert' || command === 'combine') {
+      const documents = onListDocuments?.() ?? []
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageOpen(false)
+      setMontageToStackOpen(false)
+      setResliceOpen(false)
+      setOrthogonalOpen(false)
+      setReduceOpen(false)
+      setSubstackOpen(false)
+      setCombineDocuments(documents)
+      setCombineSource((current) => documents.some((entry) => entry.id === current) ? current : documents[0]?.id ?? '')
+      setCombineOp(command === 'insert' ? 'insert' : 'combine')
+      setInsertX(0)
+      setInsertY(0)
+      // 再点一次同一个命令即收起（面板已经没有 ✕ 了）。
+      setCombineOpen((current) => (combineOp === (command === 'insert' ? 'insert' : 'combine') ? !current : true))
+      return
+    }
+    if (command === 'concatenate') {
+      const datasetId = state.dataset?.id
+      const others = (onListDocuments?.() ?? []).map((entry) => entry.id)
+      if (!datasetId || others.length === 0) { setError(copy.stackOps.needSecondDocument); return }
+      void applyConcatenate([datasetId, ...others])
+      return
+    }
+    // 结构编辑类命令：Reverse / Add / Delete 直接执行，Reduce 与子栈先开参数面板。
+    if (command === 'reverse') { void applyRestructure('reverse'); return }
+    if (command === 'add-slice') { void applyRestructure('add', { at: pageIndex + 1, count: 1 }); return }
+    if (command === 'delete-slice') {
+      if (sliceCount < 2) { setError(copy.stackOps.needsStack); return }
+      void applyRestructure('delete', { pages: [pageIndex] })
+      return
+    }
+    if (command === 'reduce') {
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageOpen(false)
+      setMontageToStackOpen(false)
+      setResliceOpen(false)
+      setOrthogonalOpen(false)
+      setSubstackOpen(false)
+      setReduceOpen((current) => !current)
+      return
+    }
+    if (command === 'substack') {
+      closeParamCommand()
+      setProjectCommand(null)
+      setMontageOpen(false)
+      setMontageToStackOpen(false)
+      setResliceOpen(false)
+      setOrthogonalOpen(false)
+      setReduceOpen(false)
+      setSubstackOpen((current) => !current)
+      setSubstackPages(`1-${sliceCount}`)
+      return
+    }
+    // 只有参数面板、没有独立执行流程的命令（命令目录里点开它们的下拉）。
+    // 统一在这里处理，避免每个命令再抄一遍"关掉其它所有面板"。
+    const PANEL_ONLY = new Set(['animation-options', 'set-label', 'label', 'project-3d', 'magic-montage'])
+    if (PANEL_ONLY.has(command)) {
+      // 先记住它原本是否展开：closeCommandPanels() 会把目标也置为关闭，
+      // 之后再取反就永远得到 true（永远关不掉）。已展开就只收起。
+      const wasOpen =
+        command === 'animation-options' ? animationOpen
+        : command === 'set-label' ? labelOpen
+        : command === 'label' ? annotateOpen
+        : command === 'project-3d' ? project3dOpen
+        : remontageOpen
+      closeCommandPanels()
+      if (wasOpen) return
+      if (command === 'animation-options') {
+        setAnimationOpen(true)
+        setAnimation((current) => ({ ...current, first: current.first || 1, last: current.last || sliceCount }))
+      } else if (command === 'set-label') {
+        setLabelOpen(true)
+        setLabelValue(runtime.sliceLabel(pageIndex))
+      } else if (command === 'label') setAnnotateOpen(true)
+      else if (command === 'project-3d') setProject3dOpen(true)
+      else {
+        setRemontageOpen(true)
+        setRemontage((current) => ({
+          ...current,
+          sourceColumns: current.sourceColumns || Number(state.dataset?.metadata.montageColumns ?? 0) || 2,
+          sourceRows: current.sourceRows || Number(state.dataset?.metadata.montageRows ?? 0) || 2,
+        }))
+      }
+      return
+    }
+    const view = STACK_VIEW_COMMANDS[command]
+    if (!view) return
+    if (sliceCount < 2) { setError(copy.stackOps.needsStack); return }
+    setError('')
+    setViews((cards) => cards.some((card) => card.type === view) ? cards : [...cards, { id: viewsIdRef.current++, type: view }])
+    // Plot XY Profile 取逐页剖面（线选区沿线采样）；其余三个共用一次整栈统计。
+    if (command === 'plot-xy-profile') {
+      void runtime.loadStackProfiles({ roi: roiRegion(roi), line: lineSamplePoints(roi) })
+      return
+    }
+    void runtime.measureStack(roiRegion(roi))
+  }
+  /** 执行 Z 投影；结果数据集交给外壳另开一个 tab（当前文档不变）。 */
+  const applyProjection = async (grouped: boolean) => {
+    if (!image || busy) return
+    // 与 ImageJ 的 GroupedZProjector 一致：组大小必须整除页数，先在这里拦下并给出合法取值。
+    if (grouped && projectionGroup > 1 && sliceCount % projectionGroup !== 0) {
+      setError(`${copy.stackOps.groupHint}（${copy.stackOps.factors}: ${groupSizeFactors(sliceCount).join(', ')}）`)
+      return
+    }
+    setError('')
+    const projected = await runtime.projectStack({
+      method: projectionMethod,
+      from: grouped ? 0 : projectionStart - 1,
+      to: grouped ? sliceCount - 1 : projectionStop - 1,
+      groupSize: grouped ? projectionGroup : undefined,
+      allTimeFrames: grouped ? false : projectionAllTime,
+      roi: roiRegion(roi),
+    })
+    setProjectCommand(null)
+    if (projected) onOpenDataset?.(projected)
   }
   const commitColorPreview = (settings: readonly ColorAdjustment[], allPages: boolean) => {
     if (!image || busy) return
@@ -253,6 +1124,23 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
   }
   const selectAxis = (axis: 't' | 'c' | 'z', index: number) => { if (colorPreview.length) commitColorPreview(colorPreview, false); runtime.setSelection({ [axis]: index }) }
   const closeParamCommand = () => { if (colorPreview.length) commitColorPreview(colorPreview, false); setBrightness(0); setContrast(50); setParamCommand(null) }
+  /**
+   * Original 对比按需取帧。
+   *
+   * 旧实现在每次切片切换时都调 `readSourceFrame()`：那是一次完整的空 Recipe 执行，
+   * 会把整页像素重新读一遍并跨线程传回主线程，再触发一次全量重渲染 ——
+   * 对大页（4096² uint16 合 33.5 MB）而言，这一步比翻页本身还贵。
+   */
+  const toggleOriginal = () => {
+    closeParamCommand()
+    if (showOriginal) { setShowOriginal(false); return }
+    setShowOriginal(true)
+    if (original) return
+    const request = ++originalRequest.current
+    void runtime.readSourceFrame()
+      .then((block) => { if (originalRequest.current === request) setOriginal(block) })
+      .catch((error: unknown) => { if (originalRequest.current === request) setError(String(error)) })
+  }
   const applyCurrentLevels = () => { submit('levels', { brightness, contrast }, null); setBrightness(0); setContrast(50) }
   const applyCurrentThreshold = () => submit('threshold', { level: thresholdLevel })
   const applyOtsu = () => submit('otsu')
@@ -384,15 +1272,257 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
   /* ---------------- 左栏：命令项下方内联展开的操作面板（同一时刻只展开一个命令） ---------------- */
 
   // 色彩平衡只在 RGB 图上可用；灰度图下它保持「尚未接入」的禁用态。
-  const expandableCommands = useMemo<ParamCommand[]>(
-    () => isRgb
-      ? ['Brightness/Contrast', 'Color Balance', 'Threshold', 'Gaussian Blur', 'Debayer']
-      : ['Brightness/Contrast', 'Threshold', 'Gaussian Blur', 'Debayer'],
-    [isRgb],
+  const expandableCommands = useMemo<string[]>(
+    () => [
+      ...(isRgb ? ['Brightness/Contrast', 'Color Balance'] : ['Brightness/Contrast']),
+      'Threshold', 'Gaussian Blur', 'Debayer',
+      // Z 投影只在多页 Stack 上有意义。
+      ...(stack ? [...PROJECT_COMMANDS, 'Make Montage...'] : []),
+      // 蒙太奇转 Stack 作用于单张蒙太奇图，不要求多页栈。
+      'Montage to Stack...',
+      'Reslice [/]...',
+      // 正交视图需要 Z 方向有多个切片。
+      ...(stack ? ['Orthogonal Views'] : []),
+      // 结构编辑：Reverse / Add Slice / Delete Slice 点了直接执行、没有参数面板，
+      // 所以不列在这里（列了会让命令项带一个点不开的 ▸）。Reduce 与子栈有面板。
+      ...(hasSliceAxis ? ['Reduce...', 'Make Substack...'] : []),
+      // 跨文档合成：来源文档在面板里选。
+      'Insert...', 'Combine...',
+      // 动画选项与切片标签：都要有切片轴才有意义。
+      ...(hasSliceAxis ? ['Animation Options...', 'Set Label...', 'Label...', '3D Project...', 'Magic Montage Tools'] : []),
+    ],
+    [isRgb, stack, hasSliceAxis],
   )
-  const panel: ReactNode = paramOp === 'levels'
+  /** 蒙太奇元数据提示：说明这张图的行列，供「蒙太奇转 Stack」沿用。 */
+  const montageHint = state.dataset?.metadata?.montageColumns !== undefined
+    ? `${copy.stackOps.columns} / ${copy.stackOps.rows}: ${String(state.dataset.metadata.montageColumns)} × ${String(state.dataset.metadata.montageRows ?? '?')}`
+    : ''
+  const panel: ReactNode = remontageOpen
+    ? <RemontageCommandPanel
+        copy={copy}
+        sourceColumns={remontage.sourceColumns}
+        sourceRows={remontage.sourceRows}
+        columns={remontage.columns}
+        rows={remontage.rows}
+        border={remontage.border}
+        labelSlices={remontage.labelSlices}
+        fontSize={remontage.fontSize}
+        hint={montageHint}
+        disabled={!hasImage || busy}
+        onSourceColumns={(value) => setRemontage((current) => ({ ...current, sourceColumns: value }))}
+        onSourceRows={(value) => setRemontage((current) => ({ ...current, sourceRows: value }))}
+        onColumns={(value) => setRemontage((current) => ({ ...current, columns: value }))}
+        onRows={(value) => setRemontage((current) => ({ ...current, rows: value }))}
+        onBorder={(value) => setRemontage((current) => ({ ...current, border: value }))}
+        onLabelSlices={(value) => setRemontage((current) => ({ ...current, labelSlices: value }))}
+        onFontSize={(value) => setRemontage((current) => ({ ...current, fontSize: value }))}
+        onApply={() => void applyRemontage()}
+        onClose={() => setRemontageOpen(false)}
+      />
+    : project3dOpen
+    ? <Project3dCommandPanel
+        copy={copy}
+        method={project3d.method}
+        axis={project3d.axis}
+        initialAngle={project3d.initialAngle}
+        totalRotation={project3d.totalRotation}
+        angleIncrement={project3d.angleIncrement}
+        opacity={project3d.opacity}
+        surfaceCueing={project3d.surfaceCueing}
+        interiorCueing={project3d.interiorCueing}
+        angleCount={Math.max(1, Math.floor(Math.abs(project3d.totalRotation) / Math.max(1, Math.abs(project3d.angleIncrement) || 10)) + 1)}
+        disabled={!hasImage || busy}
+        onMethod={(value) => setProject3d((current) => ({ ...current, method: value }))}
+        onAxis={(value) => setProject3d((current) => ({ ...current, axis: value }))}
+        onInitialAngle={(value) => setProject3d((current) => ({ ...current, initialAngle: value }))}
+        onTotalRotation={(value) => setProject3d((current) => ({ ...current, totalRotation: value }))}
+        onAngleIncrement={(value) => setProject3d((current) => ({ ...current, angleIncrement: value }))}
+        onOpacity={(value) => setProject3d((current) => ({ ...current, opacity: value }))}
+        onSurfaceCueing={(value) => setProject3d((current) => ({ ...current, surfaceCueing: value }))}
+        onInteriorCueing={(value) => setProject3d((current) => ({ ...current, interiorCueing: value }))}
+        onApply={() => void applyProject3d()}
+        onClose={() => setProject3dOpen(false)}
+      />
+    : annotateOpen
+    ? <LabelCommandPanel
+        copy={copy}
+        format={annotate.format}
+        start={annotate.start}
+        interval={annotate.interval}
+        text={annotate.text}
+        x={annotate.x}
+        y={annotate.y}
+        fontSize={annotate.fontSize}
+        disabled={!hasImage || busy}
+        onFormat={(value) => setAnnotate((current) => ({ ...current, format: value }))}
+        onStart={(value) => setAnnotate((current) => ({ ...current, start: value }))}
+        onInterval={(value) => setAnnotate((current) => ({ ...current, interval: value }))}
+        onText={(value) => setAnnotate((current) => ({ ...current, text: value }))}
+        onX={(value) => setAnnotate((current) => ({ ...current, x: value }))}
+        onY={(value) => setAnnotate((current) => ({ ...current, y: value }))}
+        onFontSize={(value) => setAnnotate((current) => ({ ...current, fontSize: value }))}
+        onApply={() => void applyAnnotate()}
+        onClose={() => setAnnotateOpen(false)}
+      />
+    : labelOpen
+    ? <SetLabelCommandPanel
+        copy={copy}
+        value={labelValue}
+        sliceNumber={pageIndex + 1}
+        disabled={!hasImage || busy}
+        onChange={setLabelValue}
+        onApply={() => { runtime.setSliceLabel(pageIndex, labelValue.trim()); setLabelOpen(false) }}
+        onClear={() => { runtime.clearSliceLabels(); setLabelValue(''); setLabelOpen(false) }}
+        onClose={() => setLabelOpen(false)}
+      />
+    : animationOpen
+    ? <AnimationCommandPanel
+        copy={copy}
+        fps={animation.fps}
+        first={animation.first || 1}
+        last={animation.last || sliceCount}
+        loop={animation.loop}
+        running={animation.running}
+        sliceCount={sliceCount}
+        disabled={!hasImage || busy}
+        onFps={(value) => setAnimation((current) => ({ ...current, fps: value }))}
+        onFirst={(value) => setAnimation((current) => ({ ...current, first: value }))}
+        onLast={(value) => setAnimation((current) => ({ ...current, last: value }))}
+        onLoop={(value) => setAnimation((current) => ({ ...current, loop: value }))}
+        onStart={() => setAnimation((current) => ({ ...current, running: true, forward: true }))}
+        onStop={() => setAnimation((current) => ({ ...current, running: false }))}
+        onClose={() => setAnimationOpen(false)}
+      />
+    : combineOpen
+    ? <CombineCommandPanel
+        copy={copy}
+        op={combineOp}
+        documents={combineDocuments}
+        source={combineSource}
+        x={insertX}
+        y={insertY}
+        vertical={combineVertical}
+        disabled={!hasImage || busy}
+        onSource={setCombineSource}
+        onX={setInsertX}
+        onY={setInsertY}
+        onVertical={setCombineVertical}
+        onApply={() => void applyCombine()}
+        onClose={() => setCombineOpen(false)}
+      />
+    : reduceOpen
+    ? <ReduceCommandPanel
+        copy={copy}
+        factor={reduceFactor}
+        sliceCount={sliceCount}
+        disabled={!hasImage || busy}
+        onFactor={setReduceFactor}
+        onApply={applyReduce}
+        onClose={() => setReduceOpen(false)}
+      />
+    : substackOpen
+      ? <SubstackCommandPanel
+          copy={copy}
+          value={substackPages}
+          sliceCount={sliceCount}
+          disabled={!hasImage || busy}
+          onChange={setSubstackPages}
+          onApply={applySubstack}
+          onClose={() => setSubstackOpen(false)}
+        />
+    : orthogonalOpen
+    ? <OrthogonalCommandPanel
+        copy={copy}
+        x={orthogonalPoint.x}
+        y={orthogonalPoint.y}
+        width={current?.width ?? 1}
+        height={current?.height ?? 1}
+        disabled={!hasImage || busy}
+        onX={(value) => setOrthogonalPoint((point) => ({ ...point, x: value }))}
+        onY={(value) => setOrthogonalPoint((point) => ({ ...point, y: value }))}
+        onApply={() => void applyOrthogonalViews()}
+        onClose={() => setOrthogonalOpen(false)}
+      />
+    : resliceOpen
+      ? <ResliceCommandPanel
+        copy={copy}
+        spacing={reslice.spacing}
+        startAt={reslice.startAt}
+        flip={reslice.flip}
+        rotate={reslice.rotate}
+        hasRoi={Boolean(roi)}
+        disabled={!hasImage || busy}
+        onSpacing={(value) => setReslice((current) => ({ ...current, spacing: value }))}
+        onStartAt={(value) => setReslice((current) => ({ ...current, startAt: value }))}
+        onFlip={(value) => setReslice((current) => ({ ...current, flip: value }))}
+        onRotate={(value) => setReslice((current) => ({ ...current, rotate: value }))}
+        onApply={() => void applyReslice()}
+        onClose={() => setResliceOpen(false)}
+      />
+    : montageToStackOpen
+      ? <MontageToStackCommandPanel
+        copy={copy}
+        columns={montageToStack.columns}
+        rows={montageToStack.rows}
+        border={montageToStack.border}
+        hint={montageHint}
+        disabled={!hasImage || busy}
+        onColumns={(value) => setMontageToStack((current) => ({ ...current, columns: value }))}
+        onRows={(value) => setMontageToStack((current) => ({ ...current, rows: value }))}
+        onBorder={(value) => setMontageToStack((current) => ({ ...current, border: value }))}
+        onApply={() => void applyMontageToStack()}
+        onClose={() => setMontageToStackOpen(false)}
+      />
+    : montageOpen
+      ? <MontageCommandPanel
+        copy={copy}
+        columns={montage.columns}
+        rows={montage.rows}
+        scale={montage.scale}
+        border={montage.border}
+        start={montage.start}
+        stop={montage.stop}
+        increment={montage.increment}
+        sliceCount={sliceCount}
+        labelSlices={montage.labelSlices}
+        fontSize={montage.fontSize}
+        disabled={!hasImage || busy}
+        onColumns={(value) => setMontage((current) => ({ ...current, columns: value }))}
+        onRows={(value) => setMontage((current) => ({ ...current, rows: value }))}
+        onScale={(value) => setMontage((current) => ({ ...current, scale: value }))}
+        onBorder={(value) => setMontage((current) => ({ ...current, border: value }))}
+        onStart={(value) => setMontage((current) => ({ ...current, start: value }))}
+        onStop={(value) => setMontage((current) => ({ ...current, stop: value }))}
+        onIncrement={(value) => setMontage((current) => ({ ...current, increment: value }))}
+        onLabelSlices={(value) => setMontage((current) => ({ ...current, labelSlices: value }))}
+        onFontSize={(value) => setMontage((current) => ({ ...current, fontSize: value }))}
+        onApply={() => void applyMontage()}
+        onClose={() => setMontageOpen(false)}
+      />
+    : projectCommand
+      ? <ZProjectCommandPanel
+        copy={copy}
+        grouped={projectCommand === 'Grouped Z Project...'}
+        method={projectionMethod}
+        start={projectionStart}
+        stop={projectionStop}
+        groupSize={projectionGroup}
+        sliceCount={sliceCount}
+        timeCount={timeCount}
+        factors={groupSizeFactors(sliceCount)}
+        allTimeFrames={projectionAllTime}
+        disabled={!hasImage || busy}
+        onMethod={(value) => setProjectionMethod(value as ProjectionMethod)}
+        onStart={setProjectionStart}
+        onStop={setProjectionStop}
+        onGroupSize={setProjectionGroup}
+        onAllTimeFrames={setProjectionAllTime}
+        onApply={() => void applyProjection(projectCommand === 'Grouped Z Project...')}
+        onClose={() => setProjectCommand(null)}
+      />
+    : paramOp === 'levels'
     ? isRgb && image
-      ? <ColorContrastPanel embedded session={colorSession} block={image} roi={roi} language={language} busy={busy} hasStack={Boolean(stack)} onPreview={setColorPreview} onApply={commitColorPreview} onClose={closeParamCommand} />
+      ? <ColorContrastPanel embedded session={colorSession} block={image} roi={roi ? roiBounds(roi) : null} language={language} busy={busy} hasStack={Boolean(stack)} onPreview={setColorPreview} onApply={commitColorPreview} onClose={closeParamCommand} />
       : <LevelsCommandPanel copy={copy} brightness={brightness} contrast={contrast} active={levelsActive} disabled={!hasImage || busy} onBrightness={setBrightness} onContrast={setContrast} onApply={applyCurrentLevels} onClose={closeParamCommand} />
     : paramOp === 'threshold'
       ? <ThresholdCommandPanel copy={copy} level={thresholdLevel} minimum={stats?.histogramMin ?? 0} maximum={stats?.histogramMax ?? 255} step={image?.dtype === 'float32' ? 'any' : 1} disabled={!hasImage || busy} onLevel={setThresholdLevel} onApply={applyCurrentThreshold} onOtsu={applyOtsu} onClose={closeParamCommand} />
@@ -503,6 +1633,107 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
               </Button>
             )
           ) : null}
+
+          {/* Z 轴剖面：逐切片均值（Plot Z-axis Profile 的结果形态）。
+              用内联 SVG 而不是 canvas：这里只有一条折线，无需逐像素绘制，也能随面板自适应。 */}
+          {card.type === 'zprofile' ? (
+            zProfilePoints ? (
+              <div className="grid gap-1">
+                <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="block h-24 w-full text-primary" role="img" aria-label={copy.views.zprofile}>
+                  <polyline fill="none" stroke="currentColor" strokeWidth={1.2} vectorEffect="non-scaling-stroke" points={zProfilePoints} />
+                </svg>
+                <p className="text-[10px] text-base-content/55">
+                  {copy.views.zProfileNote}
+                  {stackStats ? ` · ${copy.stats.min} ${zProfileRange[0]} · ${copy.stats.max} ${zProfileRange[1]}` : ''}
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-base-content/55">{stackStatsPlaceholder}</p>
+            )
+          ) : null}
+
+          {/* 整栈测量：每切片一行（Measure Stack...）。 */}
+          {card.type === 'stackMeasure' ? (
+            stackStats ? (
+              <div className="max-h-56 overflow-auto">
+                <table className="w-full min-w-[300px] text-left text-xs tabular-nums">
+                  <thead>
+                    <tr className="border-b border-base-300">
+                      <th className="p-1.5">{copy.stackOps.slice}</th>
+                      <th className="p-1.5">{copy.stats.mean}</th>
+                      <th className="p-1.5">{copy.stats.min}</th>
+                      <th className="p-1.5">{copy.stats.max}</th>
+                      <th className="p-1.5">{copy.stats.stdDev}</th>
+                      <th className="p-1.5">{copy.stackOps.median}</th>
+                    </tr>
+                  </thead>
+                  <tbody>{stackStats.frames.map((row) => (
+                    <tr key={row.slice} className="border-b border-base-200">
+                      <td className="p-1.5">{row.slice}</td>
+                      <td className="p-1.5">{row.mean.toFixed(2)}</td>
+                      <td className="p-1.5">{row.min}</td>
+                      <td className="p-1.5">{row.max}</td>
+                      <td className="p-1.5">{row.stdDev.toFixed(2)}</td>
+                      <td className="p-1.5">{Number.isNaN(row.median) ? '—' : row.median}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-base-content/55">{stackStatsPlaceholder}</p>
+            )
+          ) : null}
+
+          {/* 整栈统计：一行汇总（Statistics）。 */}
+          {card.type === 'stackStatistics' ? (
+            stackStats ? (
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                {([
+                  [copy.stackOps.voxels, stackStats.summary.voxels.toLocaleString()],
+                  [copy.stats.mean, stackStats.summary.mean.toFixed(2)],
+                  [copy.stats.min, String(stackStats.summary.min)],
+                  [copy.stats.max, String(stackStats.summary.max)],
+                  [copy.stats.stdDev, stackStats.summary.stdDev.toFixed(2)],
+                  [copy.stackOps.median, Number.isNaN(stackStats.summary.median) ? '—' : String(stackStats.summary.median)],
+                  [copy.stackOps.mode, Number.isNaN(stackStats.summary.mode) ? '—' : String(stackStats.summary.mode)],
+                ] as const).map(([label, value]) => (
+                  <div key={label} className="flex items-baseline justify-between gap-2">
+                    <dt className="truncate text-[10px] text-base-content/55">{label}</dt>
+                    <dd className="font-mono text-[12px] font-semibold tabular-nums text-base-content">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="text-sm text-base-content/55">{stackStatsPlaceholder}</p>
+            )
+          ) : null}
+
+          {/* 逐页剖面：每页一条曲线，共用同一纵轴（Plot XY Profile）。 */}
+          {card.type === 'xyProfile' ? (
+            profilePolylines.length ? (
+              <div className="grid gap-1">
+                <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="block h-24 w-full" role="img" aria-label={copy.views.xyProfile}>
+                  {profilePolylines.map((line) => (
+                    <polyline
+                      key={line.index}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={line.index === pageIndex ? 1.4 : 0.6}
+                      className={line.index === pageIndex ? 'text-primary' : 'text-base-content/30'}
+                      vectorEffect="non-scaling-stroke"
+                      points={line.points}
+                    />
+                  ))}
+                </svg>
+                <p className="text-[10px] text-base-content/55">
+                  {copy.views.xyProfileNote}
+                  {state.stackProfiles ? ` · ${state.stackProfiles.min.toFixed(2)} – ${state.stackProfiles.max.toFixed(2)} · ${state.stackProfiles.frameCount} × ${state.stackProfiles.length}` : ''}
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-base-content/55">{stackStatsPlaceholder}</p>
+            )
+          ) : null}
         </section>
       ))}
     </div>
@@ -535,20 +1766,35 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
               {copy.openImage}
             </Button>
 
-            <div role="group" aria-label={copy.viewer.tool} className="inline-flex shrink-0 rounded-[var(--radius-field)] bg-muted p-0.5">
-              {(['pan', 'roi'] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={tool === value}
-                  className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium transition ${
-                    tool === value ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
-                  }`}
-                  onClick={() => setTool(value)}
-                >
-                  {value === 'pan' ? copy.viewer.pan : copy.viewer.roiSelect}
-                </button>
-              ))}
+            {/* 工具网格：对齐 ImageJ 的工具栏。一个图标是一个"工具族"，
+                双击在族内切换子类型（直线 line/arrow、点 point/multipoint）。 */}
+            <div role="group" aria-label={copy.viewer.tool} className="inline-flex shrink-0 flex-wrap items-center gap-0.5 rounded-[var(--radius-field)] bg-muted p-0.5">
+              {TOOLS.map((entry) => {
+                const variantId = toolVariants[entry.id]
+                const Icon = (variantId ? VARIANT_ICONS[variantId] : undefined) ?? entry.icon
+                const active = tool === entry.id
+                const label = toolLabel(copy.tools, entry, variantId)
+                const hint = entry.variants?.length
+                  ? `${label} (${entry.shortcut.toUpperCase()}) · ${copy.tools.variantsHint}`
+                  : `${label} (${entry.shortcut.toUpperCase()})`
+                return (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    aria-label={label}
+                    aria-pressed={active}
+                    title={hint}
+                    disabled={!hasImage}
+                    className={`flex size-6 items-center justify-center rounded-[calc(var(--radius-field)-2px)] transition disabled:opacity-40 ${
+                      active ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
+                    }`}
+                    onClick={() => setTool(entry.id)}
+                    onDoubleClick={() => cycleToolVariant(entry)}
+                  >
+                    <Icon size={15} />
+                  </button>
+                )
+              })}
             </div>
 
             {state.dataset?.componentKind === 'rgb' ? (
@@ -572,7 +1818,7 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
               </div>
             ) : null}
 
-            <Button type="button" variant={showOriginal ? 'secondary' : 'outline'} size="sm" aria-pressed={showOriginal} disabled={!original || navBusy} onClick={() => { setShowOriginal(!showOriginal); closeParamCommand() }}>{copy.original}</Button>
+            <Button type="button" variant={showOriginal ? 'secondary' : 'outline'} size="sm" aria-pressed={showOriginal} disabled={navBusy} onClick={toggleOriginal}>{copy.original}</Button>
 
             <span className="inline-flex shrink-0 items-center gap-0.5 rounded-[var(--radius-field)] bg-muted p-0.5">
               <button type="button" aria-label={copy.zoomOut} disabled={!hasImage || navBusy} onClick={() => zoomByStep(-1)}
@@ -597,14 +1843,6 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
               {copy.roi.clear}
             </Button>
 
-            {slices.map((entry) => <span key={entry.axis} className="inline-flex shrink-0 items-center gap-1">
-              <span className="text-[11px] uppercase text-base-content/55">{entry.axis}</span>
-              <Button type="button" variant="outline" size="icon-sm" disabled={navBusy || entry.index === 0} aria-label={`${entry.axis} previous slice`} onClick={() => selectAxis(entry.axis, entry.index - 1)}>←</Button>
-              <span className="text-[11px] tabular-nums">{stale ? '…' : entry.index + 1} / {entry.length}</span>
-              <Button type="button" variant="outline" size="icon-sm" disabled={navBusy || entry.index + 1 >= entry.length} aria-label={`${entry.axis} next slice`} onClick={() => selectAxis(entry.axis, entry.index + 1)}>→</Button>
-              <input type="range" min={0} max={entry.length - 1} value={entry.index} disabled={navBusy} onChange={(event) => selectAxis(entry.axis, Number(event.target.value))} aria-label={`${entry.axis} ${copy.stack.page}`} className="w-20 accent-primary" />
-            </span>)}
-
             <span className="ml-auto hidden shrink-0 truncate pl-2 font-mono text-[11px] text-base-content/55 md:inline">
               {probe ? `(${probe.x}, ${probe.y}) = ${probe.value} · ` : ''}{roiLabel}
             </span>
@@ -619,8 +1857,8 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
             <label className="flex items-center gap-2"><input type="checkbox" checked={applyAll} onChange={(event) => setApplyAll(event.target.checked)} />{copy.stack.applyAll}</label>
           </div>}
           <div className="min-h-0 flex-1">
-            <ImageJSidebar language={language} registry={registry} onRun={runCommand} disabled={!hasImage || busy}
-              expandableCommands={expandableCommands} expandedCommand={paramCommand} panel={panel} onToggleCommand={toggleParamCommand}
+            <ImageJSidebar language={language} registry={registry} onRun={runCommand} onCommand={runStackCommand} disabled={!hasImage || busy}
+              expandableCommands={expandableCommands} expandedCommand={expandedCommandLabel} panel={panel} onToggleCommand={toggleParamCommand}
               stackActions={{ next: () => selectPage(pageIndex + 1), previous: () => selectPage(pageIndex - 1), canNext: Boolean(slice && pageIndex + 1 < slice.length), canPrevious: pageIndex > 0 }} />
           </div>
 
@@ -638,7 +1876,9 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
               </Button>
             </div>
             <div role="status" aria-live="polite" className="mt-1 min-h-4 text-[11px] text-base-content/60">
-              {status}{state.lastRunMs !== undefined ? ` · ${state.lastRunMs} ms` : ''}
+              {preload ? `${copy.stack.preloading} ${preload.done} / ${preload.total}` : status}
+              {!preload && state.lastRunMs !== undefined ? ` · ${state.lastRunMs} ms` : ''}
+              {state.sliceLabels?.[pageIndex] ? ` · ${state.sliceLabels[pageIndex]}` : ''}
               {analysisResult.error && <span className="text-destructive">{analysisResult.error}</span>}
             </div>
           </footer>
@@ -653,6 +1893,17 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
             <p role="alert" className="absolute left-3 right-3 top-3 z-10 rounded-[var(--radius-box)] border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
             </p>
+          ) : null}
+
+          {/* 整卷预热进度：让它显式可见，用户才知道「等一下」换来了后面的翻页手感。 */}
+          {preload && !error ? (
+            <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-[var(--radius-box)] border border-base-300 bg-base-100/90 px-3 py-1.5 text-xs shadow-sm backdrop-blur">
+              <span className="font-medium">{copy.stack.preloading}</span>
+              <span className="ml-2 tabular-nums text-base-content/70">{preload.done} / {preload.total}</span>
+              <span className="ml-2 h-1 w-24 overflow-hidden rounded-full bg-base-200 align-middle">
+                <span className="block h-full rounded-full bg-primary transition-[width] duration-150" style={{ width: `${preload.total ? Math.round((preload.done / preload.total) * 100) : 0}%` }} />
+              </span>
+            </div>
           ) : null}
 
           {!hasImage ? (
@@ -688,6 +1939,9 @@ function ImageDocumentView({ runtime, onOpenImage, tabsHeader, onEjectPage }: { 
               </ContextMenuContent>
             ) : null}
           </ContextMenu>
+          {/* 切片栏紧贴图像窗口的**下方**，与 ImageJ 的 StackWindow 滚动条位置一致
+              （ImageLayout 把滚动条排在画布之后），并从工具栏里移了出来。 */}
+          <StackSliceBar slices={slices} stale={stale} disabled={navBusy} pageLabel={copy.stack.page} onSelect={selectAxis} />
         </main>
 
         {/* 右栏「分析」：卡片式视图（一个卡片一个可视化）+ 导出 */}
@@ -830,6 +2084,26 @@ export function ScientificImageWorkspace() {
     if (autoDebayer && files.some((file) => RAW_FILE.test(file.name))) void opened.then(() => runtime.addStep('debayer', { pattern: 'auto', algorithm: 'malvar' }, { kind: 'stack' }))
     else void opened
   }
+
+  /**
+   * 打开一个由计算产生的新数据集（例如 Z 投影结果）。
+   *
+   * 与文件导入的差别只在来源：`files` 为空，所以「拆分 / 重排 / 合并」这些依赖文件列表的操作
+   * 对它自动禁用，而显示、继续处理、导出与另存为 TIFF 都照常工作。
+   */
+  const openDerivedDataset = (dataset: Dataset) => {
+    const runtime = createDocumentRuntime(engine)
+    const entry: DocumentEntry = { id: nextDocumentId(), title: dataset.source.name, files: [], runtime }
+    setDocuments((docs) => [...docs, entry])
+    setActiveId(entry.id)
+    void runtime.adoptDataset(dataset)
+  }
+
+  /** 其它已打开文档的可选列表（供 Insert / Combine 选择来源；值用各自的 datasetId）。 */
+  const listOtherDatasets = (excludeId: string) => documentsRef.current
+    .filter((doc) => doc.id !== excludeId)
+    .map((doc) => ({ id: doc.runtime.getState().dataset?.id ?? '', title: doc.title }))
+    .filter((entry) => entry.id)
 
   /** 选择文件夹：过滤图片、按文件名自然排序后合成一个 Stack。 */
   const pickFolder = () => {
@@ -1001,7 +2275,7 @@ export function ScientificImageWorkspace() {
 
   const tabsHeader = (
     <div className="flex h-9 shrink-0 items-stretch gap-1 border-b border-base-300 bg-base-100 px-1.5">
-      <TabsList className="h-full min-w-0 flex-1 items-stretch justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0">
+      <TabsList className="h-[calc(100%+1px)] min-w-0 flex-1 items-stretch justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0">
         {documents.map((doc, index) => (
           <ContextMenu key={doc.id}>
             <ContextMenuTrigger asChild>
@@ -1009,7 +2283,7 @@ export function ScientificImageWorkspace() {
                 <TabsTrigger
                   value={doc.id}
                   title={doc.title}
-                  className="h-full max-w-44 gap-1 rounded-[var(--radius-field)] border border-transparent py-0 pr-6 pl-2 text-xs data-[state=active]:border-base-300 data-[state=active]:bg-base-200">
+                  className="h-full max-w-44 gap-1 rounded-t-[var(--radius-field)] rounded-b-none border border-transparent py-0 pr-6 pl-2 text-xs transition-colors data-[state=active]:border-base-300 data-[state=active]:border-b-transparent data-[state=active]:bg-base-200">
                   <span className="truncate">{doc.title}</span>
                 </TabsTrigger>
                 <Button
@@ -1018,7 +2292,9 @@ export function ScientificImageWorkspace() {
                   size="icon"
                   aria-label={`${copy.close} ${doc.title}`}
                   onClick={(event) => { event.stopPropagation(); closeDocument(doc.id) }}
-                  className="absolute right-0.5 top-1/2 size-5 -translate-y-1/2 rounded-[3px] text-base-content/45 opacity-60 hover:bg-base-300 hover:text-base-content hover:opacity-100">
+                  /* 关闭按钮只让图标变亮，不出现背景块：Button 的 ghost 变体在暗色主题下是
+                     `dark:hover:bg-accent/50`，必须连 dark 变体一起覆盖，否则 hover 仍有底色。 */
+                  className="absolute right-0.5 top-1/2 size-5 -translate-y-1/2 rounded-[3px] text-base-content/45 opacity-60 hover:bg-transparent hover:text-base-content hover:opacity-100 dark:hover:bg-transparent">
                   <X size={11} />
                 </Button>
               </div>
@@ -1086,7 +2362,7 @@ export function ScientificImageWorkspace() {
           </div>
         ) : documents.map((doc) => (
           <TabsContent key={doc.id} value={doc.id} forceMount className="m-0 h-full outline-none data-[state=inactive]:hidden">
-            <ImageDocumentView runtime={doc.runtime} onOpenImage={(file) => openFiles([file])} tabsHeader={doc.id === activeId ? tabsHeader : null} onEjectPage={doc.files.length > 1 ? (index) => extractPage(doc.id, index) : undefined} />
+            <ImageDocumentView runtime={doc.runtime} onOpenImage={(file) => openFiles([file])} onOpenDataset={openDerivedDataset} onListDocuments={() => listOtherDatasets(doc.id)} tabsHeader={doc.id === activeId ? tabsHeader : null} onEjectPage={doc.files.length > 1 ? (index) => extractPage(doc.id, index) : undefined} />
           </TabsContent>
         ))}
       </div>
@@ -1129,3 +2405,4 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+

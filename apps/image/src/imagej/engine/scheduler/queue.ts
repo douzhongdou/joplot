@@ -24,6 +24,8 @@ export interface SchedulerTask<T> {
   priority: TaskPriority
   /** 相同 key 的任务只保留最新一个；缺省表示不合并。 */
   coalesceKey?: string
+  /** 该任务服务的切片索引（预取用）；翻页走远后可据此裁剪已无意义的任务。 */
+  sliceIndex?: number
   /** 结果提交前的过期检查；返回 true 表示放弃。 */
   isStale(): boolean
   run(): Promise<T>
