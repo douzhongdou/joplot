@@ -74,7 +74,7 @@ function seriesTrace(name: string, x: ArrayLike<number>, y: ArrayLike<number>, c
   return { x, y, name, color, width, mode: 'lines' }
 }
 
-function buildWaveTraces(values: ScienceValue[], selected: ScienceValue, copy: ReturnType<typeof createScienceCopy>, waveMode: WaveMode = 'line'): WaveBundle {
+function buildWaveTraces(values: ScienceValue[], selected: ScienceValue, copy: ReturnType<typeof createScienceCopy>, waveMode: WaveMode = 'line', input?: ScienceValue): WaveBundle {
   const traces: ScienceTrace[] = []
   const sources: TraceSource[] = []
   const base = values.find((value) => value.id === 'signal' && value.kind === 'series')
@@ -101,6 +101,12 @@ function buildWaveTraces(values: ScienceValue[], selected: ScienceValue, copy: R
   if (selected.kind === 'series') {
     traces.push({ ...seriesTrace(selected.name, values1d(selected.x), values1d(selected.y), SCIENCE_COLORS.series, 1.9), mode: seriesMode })
     sources.push({ valueId: selected.id, field: 'y' })
+  }
+
+  // 频谱/统计等派生值没有自身波形：显示其输入曲线，避免选中 FFT 后上图被清空。
+  if ((selected.kind === 'spectrum' || selected.kind === 'stats') && input?.kind === 'series' && (!base || input.id !== base.id)) {
+    traces.push({ ...seriesTrace(input.name, values1d(input.x), values1d(input.y), SCIENCE_COLORS.series, 1.9), mode: seriesMode })
+    sources.push({ valueId: input.id, field: 'y' })
   }
 
   if (selected.kind === 'fit') {
@@ -645,10 +651,6 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
     : selected
       ? { kind: 'value', value: selected }
       : null
-  const selectedDatasetId = selected?.kind === 'series' && selected.id.startsWith('ds:')
-    ? datasetPrefix(selected.id).slice(3, -1)
-    : null
-  const selectedMapping = selectedDatasetId ? mappings[selectedDatasetId] : undefined
 
   /** valueId → 来源文件名，给分析步骤的输入下拉做 `文件名 · 列名` 前缀。 */
   const sourceNames = useMemo(() => {
@@ -703,9 +705,29 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
     }
   }
 
+  /** 选中频谱/统计等派生值时，波形区回退到该步骤的输入曲线。 */
+  const selectedInput = useMemo(() => {
+    if (!selected || (selected.kind !== 'spectrum' && selected.kind !== 'stats')) {
+      return undefined
+    }
+    const step = steps.find((candidate) => candidate.outputId === selected.id)
+    if (!step) {
+      return undefined
+    }
+    const input = resolveValue(values, step.inputId)
+    return input?.kind === 'series' ? input : undefined
+  }, [selected, steps, values])
+
+  /** 波形区实际展示的 series：派生值回退到输入曲线，轴标题跟随它。 */
+  const waveSource = selectedInput ?? (selected?.kind === 'series' ? selected : undefined)
+  const selectedDatasetId = waveSource?.id.startsWith('ds:')
+    ? datasetPrefix(waveSource.id).slice(3, -1)
+    : null
+  const selectedMapping = selectedDatasetId ? mappings[selectedDatasetId] : undefined
+
   const wave = useMemo(
-    () => (selected ? buildWaveTraces(values, selected, copy, waveMode) : { traces: [], sources: [], hasResidual: false }),
-    [values, selected, copy, waveMode],
+    () => (selected ? buildWaveTraces(values, selected, copy, waveMode, selectedInput) : { traces: [], sources: [], hasResidual: false }),
+    [values, selected, copy, waveMode, selectedInput],
   )
   waveRef.current = wave
   statusRef.current = status
@@ -1118,7 +1140,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
               traces={wave.traces}
               exportTitle={selected?.name ?? 'wave'}
               xTitle={selectedMapping ? (selectedMapping.xColumn || copy.rowIndex) : hasDatasets ? copy.rowIndex : 'time (s)'}
-              yTitle={hasDatasets ? (selected?.name ?? copy.plot.data) : 'amplitude'}
+              yTitle={hasDatasets ? (waveSource?.name ?? selected?.name ?? copy.plot.data) : 'amplitude'}
               y2Title={wave.hasResidual ? copy.plot.residual : undefined}
               height={300}
               onRangeChange={handleWaveRangeChange}
