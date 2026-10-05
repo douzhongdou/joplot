@@ -7,6 +7,8 @@ import { Checkbox } from '@joplot/ui/checkbox'
 import { Label } from '@joplot/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@joplot/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@joplot/ui/dialog'
+import { Input } from '@joplot/ui/input'
+import { Slider } from '@joplot/ui/slider'
 import { adjustContrastRange, contrastSliderValues, imagejAutoRange, type ColorAdjustment, type ColorChannel } from '../engine/colorAdjustments'
 import type { ImageBlock } from '../engine/types'
 import type { Rect } from '../lib/processor'
@@ -76,7 +78,7 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, embed
     <div className="grid gap-2">
       {(['minimum', 'maximum', 'brightness', 'contrast'] as const).map((control) => <div key={control} className="grid gap-1">
         <Label htmlFor={`imagej-color-${control}`} className="text-xs">{copy[control]}</Label>
-        <input id={`imagej-color-${control}`} aria-label={copy[control]} type="range" min={0} max={255} step={1} value={values[control]} disabled={busy} onChange={(event) => { setAutoWholeImage(false); setRange((previous) => adjustContrastRange(previous, control, Number(event.target.value), 0, defaultMax)) }} className="w-full accent-primary" />
+        <Slider id={`imagej-color-${control}`} aria-label={copy[control]} min={0} max={255} step={1} value={[values[control]]} disabled={busy} onValueChange={(next) => { setAutoWholeImage(false); setRange((previous) => adjustContrastRange(previous, control, next[0] ?? values[control], 0, defaultMax)) }} />
       </div>)}
       <Label htmlFor="imagej-color-channel" className="text-xs">{copy.channel}</Label>
       <Select value={channel} onValueChange={(value) => { setSnapshots(settings); setChannel(value as ColorChannel); reset() }} disabled={busy}>
@@ -91,8 +93,8 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, embed
       </div>
     </div>
     <Dialog open={setting} onOpenChange={setSetting}><DialogContent><DialogHeader><DialogTitle>{copy.range}</DialogTitle><DialogDescription>{copy.channel}: {channel}</DialogDescription></DialogHeader>
-      <Label htmlFor="imagej-set-minimum">{copy.minValue}</Label><input id="imagej-set-minimum" type="number" step="any" value={enteredMin} onChange={(event) => setEnteredMin(event.target.value)} className="h-9 rounded-md border bg-background px-3" />
-      <Label htmlFor="imagej-set-maximum">{copy.maxValue}</Label><input id="imagej-set-maximum" type="number" step="any" value={enteredMax} onChange={(event) => setEnteredMax(event.target.value)} className="h-9 rounded-md border bg-background px-3" />
+      <Label htmlFor="imagej-set-minimum">{copy.minValue}</Label><Input id="imagej-set-minimum" type="number" step="any" value={enteredMin} onChange={(event) => setEnteredMin(event.target.value)} />
+      <Label htmlFor="imagej-set-maximum">{copy.maxValue}</Label><Input id="imagej-set-maximum" type="number" step="any" value={enteredMax} onChange={(event) => setEnteredMax(event.target.value)} />
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <DialogFooter><Button variant="outline" onClick={() => setSetting(false)}>{copy.cancel}</Button><Button onClick={() => { const min = Number(enteredMin), max = Number(enteredMax); if (!enteredMin.trim() || !enteredMax.trim() || !Number.isFinite(min) || !Number.isFinite(max) || max < min) { setError(copy.invalid); return }; setAutoWholeImage(false); setRange({ min, max }); setSetting(false) }}>{copy.ok}</Button></DialogFooter>
     </DialogContent></Dialog>

@@ -5,10 +5,15 @@ import { Check, ChevronLeft, ChevronRight, Download, Image as ImageIcon, Plus, R
 import { AppNavbar } from '../../components/AppNavbar'
 import { useI18n } from '../../i18n'
 import { Button } from '@joplot/ui/button'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@joplot/ui/accordion'
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@joplot/ui/card'
 import { Checkbox } from '@joplot/ui/checkbox'
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@joplot/ui/dropdown-menu'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@joplot/ui/context-menu'
+import { Input } from '@joplot/ui/input'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@joplot/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@joplot/ui/tabs'
+import { ToggleGroup, ToggleGroupItem } from '@joplot/ui/toggle-group'
 import { Label } from '@joplot/ui/label'
 import { createImagejCopy } from '../lib/i18n'
 import { readDroppedContent } from '../lib/dropFiles'
@@ -32,27 +37,55 @@ import { ColorContrastPanel } from './ColorContrastPanel'
 import { StackBuilderDialog, type StackRow } from './StackBuilderDialog'
 import { StackOrderDialog } from './StackOrderDialog'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@joplot/ui/dialog'
-import { AnimationCommandPanel, CombineCommandPanel, DebayerCommandPanel, GaussianCommandPanel, LabelCommandPanel, LevelsCommandPanel, MontageCommandPanel, MontageToStackCommandPanel, OrthogonalCommandPanel, Project3dCommandPanel, ReduceCommandPanel, RemontageCommandPanel, ResliceCommandPanel, SetLabelCommandPanel, SubstackCommandPanel, ThresholdCommandPanel, ZProjectCommandPanel } from './CommandPanels'
+import { AnimationCommandPanel, CombineCommandPanel, DebayerCommandPanel, FilterCommandPanel, LabelCommandPanel, LevelsCommandPanel, MontageCommandPanel, MontageToStackCommandPanel, OrthogonalCommandPanel, Project3dCommandPanel, ReduceCommandPanel, RemontageCommandPanel, ResliceCommandPanel, SetLabelCommandPanel, SubstackCommandPanel, ThresholdCommandPanel, ZProjectCommandPanel } from './CommandPanels'
 import { HistogramChart } from './HistogramChart'
 import { applyColorAdjustments, type ColorAdjustment } from '../engine/colorAdjustments'
 
 /** 需要先调参数再执行的操作：面板在对应命令项下方展开，所以这里存命令 label。 */
-type ParamCommand = 'Brightness/Contrast' | 'Color Balance' | 'Threshold' | 'Gaussian Blur' | 'Debayer'
-type ParamOp = 'levels' | 'threshold' | 'gaussian' | 'debayer'
+type ParamCommand =
+  | 'Brightness/Contrast' | 'Color Balance' | 'Threshold' | 'Debayer'
+  | 'Mean' | 'Median' | 'Gaussian Blur' | 'Minimum' | 'Maximum' | 'Sharpen' | 'Unsharp Mask'
+type ParamOp = 'levels' | 'threshold' | 'debayer' | 'mean3x3' | 'median3x3' | 'gaussian' | 'minimum3x3' | 'maximum3x3' | 'sharpen3x3' | 'unsharpMask'
+/** 需要一个"参数 + 预览"面板的滤镜算子（面板由 FilterCommandPanel 统一渲染）。 */
+const FILTER_OPS: readonly ParamOp[] = ['mean3x3', 'median3x3', 'gaussian', 'minimum3x3', 'maximum3x3', 'sharpen3x3', 'unsharpMask']
+/** 命令目录 FILTERS 组里这两列顺序一致的命令名（都带参数面板）。 */
+const FILTER_COMMANDS: readonly ParamCommand[] = ['Mean', 'Median', 'Gaussian Blur', 'Minimum', 'Maximum', 'Sharpen', 'Unsharp Mask']
+/** 各滤镜的参数默认值/取值范围（顺序即字段顺序）。 */
+const FILTER_FIELDS: Partial<Record<ParamOp, readonly { key: string; fallback: number; min: number; max: number; step: number }[]>> = {
+  mean3x3: [{ key: 'radius', fallback: 1, min: 1, max: 4, step: 1 }],
+  median3x3: [{ key: 'radius', fallback: 2, min: 1, max: 4, step: 1 }],
+  gaussian: [{ key: 'sigma', fallback: 1.5, min: 0.1, max: 20, step: 0.1 }],
+  minimum3x3: [{ key: 'radius', fallback: 1, min: 1, max: 4, step: 1 }],
+  maximum3x3: [{ key: 'radius', fallback: 1, min: 1, max: 4, step: 1 }],
+  sharpen3x3: [{ key: 'amount', fallback: 1, min: 0, max: 5, step: 0.1 }],
+  unsharpMask: [{ key: 'sigma', fallback: 2, min: 0.1, max: 20, step: 0.1 }, { key: 'amount', fallback: 0.6, min: 0, max: 5, step: 0.1 }],
+}
 /** 命令 label → 算子 kind（命令目录里 label 是唯一键）。 */
 const COMMAND_OPS: Record<ParamCommand, ParamOp> = {
   'Brightness/Contrast': 'levels',
   'Color Balance': 'levels',
   Threshold: 'threshold',
-  'Gaussian Blur': 'gaussian',
   Debayer: 'debayer',
+  Mean: 'mean3x3',
+  Median: 'median3x3',
+  'Gaussian Blur': 'gaussian',
+  Minimum: 'minimum3x3',
+  Maximum: 'maximum3x3',
+  Sharpen: 'sharpen3x3',
+  'Unsharp Mask': 'unsharpMask',
 }
 /** 算子 kind → 命令目录里默认展开的那一项。 */
 const OP_COMMANDS: Record<ParamOp, ParamCommand> = {
   levels: 'Brightness/Contrast',
   threshold: 'Threshold',
-  gaussian: 'Gaussian Blur',
   debayer: 'Debayer',
+  mean3x3: 'Mean',
+  median3x3: 'Median',
+  gaussian: 'Gaussian Blur',
+  minimum3x3: 'Minimum',
+  maximum3x3: 'Maximum',
+  sharpen3x3: 'Sharpen',
+  unsharpMask: 'Unsharp Mask',
 }
 type ViewType = 'measurement' | 'histogram' | 'profile' | 'particles' | 'zprofile' | 'stackMeasure' | 'stackStatistics' | 'xyProfile'
 interface ViewCard { id: number; type: ViewType }
@@ -205,11 +238,15 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const [toolVariants, setToolVariants] = useState<Record<string, string>>({ line: 'line', point: 'point' })
   const [probe, setProbe] = useState<PixelProbe | null>(null)
   const [brightness, setBrightness] = useState(0), [contrast, setContrast] = useState(50)
-  const [gaussianSigma, setGaussianSigma] = useState(1.5), [thresholdLevel, setThresholdLevel] = useState(128)
+  const [thresholdLevel, setThresholdLevel] = useState(128)
   const [debayerPattern, setDebayerPattern] = useState('auto'), [debayerAlgorithm, setDebayerAlgorithm] = useState('malvar')
   const [scope, setScope] = useState<'image' | 'roi'>('image')
   const [applyAll, setApplyAll] = useState(false)
   const [paramCommand, setParamCommand] = useState<ParamCommand | null>(null)
+  /** 各滤镜面板当前参数（按算子 kind 分开记，切来切去不会丢）。 */
+  const [filterValues, setFilterValues] = useState<Record<string, Record<string, number>>>({})
+  /** 勾选「预览」时临时加进 recipe 的那一步；取消勾选/关面板要把它移除。 */
+  const [filterPreviewStepId, setFilterPreviewStepId] = useState<string | null>(null)
   const [views, setViews] = useState<ViewCard[]>([])
   const viewsIdRef = useRef(1)
   const [minParticleArea, setMinParticleArea] = useState(1)
@@ -503,6 +540,38 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     setTool(entry.id)
   }
 
+  /** 某个滤镜面板当前的参数值（缺省用声明的默认值补）。 */
+  const filterParamValues = (op: ParamOp): Record<string, number> => {
+    const stored = filterValues[op] ?? {}
+    return Object.fromEntries((FILTER_FIELDS[op] ?? []).map((field) => [field.key, stored[field.key] ?? field.fallback]))
+  }
+  /**
+   * 预览的增/改/删：勾选 = 临时加一步，调参 = 原地更新那一步，取消 = 移除。
+   * 这样预览走的是真实渲染管线（分块、窗口/水平、ROI 都与最终结果一致）。
+   */
+  const syncFilterPreview = (op: ParamOp, params: Record<string, number>, on: boolean) => {
+    if (!on) {
+      if (filterPreviewStepId) { runtime.removeStep(filterPreviewStepId); setFilterPreviewStepId(null) }
+      return
+    }
+    setShowOriginal(false)
+    if (filterPreviewStepId) runtime.updateParams(filterPreviewStepId, params)
+    else setFilterPreviewStepId(runtime.addStep(op, params, stepScope(null)) ?? null)
+  }
+  /** 调参：先记下来，正在预览就实时更新。 */
+  const changeFilterValue = (op: ParamOp, key: string, value: number) => {
+    const next = { ...filterParamValues(op), [key]: value }
+    setFilterValues((current) => ({ ...current, [op]: next }))
+    if (filterPreviewStepId) runtime.updateParams(filterPreviewStepId, next)
+  }
+  /** 执行：已经在预览就直接留下那一步，否则按当前参数提交一步。 */
+  const applyFilter = (op: ParamOp) => {
+    setError('')
+    if (filterPreviewStepId) setFilterPreviewStepId(null)
+    else submit(op, filterParamValues(op), null)
+    setParamCommand(null)
+  }
+
   const stepScope = (target: RoiInput | null): StepScope => {
     // 算子作用域目前是矩形 `Region`，因此取选区包围盒；统计类走掩码语义（见 analysis.ts）。
     const bounds = target ? roiBounds(toRoi(target)) : null
@@ -527,6 +596,8 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     if (!image || busy || !COMMAND_OPS[command]) return
     const op = COMMAND_OPS[command]
     if (op !== 'levels' && colorPreview.length) commitColorPreview(colorPreview, false)
+    // 切换面板前先把上一个滤镜的预览步骤撤掉，否则会留在处理台账里。
+    if (filterPreviewStepId) { runtime.removeStep(filterPreviewStepId); setFilterPreviewStepId(null) }
     setShowOriginal(false); setShowColor(op !== 'threshold'); setParamCommand(command)
   }
   /** 命令目录点选：再点一次已展开的命令即收起。 */
@@ -1128,7 +1199,12 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     setColorPreview([])
   }
   const selectAxis = (axis: 't' | 'c' | 'z', index: number) => { if (colorPreview.length) commitColorPreview(colorPreview, false); runtime.setSelection({ [axis]: index }) }
-  const closeParamCommand = () => { if (colorPreview.length) commitColorPreview(colorPreview, false); setBrightness(0); setContrast(50); setParamCommand(null) }
+  const closeParamCommand = () => {
+    if (colorPreview.length) commitColorPreview(colorPreview, false)
+    // 关面板时把预览步骤一并撤销，避免留下一步"没人认领"的处理。
+    if (filterPreviewStepId) { runtime.removeStep(filterPreviewStepId); setFilterPreviewStepId(null) }
+    setBrightness(0); setContrast(50); setParamCommand(null)
+  }
   /**
    * Original 对比按需取帧。
    *
@@ -1280,7 +1356,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const expandableCommands = useMemo<string[]>(
     () => [
       ...(isRgb ? ['Brightness/Contrast', 'Color Balance'] : ['Brightness/Contrast']),
-      'Threshold', 'Gaussian Blur', 'Debayer',
+      'Threshold', 'Debayer', ...FILTER_COMMANDS,
       // Z 投影只在多页 Stack 上有意义。
       ...(stack ? [...PROJECT_COMMANDS, 'Make Montage...'] : []),
       // 蒙太奇转 Stack 作用于单张蒙太奇图，不要求多页栈。
@@ -1531,8 +1607,18 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
       : <LevelsCommandPanel copy={copy} brightness={brightness} contrast={contrast} active={levelsActive} disabled={!hasImage || busy} onBrightness={setBrightness} onContrast={setContrast} onApply={applyCurrentLevels} onClose={closeParamCommand} />
     : paramOp === 'threshold'
       ? <ThresholdCommandPanel copy={copy} level={thresholdLevel} minimum={stats?.histogramMin ?? 0} maximum={stats?.histogramMax ?? 255} step={image?.dtype === 'float32' ? 'any' : 1} disabled={!hasImage || busy} onLevel={setThresholdLevel} onApply={applyCurrentThreshold} onOtsu={applyOtsu} onClose={closeParamCommand} />
-      : paramOp === 'gaussian'
-        ? <GaussianCommandPanel copy={copy} sigma={gaussianSigma} disabled={!hasImage || busy} onSigma={setGaussianSigma} onApply={() => submit('gaussian', { sigma: gaussianSigma })} onClose={closeParamCommand} />
+      : paramOp && FILTER_OPS.includes(paramOp) && FILTER_FIELDS[paramOp]
+        ? <FilterCommandPanel
+            copy={copy}
+            fields={FILTER_FIELDS[paramOp]!}
+            values={filterParamValues(paramOp)}
+            preview={Boolean(filterPreviewStepId)}
+            disabled={!hasImage || busy}
+            onValue={(key, value) => changeFilterValue(paramOp, key, value)}
+            onPreview={(on) => syncFilterPreview(paramOp, filterParamValues(paramOp), on)}
+            onApply={() => applyFilter(paramOp)}
+            onClose={closeParamCommand}
+          />
         : paramOp === 'debayer'
           ? <DebayerCommandPanel copy={copy} pattern={debayerPattern} algorithm={debayerAlgorithm} disabled={!hasImage || busy} onPattern={setDebayerPattern} onAlgorithm={setDebayerAlgorithm} onApply={() => submit('debayer', { pattern: debayerPattern, algorithm: debayerAlgorithm }, null)} onClose={closeParamCommand} />
           : null
@@ -1540,22 +1626,25 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   /* ---------------- 右栏：卡片式视图（一个卡片 = 一个可视化） ---------------- */
 
   const viewCards = views.length ? (
-    <div className="divide-y divide-base-300">
+    <div className="grid gap-2">
       {views.map((card) => (
-        <section key={card.id} className="grid gap-1.5 py-2 first:pt-1 last:pb-0">
-          <div className="flex items-center justify-between gap-1">
-            <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-base-content/50">{viewTitle(card.type)}</h3>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={copy.close}
-              onClick={() => removeView(card.id)}
-              className="size-5 text-base-content/45 hover:bg-base-200 hover:text-base-content"
-            >
-              <X size={13} />
-            </Button>
-          </div>
+        <Card key={card.id} className="gap-1.5 border-base-300 py-2 shadow-none">
+          <CardHeader className="flex flex-row items-center justify-between gap-1 px-2 py-0">
+            <CardTitle className="text-[10px] font-semibold uppercase tracking-[0.14em] text-base-content/50">{viewTitle(card.type)}</CardTitle>
+            <CardAction className="row-span-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={copy.close}
+                onClick={() => removeView(card.id)}
+                className="size-5 text-base-content/45 hover:bg-base-200 hover:text-base-content"
+              >
+                <X size={13} />
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="grid gap-1.5 px-2">
 
           {card.type === 'measurement' ? (
             !hasImage ? (
@@ -1604,7 +1693,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                 <div className="flex flex-wrap items-end gap-2">
                   <div className="grid gap-0.5">
                     <Label htmlFor="imagej-particle-min-area" className="text-[11px]">{copy.binary.minArea}</Label>
-                    <input
+                    <Input
                       id="imagej-particle-min-area"
                       type="number"
                       min={1}
@@ -1612,7 +1701,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                       step={1}
                       value={minParticleArea}
                       onChange={(event) => setMinParticleArea(Math.max(1, Math.round(Number(event.target.value) || 1)))}
-                      className="h-7 w-24 rounded-md border border-base-300 bg-base-100 px-2 text-sm"
+                      className="h-7 w-24 px-2 text-xs md:text-xs"
                     />
                   </div>
                   <Button type="button" variant="secondary" size="sm" className="h-7" onClick={analyzeCurrentParticles}>
@@ -1621,17 +1710,28 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                   <Button type="button" variant="outline" size="sm" className="h-7" onClick={exportParticlesCsv}>{copy.binary.exportCsv}</Button>
                 </div>
                 <div className="max-h-56 overflow-auto">
-                  <table className="w-full min-w-[280px] text-left text-xs tabular-nums">
-                    <thead><tr className="border-b border-base-300"><th className="p-1.5">#</th><th className="p-1.5">{copy.stats.area}</th><th className="p-1.5">{copy.binary.perimeter}</th><th className="p-1.5">{copy.binary.circularity}</th><th className="p-1.5">{copy.binary.centroid}</th></tr></thead>
-                    <tbody>{particles.map((particle) => (
-                      <tr key={particle.id} className="border-b border-base-200">
-                        <td className="p-1.5">{particle.id}</td><td className="p-1.5">{particle.area}</td>
-                        <td className="p-1.5">{particle.perimeter}</td>
-                        <td className="p-1.5">{particle.circularity.toFixed(3)}</td>
-                        <td className="p-1.5">({particle.centroidX.toFixed(1)}, {particle.centroidY.toFixed(1)})</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
+                  <Table className="min-w-[280px] text-xs tabular-nums">
+                    <TableHeader>
+                      <TableRow className="border-base-300 hover:bg-transparent">
+                        <TableHead className="h-auto p-1.5">#</TableHead>
+                        <TableHead className="h-auto p-1.5">{copy.stats.area}</TableHead>
+                        <TableHead className="h-auto p-1.5">{copy.binary.perimeter}</TableHead>
+                        <TableHead className="h-auto p-1.5">{copy.binary.circularity}</TableHead>
+                        <TableHead className="h-auto p-1.5">{copy.binary.centroid}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {particles.map((particle) => (
+                        <TableRow key={particle.id} className="border-base-200">
+                          <TableCell className="p-1.5">{particle.id}</TableCell>
+                          <TableCell className="p-1.5">{particle.area}</TableCell>
+                          <TableCell className="p-1.5">{particle.perimeter}</TableCell>
+                          <TableCell className="p-1.5">{particle.circularity.toFixed(3)}</TableCell>
+                          <TableCell className="p-1.5">({particle.centroidX.toFixed(1)}, {particle.centroidY.toFixed(1)})</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
               </>
             ) : (
@@ -1663,28 +1763,30 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
           {card.type === 'stackMeasure' ? (
             stackStats ? (
               <div className="max-h-56 overflow-auto">
-                <table className="w-full min-w-[300px] text-left text-xs tabular-nums">
-                  <thead>
-                    <tr className="border-b border-base-300">
-                      <th className="p-1.5">{copy.stackOps.slice}</th>
-                      <th className="p-1.5">{copy.stats.mean}</th>
-                      <th className="p-1.5">{copy.stats.min}</th>
-                      <th className="p-1.5">{copy.stats.max}</th>
-                      <th className="p-1.5">{copy.stats.stdDev}</th>
-                      <th className="p-1.5">{copy.stackOps.median}</th>
-                    </tr>
-                  </thead>
-                  <tbody>{stackStats.frames.map((row) => (
-                    <tr key={row.slice} className="border-b border-base-200">
-                      <td className="p-1.5">{row.slice}</td>
-                      <td className="p-1.5">{row.mean.toFixed(2)}</td>
-                      <td className="p-1.5">{row.min}</td>
-                      <td className="p-1.5">{row.max}</td>
-                      <td className="p-1.5">{row.stdDev.toFixed(2)}</td>
-                      <td className="p-1.5">{Number.isNaN(row.median) ? '—' : row.median}</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
+                <Table className="min-w-[300px] text-xs tabular-nums">
+                  <TableHeader>
+                    <TableRow className="border-base-300 hover:bg-transparent">
+                      <TableHead className="h-auto p-1.5">{copy.stackOps.slice}</TableHead>
+                      <TableHead className="h-auto p-1.5">{copy.stats.mean}</TableHead>
+                      <TableHead className="h-auto p-1.5">{copy.stats.min}</TableHead>
+                      <TableHead className="h-auto p-1.5">{copy.stats.max}</TableHead>
+                      <TableHead className="h-auto p-1.5">{copy.stats.stdDev}</TableHead>
+                      <TableHead className="h-auto p-1.5">{copy.stackOps.median}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {stackStats.frames.map((row) => (
+                      <TableRow key={row.slice} className="border-base-200">
+                        <TableCell className="p-1.5">{row.slice}</TableCell>
+                        <TableCell className="p-1.5">{row.mean.toFixed(2)}</TableCell>
+                        <TableCell className="p-1.5">{row.min}</TableCell>
+                        <TableCell className="p-1.5">{row.max}</TableCell>
+                        <TableCell className="p-1.5">{row.stdDev.toFixed(2)}</TableCell>
+                        <TableCell className="p-1.5">{Number.isNaN(row.median) ? '—' : row.median}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
             ) : (
               <p className="text-sm text-base-content/55">{stackStatsPlaceholder}</p>
@@ -1741,7 +1843,8 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               <p className="text-sm text-base-content/55">{stackStatsPlaceholder}</p>
             )
           ) : null}
-        </section>
+          </CardContent>
+        </Card>
       ))}
     </div>
   ) : (
@@ -1875,22 +1978,28 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               stackActions={{ next: () => selectPage(pageIndex + 1), previous: () => selectPage(pageIndex - 1), canNext: Boolean(slice && pageIndex + 1 < slice.length), canPrevious: pageIndex > 0 }} />
           </div>
 
-          <details className="max-h-40 shrink-0 overflow-auto border-t border-base-300 px-3 py-2 text-xs">
-            <summary>{copy.steps.heading} · {state.recipe?.steps.length ?? 0}</summary>
-            <ol className="mt-2 grid gap-1">{state.recipe?.steps.map((step) => (
-              <li key={step.id} className="flex items-center justify-between gap-2">
-                <Button type="button" variant="ghost" size="sm" className="h-6 justify-start px-1.5 text-xs font-normal"
-                  disabled={busy || !stepAppliesToSelection(step, state.selection)}
-                  onClick={() => { setShowOriginal(false); runtime.viewStep(step.id) }}>
-                  {copy.steps.ops[step.op] ?? step.op}
-                </Button>
-                <Button type="button" variant="ghost" size="icon-sm" className="size-5" aria-label={copy.steps.remove}
-                  disabled={busy} onClick={() => { setShowOriginal(false); runtime.removeStep(step.id) }}>
-                  <X size={12} />
-                </Button>
-              </li>
-            ))}</ol>
-          </details>
+          <Accordion type="single" collapsible className="max-h-40 shrink-0 overflow-auto border-t border-base-300 px-3 text-xs">
+            <AccordionItem value="steps" className="border-b-0">
+              <AccordionTrigger className="py-2 text-xs font-normal hover:no-underline [&>svg]:size-3.5">
+                {copy.steps.heading} · {state.recipe?.steps.length ?? 0}
+              </AccordionTrigger>
+              <AccordionContent className="pb-2">
+                <ol className="grid gap-1">{state.recipe?.steps.map((step) => (
+                  <li key={step.id} className="flex items-center justify-between gap-2">
+                    <Button type="button" variant="ghost" size="sm" className="h-6 justify-start px-1.5 text-xs font-normal"
+                      disabled={busy || !stepAppliesToSelection(step, state.selection)}
+                      onClick={() => { setShowOriginal(false); runtime.viewStep(step.id) }}>
+                      {copy.steps.ops[step.op] ?? step.op}
+                    </Button>
+                    <Button type="button" variant="ghost" size="icon-sm" className="size-5" aria-label={copy.steps.remove}
+                      disabled={busy} onClick={() => { setShowOriginal(false); runtime.removeStep(step.id) }}>
+                      <X size={12} />
+                    </Button>
+                  </li>
+                ))}</ol>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
           <footer className="shrink-0 border-t border-base-300 px-2.5 py-2">
             <div className="flex items-center gap-1">
               <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.history.undo} disabled={busy || !historyFlags.canUndo} onClick={undo}>
@@ -1973,23 +2082,24 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
         <aside className="order-3 flex min-h-0 flex-col border-t border-base-300 bg-base-100 lg:order-none lg:h-full lg:border-t-0 lg:border-l">
           <header className="flex shrink-0 items-center justify-between gap-2 border-b border-base-300 px-2 py-1.5">
             {hasImage ? (
-              <span className="inline-flex rounded-[var(--radius-field)] bg-base-200 p-0.5">
+              <ToggleGroup
+                type="single"
+                value={scope}
+                onValueChange={(value) => { if (value === 'image' || value === 'roi') setScope(value) }}
+                aria-label={copy.viewer.display}
+                className="gap-0 rounded-[var(--radius-field)] bg-base-200 p-0.5"
+              >
                 {(['image', 'roi'] as const).map((value) => (
-                  <Button
+                  <ToggleGroupItem
                     key={value}
-                    type="button"
-                    variant="ghost"
-                    aria-pressed={scope === value}
+                    value={value}
                     disabled={value === 'roi' && !roi}
-                    className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium ${
-                      scope === value ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
-                    }`}
-                    onClick={() => setScope(value)}
+                    className="h-6 min-w-0 flex-none rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium text-base-content/55 shadow-none hover:bg-transparent hover:text-base-content data-[state=on]:bg-base-100 data-[state=on]:text-base-content data-[state=on]:shadow-sm"
                   >
                     {value === 'image' ? copy.roi.scopeImage : copy.roi.scopeRoi}
-                  </Button>
+                  </ToggleGroupItem>
                 ))}
-              </span>
+              </ToggleGroup>
             ) : <span />}
 
             <DropdownMenu>
@@ -2405,13 +2515,12 @@ export function ScientificImageWorkspace() {
           <DialogHeader>
             <DialogTitle>{copy.rename.title}</DialogTitle>
           </DialogHeader>
-          <input
+          <Input
             value={renameValue}
             autoFocus
             aria-label={copy.rename.label}
             onChange={(event) => setRenameValue(event.target.value)}
             onKeyDown={(event) => { if (event.key === 'Enter') commitRename(); else if (event.key === 'Escape') setRenameId(null) }}
-            className="h-9 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary"
           />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setRenameId(null)}>{copy.rename.cancel}</Button>
@@ -2431,5 +2540,6 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
 
 

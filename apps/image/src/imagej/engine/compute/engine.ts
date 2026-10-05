@@ -210,7 +210,7 @@ export class PureComputeEngine implements ComputeEngine {
   private async applyRoi(step: RecipeStep, capability: OperatorCapability, block: ImageBlock, context: ExecuteContext, region: Region) {
     const xi = block.axes.indexOf('x'), yi = block.axes.indexOf('y')
     const rect = { x: region.start[xi] ?? 0, y: region.start[yi] ?? 0, width: region.shape[xi]!, height: region.shape[yi]! }
-    const local = ['gaussian', 'minimum3x3', 'maximum3x3', 'erode', 'dilate', 'open', 'close', 'fillHoles', 'flipH', 'flipV', 'particles'].includes(step.op)
+    const local = ['gaussian', 'unsharpMask', 'mean3x3', 'median3x3', 'minimum3x3', 'maximum3x3', 'erode', 'dilate', 'open', 'close', 'fillHoles', 'flipH', 'flipV', 'particles'].includes(step.op)
     const input = local ? ops.crop(block, rect) : block
     const output = await this.applyStep(step, capability, input, context)
     if (!output.image) return output
@@ -268,13 +268,14 @@ export class PureComputeEngine implements ComputeEngine {
       case 'levels': return { image: step.params.mode === 'rgb-range' ? applyColorAdjustments(block, [{ min: Number(step.params.minimum), max: Number(step.params.maximum), channel: step.params.channel as ColorChannel }]) : ops.levels(block, params.brightness ?? 0, params.contrast ?? 50) }
       case 'threshold': return { image: ops.threshold(block, params.level ?? 128) }
       case 'otsu': return { image: ops.otsu(block) }
-      case 'mean3x3': return { image: ops.mean3x3(block) }
-      case 'median3x3': return { image: ops.median3x3(block) }
-      case 'sharpen3x3': return { image: ops.sharpen3x3(block) }
+      case 'mean3x3': return { image: ops.mean3x3(block, step.params) }
+      case 'median3x3': return { image: ops.median3x3(block, step.params) }
+      case 'sharpen3x3': return { image: ops.sharpen3x3(block, step.params) }
       case 'sobel': return { image: ops.sobel(block) }
-      case 'minimum3x3': return { image: ops.minimum3x3(block) }
-      case 'maximum3x3': return { image: ops.maximum3x3(block) }
+      case 'minimum3x3': return { image: ops.minimum3x3(block, step.params) }
+      case 'maximum3x3': return { image: ops.maximum3x3(block, step.params) }
       case 'gaussian': return { image: ops.gaussian(block, params.sigma ?? 1.5) }
+      case 'unsharpMask': return { image: ops.unsharpMask(block, step.params) }
       case 'erode': return { image: ops.erode(block, params.radius ?? 1) }
       case 'dilate': return { image: ops.dilate(block, params.radius ?? 1) }
       case 'open': return { image: ops.open(block, params.radius ?? 1) }
@@ -401,3 +402,4 @@ function resolveCfaPattern(
 export function emptyBlock(dtype: ImageBlock['dtype'], axes: ImageBlock['axes'], shape: readonly number[]): ImageBlock {
   return { dtype, axes, shape, region: fullRegion(shape), data: allocateBuffer(dtype, elementCount(shape)) }
 }
+

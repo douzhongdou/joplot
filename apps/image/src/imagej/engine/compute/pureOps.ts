@@ -24,6 +24,7 @@ import {
   type GrayImage,
   type RoiInput,
 } from '../../lib/processor.ts'
+import { MAX_RANK_RADIUS } from '../../lib/engineTypes.ts'
 import { isRoi, roiBounds } from '../../lib/roi.ts'
 import { analyzeParticles, closeBinary, dilate as libDilate, erode as libErode, fillHoles as libFillHoles, openBinary } from '../../lib/binary.ts'
 import { gaussianBlur as libGaussian } from '../../lib/filters.ts'
@@ -174,21 +175,35 @@ export function otsu(block: ImageBlock): ImageBlock {
 }
 
 /* ------------------------------------------------------------------ *
- * 邻域算子（3×3）
+ * 邻域算子（方形窗口，半径 r；r = 1 即 3×3）
  * ------------------------------------------------------------------ */
 
-function generic3x3(block: ImageBlock, reduce: (values: number[]) => number): ImageBlock {
+/** 读 `radius` 参数（ImageJ 的 Radius），夹到 [1, MAX_RANK_RADIUS]。 */
+function windowRadius(params?: Record<string, number | string>): number {
+  const raw = Number(params?.radius ?? 1)
+  if (!Number.isFinite(raw)) return 1
+  return Math.max(1, Math.min(MAX_RANK_RADIUS, Math.round(raw)))
+}
+
+/** 读强度参数（锐化/Unsharp Mask 的 amount），夹到 [0, 5]。 */
+function strength(raw: unknown, fallback: number): number {
+  const value = Number(raw ?? fallback)
+  return Number.isFinite(value) ? Math.max(0, Math.min(5, value)) : fallback
+}
+
+function genericRank(block: ImageBlock, radius: number, reduce: (values: number[]) => number): ImageBlock {
   const { width, height } = plane2d(block)
   const out = newBlockLike(block)
   const src = numbers(block.data)
   const dst = numbers(out.data)
-  const values = new Array<number>(9)
+  const side = 2 * radius + 1
+  const values = new Array<number>(side * side)
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       let k = 0
-      for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dy = -radius; dy <= radius; dy += 1) {
         const ny = Math.min(height - 1, Math.max(0, y + dy)) * width
-        for (let dx = -1; dx <= 1; dx += 1) {
+        for (let dx = -radius; dx <= radius; dx += 1) {
           const nx = Math.min(width - 1, Math.max(0, x + dx))
           values[k++] = src[ny + nx]!
         }
@@ -196,6 +211,16 @@ function generic3x3(block: ImageBlock, reduce: (values: number[]) => number): Im
       dst[y * width + x] = clampValue(block.dtype, reduce(values))
     }
   }
+  return out
+}
+
+/** `base + amount × (delta − base)`：锐化/Unsharp Mask 都是"往某个方向推多少"。 */
+function blendToward(base: ImageBlock, delta: ImageBlock, amount: number): ImageBlock {
+  const out = newBlockLike(base)
+  const a = numbers(base.data)
+  const b = numbers(delta.data)
+  const dst = numbers(out.data)
+  for (let i = 0; i < dst.length; i += 1) dst[i] = clampValue(base.dtype, a[i]! + amount * (b[i]! - a[i]!))
   return out
 }
 
@@ -210,31 +235,54 @@ function median(values: number[]): number {
   return values[(values.length - 1) >> 1]!
 }
 
-export function mean3x3(block: ImageBlock): ImageBlock {
-  if (block.dtype === 'uint8') return fromGray(libMean3x3(toGray(block)), block.region, block.axes)
-  return generic3x3(block, mean)
+export function mean3x3(block: ImageBlock, params?: Record<string, number | string>): ImageBlock {
+  const radius = windowRadius(params)
+  if (radius === 1 && block.dtype === 'uint8') return fromGray(libMean3x3(toGray(block)), block.region, block.axes)
+  return genericRank(block, radius, mean)
 }
 
-export function median3x3(block: ImageBlock): ImageBlock {
-  if (block.dtype === 'uint8') return fromGray(libMedian3x3(toGray(block)), block.region, block.axes)
-  return generic3x3(block, median)
+export function median3x3(block: ImageBlock, params?: Record<string, number | string>): ImageBlock {
+  const radius = windowRadius(params)
+  if (radius === 1 && block.dtype === 'uint8') return fromGray(libMedian3x3(toGray(block)), block.region, block.axes)
+  return genericRank(block, radius, median)
 }
 
-export function minimum3x3(block: ImageBlock): ImageBlock {
-  if (block.dtype === 'uint8') return fromGray(libMinimum3x3(toGray(block)), block.region, block.axes)
-  return generic3x3(block, (values) => Math.min(...values))
+export function minimum3x3(block: ImageBlock, params?: Record<string, number | string>): ImageBlock {
+  const radius = windowRadius(params)
+  if (radius === 1 && block.dtype === 'uint8') return fromGray(libMinimum3x3(toGray(block)), block.region, block.axes)
+  return genericRank(block, radius, (values) => Math.min(...values))
 }
 
-export function maximum3x3(block: ImageBlock): ImageBlock {
-  if (block.dtype === 'uint8') return fromGray(libMaximum3x3(toGray(block)), block.region, block.axes)
-  return generic3x3(block, (values) => Math.max(...values))
+export function maximum3x3(block: ImageBlock, params?: Record<string, number | string>): ImageBlock {
+  const radius = windowRadius(params)
+  if (radius === 1 && block.dtype === 'uint8') return fromGray(libMaximum3x3(toGray(block)), block.region, block.axes)
+  return genericRank(block, radius, (values) => Math.max(...values))
 }
 
 const SHARPEN_KERNEL = [-1, -1, -1, -1, 12, -1, -1, -1, -1] as const
 
-export function sharpen3x3(block: ImageBlock): ImageBlock {
-  if (block.dtype === 'uint8') return fromGray(libSharpen3x3(toGray(block)), block.region, block.axes)
-  return convolve3x3(block, SHARPEN_KERNEL)
+/**
+ * 锐化：3×3 拉普拉斯核（已按核和归一化），`amount` 控制"锐化增量"的强度。
+ * `amount = 1` 与 ImageJ 的 Sharpen 完全一致，调大变强、调到 0 则原样返回。
+ */
+export function sharpen3x3(block: ImageBlock, params?: Record<string, number | string>): ImageBlock {
+  const amount = strength(params?.amount, 1)
+  const sharpened = block.dtype === 'uint8'
+    ? fromGray(libSharpen3x3(toGray(block)), block.region, block.axes)
+    : convolve3x3(block, SHARPEN_KERNEL)
+  if (amount === 1) return sharpened
+  return blendToward(block, sharpened, amount)
+}
+
+/**
+ * Unsharp Mask：`out = src + amount × (src − gaussian(src, sigma))`。
+ * 与 ImageJ 的 `UnsharpMask` 同构（它用 radius 与 mask weight，这里对应 sigma 与 amount）。
+ */
+export function unsharpMask(block: ImageBlock, params?: Record<string, number | string>): ImageBlock {
+  const sigma = Math.max(0.1, Number(params?.sigma ?? 2) || 2)
+  const amount = strength(params?.amount, 0.6)
+  // 往高斯结果的反方向推 amount，即加回 amount 倍的细节。
+  return blendToward(block, gaussian(block, sigma), -amount)
 }
 
 export function convolve3x3(block: ImageBlock, kernel: readonly number[]): ImageBlock {
@@ -460,3 +508,4 @@ function binarize(block: ImageBlock): GrayImage {
   for (let i = 0; i < src.length; i += 1) data[i] = Number.isFinite(src[i]) && src[i]! !== 0 ? 255 : 0
   return { width, height, data }
 }
+

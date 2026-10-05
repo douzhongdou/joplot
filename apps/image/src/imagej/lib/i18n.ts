@@ -165,6 +165,10 @@ export interface ImagejCopy {
     groupSize: string
     groupHint: string
     run: string
+    /** 滤镜参数面板：勾选后把这一步临时加进 recipe 作为实时预览。 */
+    preview: string
+    /** 滤镜参数名（radius / sigma / amount）。 */
+    filterParams: Record<string, string>
     needsStack: string
     slice: string
     voxels: string
@@ -304,7 +308,7 @@ const zhCN: ImagejCopy = {
     categories: { format: '格式', adjust: '显示', threshold: '阈值', filter: '滤波', morphology: '形态学', geometry: '几何', analysis: '分析' },
     ops: {
       grayscale: '转灰度', debayer: '去马赛克（Debayer）', invert: '反相', levels: '亮度/对比度', threshold: '阈值', otsu: 'Otsu 自动阈值',
-      mean3x3: '3×3 均值', median3x3: '3×3 中值', sharpen3x3: '锐化', sobel: 'Sobel 边缘', minimum3x3: '3×3 最小', maximum3x3: '3×3 最大',
+      mean3x3: '均值', median3x3: '中值', sharpen3x3: '锐化', sobel: 'Sobel 边缘', minimum3x3: '最小值', maximum3x3: '最大值',
       gaussian: '高斯模糊', erode: '腐蚀', dilate: '膨胀', open: '开运算', close: '闭运算', fillHoles: '填孔',
       crop: '裁剪', flipH: '水平翻转', flipV: '垂直翻转', rotateCW: '顺时针 90°', rotateCCW: '逆时针 90°',
       measure: '测量与直方图', particles: '粒子分析',
@@ -419,7 +423,9 @@ const zhCN: ImagejCopy = {
     stopSlice: '结束切片',
     groupSize: '组大小',
     groupHint: '组大小需整除页数',
-    run: '执行',
+run: '执行',
+    preview: '预览',
+    filterParams: { radius: '半径', sigma: 'Sigma', amount: '强度' },
     needsStack: '该命令需要多页 Stack',
     slice: '切片',
     voxels: '体素数',
@@ -559,7 +565,7 @@ const en: ImagejCopy = {
     categories: { format: 'Format', adjust: 'Display', threshold: 'Threshold', filter: 'Filter', morphology: 'Morphology', geometry: 'Geometry', analysis: 'Analysis' },
     ops: {
       grayscale: 'Convert to grayscale', debayer: 'Debayer', invert: 'Invert', levels: 'Brightness/contrast', threshold: 'Threshold', otsu: 'Auto Otsu threshold',
-      mean3x3: '3×3 mean', median3x3: '3×3 median', sharpen3x3: 'Sharpen', sobel: 'Sobel edges', minimum3x3: '3×3 minimum', maximum3x3: '3×3 maximum',
+      mean3x3: 'Mean', median3x3: 'Median', sharpen3x3: 'Sharpen', sobel: 'Sobel edges', minimum3x3: 'Minimum', maximum3x3: 'Maximum',
       gaussian: 'Gaussian blur', erode: 'Erode', dilate: 'Dilate', open: 'Open', close: 'Close', fillHoles: 'Fill holes',
       crop: 'Crop', flipH: 'Flip horizontal', flipV: 'Flip vertical', rotateCW: 'Rotate 90° CW', rotateCCW: 'Rotate 90° CCW',
       measure: 'Measurements & histogram', particles: 'Particle analysis',
@@ -674,7 +680,9 @@ const en: ImagejCopy = {
     stopSlice: 'Stop slice',
     groupSize: 'Group size',
     groupHint: 'Group size must divide the stack size',
-    run: 'Run',
+run: 'Run',
+    preview: 'Preview',
+    filterParams: { radius: 'Radius', sigma: 'Sigma', amount: 'Amount' },
     needsStack: 'This command requires a multi-slice stack',
     slice: 'Slice',
     voxels: 'Voxels',
@@ -814,7 +822,7 @@ const jaJP: ImagejCopy = {
     categories: { format: '形式', adjust: '表示', threshold: 'しきい値', filter: 'フィルタ', morphology: '形態学', geometry: '幾何', analysis: '解析' },
     ops: {
       grayscale: 'グレースケール変換', debayer: 'デベイヤ', invert: '反転', levels: '明るさ/コントラスト', threshold: 'しきい値', otsu: 'Otsu 自動しきい値',
-      mean3x3: '3×3 平均', median3x3: '3×3 中央値', sharpen3x3: 'シャープ', sobel: 'Sobel エッジ', minimum3x3: '3×3 最小', maximum3x3: '3×3 最大',
+      mean3x3: '平均', median3x3: '中央値', sharpen3x3: 'シャープ', sobel: 'Sobel エッジ', minimum3x3: '最小值', maximum3x3: '最大值',
       gaussian: 'ガウスぼかし', erode: '収縮', dilate: '膨張', open: '開', close: '閉', fillHoles: '穴埋め',
       crop: '切り抜き', flipH: '水平反転', flipV: '垂直反転', rotateCW: '時計回り 90°', rotateCCW: '反時計回り 90°',
       measure: '測定とヒストグラム', particles: '粒子解析',
@@ -929,7 +937,9 @@ const jaJP: ImagejCopy = {
     stopSlice: '終了スライス',
     groupSize: 'グループサイズ',
     groupHint: 'グループサイズはページ数を割り切れる必要があります',
-    run: '実行',
+run: '実行',
+    preview: 'プレビュー',
+    filterParams: { radius: '半径', sigma: 'Sigma', amount: '強度' },
     needsStack: '複数ページのスタックが必要です',
     slice: 'スライス',
     voxels: 'ボクセル数',
@@ -1038,3 +1048,5 @@ const COPIES: Record<ImagejLanguage, ImagejCopy> = {
 export function createImagejCopy(language: ImagejLanguage): ImagejCopy {
   return COPIES[language] ?? COPIES.en
 }
+
+

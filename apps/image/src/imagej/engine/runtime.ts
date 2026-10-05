@@ -298,14 +298,16 @@ export class ImageRuntime {
     return this.history?.current() ?? this.state.recipe
   }
 
-  addStep(op: string, params?: Record<string, number | string>, scope?: StepScope): void {
-    if (!this.history) return
+  /** 追加一步；返回新步骤的 id（调用方据此把这一步当作可更新/可撤销的"预览步骤"）。 */
+  addStep(op: string, params?: Record<string, number | string>, scope?: StepScope): string | undefined {
+    if (!this.history) return undefined
     const capability = getOperator(op)
-    if (!capability) return
+    if (!capability) return undefined
     const step = makeStep(op, { ...defaultOperatorParams(capability), ...params }, scope)
     this.history.commit(appendStep(this.history.current(), step))
     this.emit({ recipe: this.history.current(), throughStepId: step.id })
     void this.run()
+    return step.id
   }
 
   updateParams(stepId: string, params: Record<string, number | string>): void {

@@ -3,16 +3,21 @@
 import type { ReactNode } from 'react'
 import { Sparkles } from 'lucide-react'
 import { Button } from '@joplot/ui/button'
+import { Card, CardContent } from '@joplot/ui/card'
 import { Input } from '@joplot/ui/input'
 import { Checkbox } from '@joplot/ui/checkbox'
 import { Label } from '@joplot/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@joplot/ui/select'
+import { Slider } from '@joplot/ui/slider'
 import type { ImagejCopy } from '../lib/i18n'
+
+/** 面板里数值 / 文本输入的统一紧凑尺寸（其余样式全部交给 @joplot/ui/input 默认实现）。 */
+const fieldClass = 'h-8 px-2 text-xs md:text-xs'
 
 /**
  * 命令目录里每个命令项下方内联展开的操作面板。
  *
- * 外壳只负责圆角背景与内边距，**不渲染关闭按钮**：面板本身就是该命令项的下拉内容，
+ * 外壳用 shadcn `Card`（圆角浅底、紧凑内边距），**不渲染关闭按钮**：面板本身就是该命令项的下拉内容，
  * 再点一次命令项即收起（`ImageJSidebar` 的 `onToggleCommand`），
  * 之前右上角那个 ✕ 既多余，又白占掉面板顶部一行高度。
  *
@@ -25,9 +30,62 @@ function CommandPanelShell({ children }: {
   children: ReactNode
 }) {
   return (
-    <div className="mt-1 rounded-[var(--radius-field)] border border-base-300 bg-base-200/40 p-2">
-      {children}
-    </div>
+    <Card className="mt-1 gap-0 rounded-[var(--radius-field)] border-base-300 bg-base-200/40 py-0 shadow-none">
+      <CardContent className="p-2">{children}</CardContent>
+    </Card>
+  )
+}
+
+/**
+ * 滤镜参数面板：均值 / 中值 / 高斯 / 最小 / 最大 / 锐化 / Unsharp Mask 共用。
+ *
+ * 参数滑杆与「预览」勾选都在这里。勾上预览就把这一步**临时**加进 recipe，调参时原地
+ * 更新参数、取消勾选或关闭面板时移除——与 ImageJ 滤镜对话框的 Preview 一致，
+ * 好处是预览走的是完整渲染管线（分块、窗口/水平、ROI 都一致），不是另做一套近似。
+ */
+export function FilterCommandPanel({ copy, fields, values, preview, disabled, onValue, onPreview, onApply, onClose }: {
+  copy: ImagejCopy
+  fields: readonly { key: string; fallback: number; min: number; max: number; step: number }[]
+  values: Record<string, number>
+  preview: boolean
+  disabled: boolean
+  onValue(key: string, value: number): void
+  onPreview(value: boolean): void
+  onApply(): void
+  onClose(): void
+}) {
+  const ops = copy.stackOps
+  return (
+    <CommandPanelShell close={onClose} closeLabel={copy.close} disabled={disabled}>
+      <div className="grid gap-2">
+        {fields.map((field) => {
+          const value = values[field.key] ?? field.fallback
+          const id = `imagej-filter-${field.key}`
+          return (
+            <div key={field.key} className="grid gap-1">
+              <Label htmlFor={id} className="justify-between text-xs">
+                <span>{ops.filterParams[field.key] ?? field.key}</span>
+                <span className="font-mono tabular-nums text-base-content/60">{value}</span>
+              </Label>
+              <Slider
+                id={id}
+                min={field.min}
+                max={field.max}
+                step={field.step}
+                value={[value]}
+                disabled={disabled}
+                onValueChange={(next) => onValue(field.key, next[0] ?? value)}
+              />
+            </div>
+          )
+        })}
+        <Label className="flex items-center gap-2 text-xs">
+          <Checkbox checked={preview} disabled={disabled} onCheckedChange={(next) => onPreview(next === true)} />
+          {ops.preview}
+        </Label>
+        <Button type="button" size="sm" className="h-8" disabled={disabled} onClick={onApply}>{ops.run}</Button>
+      </div>
+    </CommandPanelShell>
   )
 }
 
@@ -52,16 +110,14 @@ export function LevelsCommandPanel({ copy, brightness, contrast, active, disable
             <span>{copy.adjust.brightness}</span>
             <span className="font-mono tabular-nums text-base-content/60">{brightness}</span>
           </Label>
-          <input
+          <Slider
             id="imagej-brightness"
-            type="range"
             min={-127}
             max={127}
             step={1}
-            value={brightness}
+            value={[brightness]}
             disabled={disabled}
-            onChange={(event) => onBrightness(Number(event.target.value))}
-            className="w-full accent-primary"
+            onValueChange={(values) => onBrightness(values[0] ?? brightness)}
           />
         </div>
         <div className="grid gap-1">
@@ -69,16 +125,14 @@ export function LevelsCommandPanel({ copy, brightness, contrast, active, disable
             <span>{copy.adjust.contrast}</span>
             <span className="font-mono tabular-nums text-base-content/60">{contrast}</span>
           </Label>
-          <input
+          <Slider
             id="imagej-contrast"
-            type="range"
             min={1}
             max={100}
             step={1}
-            value={contrast}
+            value={[contrast]}
             disabled={disabled}
-            onChange={(event) => onContrast(Number(event.target.value))}
-            className="w-full accent-primary"
+            onValueChange={(values) => onContrast(values[0] ?? contrast)}
           />
         </div>
         <Button type="button" size="sm" className="h-8" disabled={disabled || !active} onClick={onApply}>
@@ -109,17 +163,16 @@ export function ThresholdCommandPanel({ copy, level, minimum, maximum, step, dis
           <Label htmlFor="imagej-threshold-level" className="text-xs">{copy.adjust.threshold}</Label>
           <span className="font-mono text-xs tabular-nums text-base-content/70">{level}</span>
         </div>
-        <input
+        <Slider
           id="imagej-threshold-level"
-          type="range"
           min={minimum}
           max={maximum}
-          step={step}
-          value={level}
+          /* radix 的 step 必须是数字：float32 图把原生 input 的 "any" 折算成值域的千分之一。 */
+          step={step === 'any' ? (maximum - minimum) / 1000 || 1 : step}
+          value={[level]}
           disabled={disabled}
           aria-label={copy.adjust.threshold}
-          onChange={(event) => onLevel(Number(event.target.value))}
-          className="w-full accent-primary"
+          onValueChange={(values) => onLevel(values[0] ?? level)}
         />
         <div className="grid grid-cols-2 gap-2">
           <Button type="button" size="sm" className="h-8" disabled={disabled} onClick={onApply}>
@@ -152,16 +205,14 @@ export function GaussianCommandPanel({ copy, sigma, disabled, onSigma, onApply, 
             <span>{copy.filters.sigma}</span>
             <span className="font-mono tabular-nums text-base-content/60">{sigma.toFixed(1)}</span>
           </Label>
-          <input
+          <Slider
             id="imagej-gaussian-sigma"
-            type="range"
             min={0.5}
             max={5}
             step={0.1}
-            value={sigma}
+            value={[sigma]}
             disabled={disabled}
-            onChange={(event) => onSigma(Number(event.target.value))}
-            className="w-full accent-primary"
+            onValueChange={(values) => onSigma(values[0] ?? sigma)}
           />
         </div>
         <Button type="button" size="sm" className="h-8" disabled={disabled} onClick={onApply}>
@@ -248,7 +299,6 @@ export function ZProjectCommandPanel({ copy, grouped, method, start, stop, group
   onClose(): void
 }) {
   const ops = copy.stackOps
-  const fieldClass = 'h-8 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus:border-primary/60 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
   const methods = ['average', 'max', 'min', 'sum', 'sd', 'median'] as const
   const maxSlice = Math.max(1, sliceCount)
   return (
@@ -267,12 +317,7 @@ export function ZProjectCommandPanel({ copy, grouped, method, start, stop, group
         </div>
         {!grouped && timeCount > 1 ? (
           <label className="flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={allTimeFrames}
-              disabled={disabled}
-              onChange={(event) => onAllTimeFrames(event.target.checked)}
-            />
+            <Checkbox checked={allTimeFrames} disabled={disabled} onCheckedChange={(value) => onAllTimeFrames(value === true)} />
             {ops.allTimeFrames}
           </label>
         ) : null}
@@ -366,7 +411,6 @@ export function MontageCommandPanel({ copy, columns, rows, scale, border, start,
   onClose(): void
 }) {
   const ops = copy.stackOps
-  const fieldClass = 'h-8 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus:border-primary/60 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
   const maxSlice = Math.max(1, sliceCount)
   return (
     <CommandPanelShell close={onClose} closeLabel={copy.close} disabled={disabled}>
@@ -453,7 +497,6 @@ export function MontageToStackCommandPanel({ copy, columns, rows, border, hint, 
   onClose(): void
 }) {
   const ops = copy.stackOps
-  const fieldClass = 'h-8 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus:border-primary/60 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
   return (
     <CommandPanelShell close={onClose} closeLabel={copy.close} disabled={disabled}>
       <div className="grid gap-2">
@@ -506,7 +549,6 @@ export function ResliceCommandPanel({ copy, spacing, startAt, flip, rotate, hasR
   onClose(): void
 }) {
   const ops = copy.stackOps
-  const fieldClass = 'h-8 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus:border-primary/60 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
   const starts = [
     { value: 'top', label: ops.startTop },
     { value: 'left', label: ops.startLeft },
@@ -574,7 +616,6 @@ export function OrthogonalCommandPanel({ copy, x, y, width, height, disabled, on
   onClose(): void
 }) {
   const ops = copy.stackOps
-  const fieldClass = 'h-8 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus:border-primary/60 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
   return (
     <CommandPanelShell close={onClose} closeLabel={copy.close} disabled={disabled}>
       <div className="grid gap-2">
@@ -627,7 +668,6 @@ export function ReduceCommandPanel({ copy, factor, sliceCount, disabled, onFacto
   onClose(): void
 }) {
   const ops = copy.stackOps
-  const fieldClass = 'h-8 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus:border-primary/60 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
   const kept = Math.max(1, Math.ceil(sliceCount / Math.max(1, factor)))
   return (
     <CommandPanelShell close={onClose} closeLabel={copy.close} disabled={disabled}>
@@ -669,7 +709,6 @@ export function SubstackCommandPanel({ copy, value, sliceCount, disabled, onChan
   onClose(): void
 }) {
   const ops = copy.stackOps
-  const fieldClass = 'h-8 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus:border-primary/60 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
   return (
     <CommandPanelShell close={onClose} closeLabel={copy.close} disabled={disabled}>
       <div className="grid gap-2">
@@ -716,7 +755,6 @@ export function CombineCommandPanel({ copy, op, documents, source, x, y, vertica
   onClose(): void
 }) {
   const ops = copy.stackOps
-  const fieldClass = 'h-8 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary'
   const missing = documents.length === 0
   return (
     <CommandPanelShell close={onClose} closeLabel={copy.close} disabled={disabled}>
@@ -782,7 +820,6 @@ export function AnimationCommandPanel({ copy, fps, first, last, loop, running, s
   onClose(): void
 }) {
   const ops = copy.stackOps
-  const fieldClass = 'h-8 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary'
   const maxSlice = Math.max(1, sliceCount)
   return (
     <CommandPanelShell close={onClose} closeLabel={copy.close} disabled={disabled}>
@@ -847,7 +884,6 @@ export function SetLabelCommandPanel({ copy, value, sliceNumber, disabled, onCha
   onClose(): void
 }) {
   const ops = copy.stackOps
-  const fieldClass = 'h-8 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary'
   return (
     <CommandPanelShell close={onClose} closeLabel={copy.close} disabled={disabled}>
       <div className="grid gap-2">
@@ -902,7 +938,6 @@ export function LabelCommandPanel({ copy, format, start, interval, text, x, y, f
   onClose(): void
 }) {
   const ops = copy.stackOps
-  const fieldClass = 'h-8 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary'
   const formats = [
     { value: 'number', label: ops.labelFormats.number },
     { value: 'zero-padded', label: ops.labelFormats.zeroPadded },
@@ -983,7 +1018,6 @@ export function Project3dCommandPanel({ copy, method, axis, initialAngle, totalR
   onClose(): void
 }) {
   const ops = copy.stackOps
-  const fieldClass = 'h-8 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary'
   const methods = [
     { value: 'nearest', label: ops.methods3d.nearest },
     { value: 'brightest', label: ops.methods3d.brightest },
@@ -1074,7 +1108,6 @@ export function RemontageCommandPanel({ copy, sourceColumns, sourceRows, columns
   onClose(): void
 }) {
   const ops = copy.stackOps
-  const fieldClass = 'h-8 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary'
   const numberField = (id: string, label: string, value: number, onChange: (value: number) => void, min = 0) => (
     <div className="grid gap-1">
       <Label htmlFor={id} className="text-xs">{label}</Label>

@@ -23,8 +23,9 @@ Common commands (from the repo root): `pnpm install`, `pnpm -r typecheck`, `pnpm
 # UI conventions
 
 This project uses shadcn/ui (new-york style, neutral base color). Reusable primitives live in
-`packages/ui/src` and are imported as `@joplot/ui/<name>` (button, select, switch, popover,
-dropdown-menu, sheet, label, dialog, tooltip) — prefer them over hand-rolled controls.
+`packages/ui/src` and are imported as `@joplot/ui/<name>` (accordion, button, card, checkbox,
+context-menu, dialog, dropdown-menu, input, label, popover, select, separator, sheet, slider,
+switch, table, tabs, toggle-group, tooltip) — prefer them over hand-rolled controls.
 `cn()` is exported from `@joplot/ui/utils`. Design tokens are in `packages/ui/src/theme.css`:
 shadcn standard tokens plus legacy daisy-style aliases (`bg-base-100`, `text-base-content`,
 `--radius-field/box`, etc.). Each app imports the theme from its `globals.css` and adds
