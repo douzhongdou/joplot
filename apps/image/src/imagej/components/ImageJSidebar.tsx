@@ -56,6 +56,8 @@ const GROUPS: MenuGroup[] = [
   { label: 'Find Edges', items: [{ label: 'Sobel', op: 'sobel' }] },
 ]
 
+const COLLAPSED_GROUPS_KEY = 'imagej.sidebar.collapsedGroups'
+
 const LABELS: Record<Language, {
   groups: Record<string, string>
   items: Record<string, string>
@@ -99,28 +101,64 @@ export function ImageJSidebar({ language, registry, onRun, onCommand, disabled =
   onToggleCommand?: (command: string) => void
 }) {
   const [query, setQuery] = useState('')
+  /** 被折叠起来的分组（记住用户的选择）。 */
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
   const panelRef = useRef<HTMLDivElement | null>(null)
   const labels = LABELS[language] ?? LABELS.en
   const operators = new Map(registry.operators.map((operator) => [operator.kind, operator]))
   const localize = (label: string) => labels.items[label] ?? label
+  const searching = query.trim().length > 0
   const groups = GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) => `${item.label} ${localize(item.label)}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())),
   })).filter((group) => group.items.length)
   // 展开的面板紧跟在命令项下方，可能落在可视区外——把它（连同命令项）滚进视野。
   useEffect(() => { panelRef.current?.scrollIntoView({ block: 'nearest' }) }, [expandedCommand])
+  // 恢复用户折叠过哪些分组（隐私模式下读不到就保持默认全展开）。
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(COLLAPSED_GROUPS_KEY)
+      if (raw) setCollapsedGroups(JSON.parse(raw) as Record<string, boolean>)
+    } catch { /* 忽略损坏的缓存 */ }
+  }, [])
+  const toggleGroup = (label: string) => setCollapsedGroups((current) => {
+    const next = { ...current, [label]: !current[label] }
+    try { localStorage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify(next)) } catch { /* 写不进去也不影响本次会话 */ }
+    return next
+  })
+  // 从别处（比如工具栏）打开了某个命令的面板时，它所在的分组要自动展开，否则面板看不见。
+  // 这次展开不写回 localStorage —— 它是临时的，不该覆盖用户手动折叠的选择。
+  useEffect(() => {
+    if (!expandedCommand) return
+    const owner = GROUPS.find((entry) => entry.items.some((item) => item.label === expandedCommand))
+    if (!owner) return
+    setCollapsedGroups((current) => (current[owner.label] ? { ...current, [owner.label]: false } : current))
+  }, [expandedCommand])
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 px-2 pb-1.5 pt-2">
         <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={labels.search} aria-label={labels.search}
-          className="h-7 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary" />
+          className="h-7 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus:border-primary/60" />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        {groups.length ? groups.map((group) => (
-          <section key={group.label} className="mb-3">
-            <h3 className="mb-0.5 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/45">{labels.groups[group.label] ?? group.label}</h3>
-            <div className="grid gap-0.5">
+        {groups.length ? groups.map((group) => {
+          // 搜索时一律展开：否则命中的命令会被折叠状态藏起来，搜索就白搜了。
+          const groupOpen = searching || !collapsedGroups[group.label]
+          return (
+            <section key={group.label} className="mb-1.5">
+              <button
+                type="button"
+                aria-expanded={groupOpen}
+                onClick={() => toggleGroup(group.label)}
+                className="flex w-full items-center gap-0.5 rounded-[var(--radius-field)] px-1 py-1 text-left text-[10px] font-semibold uppercase tracking-wide text-base-content/45 transition hover:bg-muted hover:text-base-content/75"
+              >
+                {groupOpen ? <ChevronDown size={11} className="shrink-0" /> : <ChevronRight size={11} className="shrink-0" />}
+                <span>{labels.groups[group.label] ?? group.label}</span>
+                <span className="ml-auto font-mono text-[9px] tabular-nums text-base-content/30">{group.items.length}</span>
+              </button>
+              {groupOpen ? (
+                <div className="grid gap-0.5">
               {group.items.map((item) => {
                 const operator = item.op ? operators.get(item.op) : undefined
                 const action = item.label === 'Next Slice' ? stackActions?.next : item.label === 'Previous Slice' ? stackActions?.previous : undefined
@@ -167,9 +205,11 @@ export function ImageJSidebar({ language, registry, onRun, onCommand, disabled =
                   </div>
                 )
               })}
-            </div>
-          </section>
-        )) : <p className="px-2 py-4 text-center text-xs text-base-content/50">{labels.empty}</p>}
+                </div>
+              ) : null}
+            </section>
+          )
+        }) : <p className="px-2 py-4 text-center text-xs text-base-content/50">{labels.empty}</p>}
       </div>
     </div>
   )
