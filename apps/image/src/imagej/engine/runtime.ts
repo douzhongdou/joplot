@@ -1096,6 +1096,9 @@ export class ImageRuntime {
       },
     }
     if (!this.queue.push(task) && kind === 'warmup') this.noteWarmupPage()
+    // 入队后必须唤醒执行器：pump 会在队列取空时退出，这里不叫醒的话，
+    // 后续入队的预取/预热任务就没人跑了。
+    void this.pump()
   }
 
   /**
@@ -1124,7 +1127,11 @@ export class ImageRuntime {
     this.warmup = { total, done: 0 }
     this.warmupFinished = version
     const throughStepId = this.state.throughStepId
-    for (let target = 0; target < total; target += 1) {
+    // 离当前页越近越先预热：用户随手翻一两页就能命中，而不是等它从头顺序铺过来。
+    const current = this.state.selection[axis] ?? 0
+    const order = Array.from({ length: total }, (_, index) => index)
+      .sort((a, b) => Math.abs(a - current) - Math.abs(b - current))
+    for (const target of order) {
       this.enqueuePage({ dataset, recipe, axis, target, version, throughStepId, kind: 'warmup', priority: TASK_PRIORITY.background })
     }
     this.emitWarmup()
@@ -1151,9 +1158,11 @@ export class ImageRuntime {
     this.pumping = true
     try {
       for (;;) {
-        // 显示优先：只要还有显示请求待跑或在途就让路，预取只在显示彻底空闲的窗口里跑。
-        // 否则慢解码栈上预取会与当前页抢引擎，把「跟不上」的场景拖得更久。
-        if (this.runQueued || this.runPromise || this.disposed) break
+        if (this.disposed) break
+        // 显示优先由队列保证（`queue.next()` 取优先级最高的任务，翻页是 critical、
+        // 预热是 background），所以这里**不能**因为"有显示请求"就 break：
+        // pump 只在 scheduleWarmup() 时启动一次，一旦退出，用户在连续翻页期间
+        // 整卷预热就再也不会推进，于是翻到哪页都还是 cache miss。
         const task = this.queue.next()
         if (!task) break
         try {
