@@ -3,6 +3,8 @@
 import type { ReactNode } from 'react'
 import { Sparkles } from 'lucide-react'
 import { Button } from '@joplot/ui/button'
+import { Input } from '@joplot/ui/input'
+import { Checkbox } from '@joplot/ui/checkbox'
 import { Label } from '@joplot/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@joplot/ui/select'
 import type { ImagejCopy } from '../lib/i18n'
@@ -280,7 +282,7 @@ export function ZProjectCommandPanel({ copy, grouped, method, start, stop, group
               <span>{ops.groupSize}</span>
               <span className="font-mono tabular-nums text-base-content/60">{groupSize}</span>
             </Label>
-            <input
+            <Input
               id="imagej-projection-group"
               type="number"
               min={1}
@@ -298,7 +300,7 @@ export function ZProjectCommandPanel({ copy, grouped, method, start, stop, group
           <div className="grid grid-cols-2 gap-2">
             <div className="grid gap-1">
               <Label htmlFor="imagej-projection-start" className="text-xs">{ops.startSlice}</Label>
-              <input
+              <Input
                 id="imagej-projection-start"
                 type="number"
                 min={1}
@@ -312,7 +314,7 @@ export function ZProjectCommandPanel({ copy, grouped, method, start, stop, group
             </div>
             <div className="grid gap-1">
               <Label htmlFor="imagej-projection-stop" className="text-xs">{ops.stopSlice}</Label>
-              <input
+              <Input
                 id="imagej-projection-stop"
                 type="number"
                 min={1}
@@ -372,13 +374,13 @@ export function MontageCommandPanel({ copy, columns, rows, scale, border, start,
         <div className="grid grid-cols-2 gap-2">
           <div className="grid gap-1">
             <Label htmlFor="imagej-montage-columns" className="text-xs">{ops.columns}</Label>
-            <input id="imagej-montage-columns" type="number" min={0} step={1} value={columns} disabled={disabled}
+            <Input id="imagej-montage-columns" type="number" min={0} step={1} value={columns} disabled={disabled}
               placeholder={ops.auto}
               onChange={(event) => onColumns(Math.max(0, Math.round(Number(event.target.value) || 0)))} className={fieldClass} />
           </div>
           <div className="grid gap-1">
             <Label htmlFor="imagej-montage-rows" className="text-xs">{ops.rows}</Label>
-            <input id="imagej-montage-rows" type="number" min={0} step={1} value={rows} disabled={disabled}
+            <Input id="imagej-montage-rows" type="number" min={0} step={1} value={rows} disabled={disabled}
               placeholder={ops.auto}
               onChange={(event) => onRows(Math.max(0, Math.round(Number(event.target.value) || 0)))} className={fieldClass} />
           </div>
@@ -386,41 +388,41 @@ export function MontageCommandPanel({ copy, columns, rows, scale, border, start,
         <div className="grid grid-cols-2 gap-2">
           <div className="grid gap-1">
             <Label htmlFor="imagej-montage-scale" className="text-xs">{ops.scale}</Label>
-            <input id="imagej-montage-scale" type="number" min={0} step={0.25} value={scale} disabled={disabled}
+            <Input id="imagej-montage-scale" type="number" min={0} step={0.25} value={scale} disabled={disabled}
               placeholder={ops.auto}
               onChange={(event) => onScale(Math.max(0, Number(event.target.value) || 0))} className={fieldClass} />
           </div>
           <div className="grid gap-1">
             <Label htmlFor="imagej-montage-border" className="text-xs">{ops.border}</Label>
-            <input id="imagej-montage-border" type="number" min={0} step={1} value={border} disabled={disabled}
+            <Input id="imagej-montage-border" type="number" min={0} step={1} value={border} disabled={disabled}
               onChange={(event) => onBorder(Math.max(0, Math.round(Number(event.target.value) || 0)))} className={fieldClass} />
           </div>
         </div>
         <div className="grid grid-cols-3 gap-2">
           <div className="grid gap-1">
             <Label htmlFor="imagej-montage-start" className="text-xs">{ops.startSlice}</Label>
-            <input id="imagej-montage-start" type="number" min={1} max={maxSlice} step={1} value={start} disabled={disabled}
+            <Input id="imagej-montage-start" type="number" min={1} max={maxSlice} step={1} value={start} disabled={disabled}
               onChange={(event) => onStart(Math.max(1, Math.round(Number(event.target.value) || 1)))} className={fieldClass} />
           </div>
           <div className="grid gap-1">
             <Label htmlFor="imagej-montage-stop" className="text-xs">{ops.stopSlice}</Label>
-            <input id="imagej-montage-stop" type="number" min={1} max={maxSlice} step={1} value={stop} disabled={disabled}
+            <Input id="imagej-montage-stop" type="number" min={1} max={maxSlice} step={1} value={stop} disabled={disabled}
               onChange={(event) => onStop(Math.max(1, Math.round(Number(event.target.value) || 1)))} className={fieldClass} />
           </div>
           <div className="grid gap-1">
             <Label htmlFor="imagej-montage-increment" className="text-xs">{ops.increment}</Label>
-            <input id="imagej-montage-increment" type="number" min={1} max={maxSlice} step={1} value={increment} disabled={disabled}
+            <Input id="imagej-montage-increment" type="number" min={1} max={maxSlice} step={1} value={increment} disabled={disabled}
               onChange={(event) => onIncrement(Math.max(1, Math.round(Number(event.target.value) || 1)))} className={fieldClass} />
           </div>
         </div>
         <label className="flex items-center gap-2 text-xs">
-          <input type="checkbox" checked={labelSlices} disabled={disabled} onChange={(event) => onLabelSlices(event.target.checked)} />
+          <Checkbox checked={labelSlices} disabled={disabled} onCheckedChange={(value) => onLabelSlices(value === true)} />
           {ops.labelSlices}
         </label>
         {labelSlices ? (
           <div className="grid gap-1">
             <Label htmlFor="imagej-montage-font" className="text-xs">{ops.labelFontSize}</Label>
-            <input id="imagej-montage-font" type="number" min={5} step={1} value={fontSize} disabled={disabled}
+            <Input id="imagej-montage-font" type="number" min={5} step={1} value={fontSize} disabled={disabled}
               onChange={(event) => onFontSize(Math.max(5, Math.round(Number(event.target.value) || 12)))} className={fieldClass} />
           </div>
         ) : null}
@@ -458,20 +460,20 @@ export function MontageToStackCommandPanel({ copy, columns, rows, border, hint, 
         <div className="grid grid-cols-2 gap-2">
           <div className="grid gap-1">
             <Label htmlFor="imagej-mts-columns" className="text-xs">{ops.columns}</Label>
-            <input id="imagej-mts-columns" type="number" min={0} step={1} value={columns} disabled={disabled}
+            <Input id="imagej-mts-columns" type="number" min={0} step={1} value={columns} disabled={disabled}
               placeholder={ops.auto}
               onChange={(event) => onColumns(Math.max(0, Math.round(Number(event.target.value) || 0)))} className={fieldClass} />
           </div>
           <div className="grid gap-1">
             <Label htmlFor="imagej-mts-rows" className="text-xs">{ops.rows}</Label>
-            <input id="imagej-mts-rows" type="number" min={0} step={1} value={rows} disabled={disabled}
+            <Input id="imagej-mts-rows" type="number" min={0} step={1} value={rows} disabled={disabled}
               placeholder={ops.auto}
               onChange={(event) => onRows(Math.max(0, Math.round(Number(event.target.value) || 0)))} className={fieldClass} />
           </div>
         </div>
         <div className="grid gap-1">
           <Label htmlFor="imagej-mts-border" className="text-xs">{ops.border}</Label>
-          <input id="imagej-mts-border" type="number" min={0} step={1} value={border} disabled={disabled}
+          <Input id="imagej-mts-border" type="number" min={0} step={1} value={border} disabled={disabled}
             onChange={(event) => onBorder(Math.max(0, Math.round(Number(event.target.value) || 0)))} className={fieldClass} />
         </div>
         {hint ? <p className="text-[10px] text-base-content/55">{hint}</p> : null}
@@ -516,7 +518,7 @@ export function ResliceCommandPanel({ copy, spacing, startAt, flip, rotate, hasR
       <div className="grid gap-2">
         <div className="grid gap-1">
           <Label htmlFor="imagej-reslice-spacing" className="text-xs">{ops.outputSpacing}</Label>
-          <input
+          <Input
             id="imagej-reslice-spacing"
             type="number"
             min={0.1}
@@ -539,11 +541,11 @@ export function ResliceCommandPanel({ copy, spacing, startAt, flip, rotate, hasR
           </Select>
         </div>
         <label className="flex items-center gap-2 text-xs">
-          <input type="checkbox" checked={flip} disabled={disabled} onChange={(event) => onFlip(event.target.checked)} />
+          <Checkbox checked={flip} disabled={disabled} onCheckedChange={(value) => onFlip(value === true)} />
           {ops.flipVertically}
         </label>
         <label className="flex items-center gap-2 text-xs">
-          <input type="checkbox" checked={rotate} disabled={disabled} onChange={(event) => onRotate(event.target.checked)} />
+          <Checkbox checked={rotate} disabled={disabled} onCheckedChange={(value) => onRotate(value === true)} />
           {ops.rotate90}
         </label>
         {hasRoi ? null : <p className="text-[10px] text-base-content/55">{copy.roi.needRoi}</p>}
@@ -579,7 +581,7 @@ export function OrthogonalCommandPanel({ copy, x, y, width, height, disabled, on
         <div className="grid grid-cols-2 gap-2">
           <div className="grid gap-1">
             <Label htmlFor="imagej-orthogonal-x" className="text-xs">{ops.pointX}</Label>
-            <input
+            <Input
               id="imagej-orthogonal-x"
               type="number"
               min={0}
@@ -593,7 +595,7 @@ export function OrthogonalCommandPanel({ copy, x, y, width, height, disabled, on
           </div>
           <div className="grid gap-1">
             <Label htmlFor="imagej-orthogonal-y" className="text-xs">{ops.pointY}</Label>
-            <input
+            <Input
               id="imagej-orthogonal-y"
               type="number"
               min={0}
@@ -635,7 +637,7 @@ export function ReduceCommandPanel({ copy, factor, sliceCount, disabled, onFacto
             <span>{ops.factor}</span>
             <span className="font-mono tabular-nums text-base-content/60">{factor}</span>
           </Label>
-          <input
+          <Input
             id="imagej-reduce-factor"
             type="number"
             min={1}
@@ -673,7 +675,7 @@ export function SubstackCommandPanel({ copy, value, sliceCount, disabled, onChan
       <div className="grid gap-2">
         <div className="grid gap-1">
           <Label htmlFor="imagej-substack-pages" className="text-xs">{ops.pages}</Label>
-          <input
+          <Input
             id="imagej-substack-pages"
             type="text"
             value={value}
@@ -721,33 +723,32 @@ export function CombineCommandPanel({ copy, op, documents, source, x, y, vertica
       <div className="grid gap-2">
         <div className="grid gap-1">
           <Label htmlFor="imagej-combine-source" className="text-xs">{ops.sourceDocument}</Label>
-          <select
-            id="imagej-combine-source"
-            value={source}
-            disabled={disabled || missing}
-            onChange={(event) => onSource(event.target.value)}
-            className={fieldClass}
-          >
-            {documents.map((document) => <option key={document.id} value={document.id}>{document.title}</option>)}
-          </select>
+          <Select value={source} disabled={disabled || missing} onValueChange={onSource}>
+            <SelectTrigger id="imagej-combine-source" size="sm" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {documents.map((document) => <SelectItem key={document.id} value={document.id}>{document.title}</SelectItem>)}
+            </SelectContent>
+          </Select>
           {missing ? <p className="text-[10px] text-base-content/55">{ops.needSecondDocument}</p> : null}
         </div>
         {op === 'insert' ? (
           <div className="grid grid-cols-2 gap-2">
             <div className="grid gap-1">
               <Label htmlFor="imagej-insert-x" className="text-xs">{ops.pasteX}</Label>
-              <input id="imagej-insert-x" type="number" step={1} value={x} disabled={disabled}
+              <Input id="imagej-insert-x" type="number" step={1} value={x} disabled={disabled}
                 onChange={(event) => onX(Math.round(Number(event.target.value) || 0))} className={fieldClass} />
             </div>
             <div className="grid gap-1">
               <Label htmlFor="imagej-insert-y" className="text-xs">{ops.pasteY}</Label>
-              <input id="imagej-insert-y" type="number" step={1} value={y} disabled={disabled}
+              <Input id="imagej-insert-y" type="number" step={1} value={y} disabled={disabled}
                 onChange={(event) => onY(Math.round(Number(event.target.value) || 0))} className={fieldClass} />
             </div>
           </div>
         ) : (
           <label className="flex items-center gap-2 text-xs">
-            <input type="checkbox" checked={vertical} disabled={disabled} onChange={(event) => onVertical(event.target.checked)} />
+            <Checkbox checked={vertical} disabled={disabled} onCheckedChange={(value) => onVertical(value === true)} />
             {ops.vertical}
           </label>
         )}
@@ -791,7 +792,7 @@ export function AnimationCommandPanel({ copy, fps, first, last, loop, running, s
             <span>{ops.fps}</span>
             <span className="font-mono tabular-nums text-base-content/60">{fps}</span>
           </Label>
-          <input
+          <Input
             id="imagej-animation-fps"
             type="number"
             min={0.1}
@@ -806,17 +807,17 @@ export function AnimationCommandPanel({ copy, fps, first, last, loop, running, s
         <div className="grid grid-cols-2 gap-2">
           <div className="grid gap-1">
             <Label htmlFor="imagej-animation-first" className="text-xs">{ops.firstFrame}</Label>
-            <input id="imagej-animation-first" type="number" min={1} max={maxSlice} step={1} value={first} disabled={disabled}
+            <Input id="imagej-animation-first" type="number" min={1} max={maxSlice} step={1} value={first} disabled={disabled}
               onChange={(event) => onFirst(Math.max(1, Math.round(Number(event.target.value) || 1)))} className={fieldClass} />
           </div>
           <div className="grid gap-1">
             <Label htmlFor="imagej-animation-last" className="text-xs">{ops.lastFrame}</Label>
-            <input id="imagej-animation-last" type="number" min={1} max={maxSlice} step={1} value={last} disabled={disabled}
+            <Input id="imagej-animation-last" type="number" min={1} max={maxSlice} step={1} value={last} disabled={disabled}
               onChange={(event) => onLast(Math.max(1, Math.round(Number(event.target.value) || 1)))} className={fieldClass} />
           </div>
         </div>
         <label className="flex items-center gap-2 text-xs">
-          <input type="checkbox" checked={loop} disabled={disabled} onChange={(event) => onLoop(event.target.checked)} />
+          <Checkbox checked={loop} disabled={disabled} onCheckedChange={(value) => onLoop(value === true)} />
           {ops.loopBackAndForth}
         </label>
         <div className="grid grid-cols-2 gap-2">
@@ -855,7 +856,7 @@ export function SetLabelCommandPanel({ copy, value, sliceNumber, disabled, onCha
             <span>{ops.labelValue}</span>
             <span className="font-mono tabular-nums text-base-content/60">#{sliceNumber}</span>
           </Label>
-          <input
+          <Input
             id="imagej-set-label"
             type="text"
             value={value}
@@ -913,7 +914,7 @@ export function LabelCommandPanel({ copy, format, start, interval, text, x, y, f
   const numberField = (id: string, label: string, value: number, onChange: (value: number) => void, step = 1, min?: number) => (
     <div className="grid gap-1">
       <Label htmlFor={id} className="text-xs">{label}</Label>
-      <input id={id} type="number" step={step} min={min} value={value} disabled={disabled}
+      <Input id={id} type="number" step={step} min={min} value={value} disabled={disabled}
         onChange={(event) => onChange(Number(event.target.value) || 0)} className={fieldClass} />
     </div>
   )
@@ -922,9 +923,14 @@ export function LabelCommandPanel({ copy, format, start, interval, text, x, y, f
       <div className="grid gap-2">
         <div className="grid gap-1">
           <Label htmlFor="imagej-label-format" className="text-xs">{ops.labelFormat}</Label>
-          <select id="imagej-label-format" value={format} disabled={disabled} onChange={(event) => onFormat(event.target.value)} className={fieldClass}>
-            {formats.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
-          </select>
+          <Select value={format} disabled={disabled} onValueChange={onFormat}>
+            <SelectTrigger id="imagej-label-format" size="sm" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+            {formats.map((entry) => <SelectItem key={entry.value} value={entry.value}>{entry.label}</SelectItem>)}
+          </SelectContent>
+          </Select>
         </div>
         <div className="grid grid-cols-2 gap-2">
           {numberField('imagej-label-start', ops.labelStart, start, onStart, 1)}
@@ -932,7 +938,7 @@ export function LabelCommandPanel({ copy, format, start, interval, text, x, y, f
         </div>
         <div className="grid gap-1">
           <Label htmlFor="imagej-label-text" className="text-xs">{ops.labelText}</Label>
-          <input id="imagej-label-text" type="text" value={text} disabled={disabled}
+          <Input id="imagej-label-text" type="text" value={text} disabled={disabled}
             onChange={(event) => onText(event.target.value)} className={fieldClass} />
         </div>
         <div className="grid grid-cols-3 gap-2">
@@ -991,7 +997,7 @@ export function Project3dCommandPanel({ copy, method, axis, initialAngle, totalR
   const numberField = (id: string, label: string, value: number, onChange: (value: number) => void, step = 1, min?: number, max?: number) => (
     <div className="grid gap-1">
       <Label htmlFor={id} className="text-xs">{label}</Label>
-      <input id={id} type="number" step={step} min={min} max={max} value={value} disabled={disabled}
+      <Input id={id} type="number" step={step} min={min} max={max} value={value} disabled={disabled}
         onChange={(event) => onChange(Number(event.target.value) || 0)} className={fieldClass} />
     </div>
   )
@@ -1001,15 +1007,25 @@ export function Project3dCommandPanel({ copy, method, axis, initialAngle, totalR
         <div className="grid grid-cols-2 gap-2">
           <div className="grid gap-1">
             <Label htmlFor="imagej-3d-method" className="text-xs">{ops.projection3dMethod}</Label>
-            <select id="imagej-3d-method" value={method} disabled={disabled} onChange={(event) => onMethod(event.target.value)} className={fieldClass}>
-              {methods.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
-            </select>
+            <Select value={method} disabled={disabled} onValueChange={onMethod}>
+              <SelectTrigger id="imagej-3d-method" size="sm" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+              {methods.map((entry) => <SelectItem key={entry.value} value={entry.value}>{entry.label}</SelectItem>)}
+            </SelectContent>
+            </Select>
           </div>
           <div className="grid gap-1">
             <Label htmlFor="imagej-3d-axis" className="text-xs">{ops.projection3dAxis}</Label>
-            <select id="imagej-3d-axis" value={axis} disabled={disabled} onChange={(event) => onAxis(event.target.value)} className={fieldClass}>
-              {axes.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
-            </select>
+            <Select value={axis} disabled={disabled} onValueChange={onAxis}>
+              <SelectTrigger id="imagej-3d-axis" size="sm" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+              {axes.map((entry) => <SelectItem key={entry.value} value={entry.value}>{entry.label}</SelectItem>)}
+            </SelectContent>
+            </Select>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-2">
@@ -1062,7 +1078,7 @@ export function RemontageCommandPanel({ copy, sourceColumns, sourceRows, columns
   const numberField = (id: string, label: string, value: number, onChange: (value: number) => void, min = 0) => (
     <div className="grid gap-1">
       <Label htmlFor={id} className="text-xs">{label}</Label>
-      <input id={id} type="number" min={min} step={1} value={value} disabled={disabled}
+      <Input id={id} type="number" min={min} step={1} value={value} disabled={disabled}
         onChange={(event) => onChange(Math.max(min, Math.round(Number(event.target.value) || min)))} className={fieldClass} />
     </div>
   )
@@ -1083,7 +1099,7 @@ export function RemontageCommandPanel({ copy, sourceColumns, sourceRows, columns
           {numberField('imagej-remontage-font', ops.labelFontSize, fontSize, onFontSize, 5)}
         </div>
         <label className="flex items-center gap-2 text-xs">
-          <input type="checkbox" checked={labelSlices} disabled={disabled} onChange={(event) => onLabelSlices(event.target.checked)} />
+          <Checkbox checked={labelSlices} disabled={disabled} onCheckedChange={(value) => onLabelSlices(value === true)} />
           {ops.labelSlices}
         </label>
         <Button type="button" size="sm" className="h-8" disabled={disabled} onClick={onApply}>{ops.run}</Button>
@@ -1091,5 +1107,9 @@ export function RemontageCommandPanel({ copy, sourceColumns, sourceRows, columns
     </CommandPanelShell>
   )
 }
+
+
+
+
 
 

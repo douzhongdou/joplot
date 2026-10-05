@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import { Button } from '@joplot/ui/button'
+import { Input } from '@joplot/ui/input'
 import type { OperatorRegistry } from '../lib/engineTypes'
 
 type Language = 'zh-CN' | 'en' | 'ja-JP'
@@ -137,30 +139,37 @@ export function ImageJSidebar({ language, registry, onRun, onCommand, disabled =
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 px-2 pb-1.5 pt-2">
-        <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={labels.search} aria-label={labels.search}
-          className="h-7 w-full rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-2 text-xs outline-none focus:border-primary/60" />
+      <div className="shrink-0 px-2.5 pb-2 pt-2.5">
+        <Input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={labels.search}
+          aria-label={labels.search}
+          className="h-7 px-2 text-xs md:text-xs"
+        />
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-4">
         {groups.length ? groups.map((group) => {
           // 搜索时一律展开：否则命中的命令会被折叠状态藏起来，搜索就白搜了。
           const groupOpen = searching || !collapsedGroups[group.label]
           return (
-            <section key={group.label} className="mb-1.5">
-              <button
+            <section key={group.label} className="mb-2.5">
+              <Button
                 type="button"
+                variant="ghost"
                 aria-expanded={groupOpen}
                 onClick={() => toggleGroup(group.label)}
-                /* 分区标题要比命令项更"显眼"才好扫：全宽细线划出分区 + 提亮到 85% + 加粗，
-                   但字号仍小于命令项，避免抢掉内容。 */
-                className="mt-2 flex w-full items-center gap-1 border-b border-base-300/60 px-1.5 pb-1 pt-1.5 text-left text-xs font-semibold uppercase tracking-wider text-base-content/85 transition hover:border-base-300 hover:text-base-content"
+                /* 用一条浅色分区带代替细线：border-b 的 padding 只能加在线上方，线永远会紧贴
+                   下面第一条命令（那正是"挤"的来源）。背景带自带上下内边距，分区清楚又不挤。 */
+                className="mb-1.5 mt-4 h-auto w-full justify-start gap-1 bg-base-200/50 px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-base-content/90 hover:bg-base-200"
               >
                 {groupOpen ? <ChevronDown size={13} className="shrink-0" /> : <ChevronRight size={13} className="shrink-0" />}
                 <span>{labels.groups[group.label] ?? group.label}</span>
-                <span className="ml-auto font-mono text-[10px] tabular-nums text-base-content/40">{group.items.length}</span>
-              </button>
+                <span className="ml-auto font-mono text-[10px] font-normal tabular-nums text-base-content/40">{group.items.length}</span>
+              </Button>
               {groupOpen ? (
-                <div className="grid gap-0.5">
+                <div className="grid gap-1">
               {group.items.map((item) => {
                 const operator = item.op ? operators.get(item.op) : undefined
                 const action = item.label === 'Next Slice' ? stackActions?.next : item.label === 'Previous Slice' ? stackActions?.previous : undefined
@@ -181,7 +190,7 @@ export function ImageJSidebar({ language, registry, onRun, onCommand, disabled =
                 const blocked = disabled || !available || (item.label === 'Next Slice' && !stackActions?.canNext) || (item.label === 'Previous Slice' && !stackActions?.canPrevious)
                 return (
                   <div key={item.label}>
-                    <button type="button" disabled={blocked} title={!available ? labels.unavailable : undefined}
+                    <Button type="button" variant="ghost" disabled={blocked} title={!available ? labels.unavailable : undefined}
                       aria-expanded={hasPanel ? open : undefined}
                       onClick={() => {
                         if (intercept && onToggleCommand) { onToggleCommand(item.label); return }
@@ -189,8 +198,8 @@ export function ImageJSidebar({ language, registry, onRun, onCommand, disabled =
                         else if (item.command && onCommand) onCommand(item.command)
                         else if (item.op && operator) onRun(item.op)
                       }}
-                      className={`flex w-full items-center justify-between rounded-[var(--radius-field)] px-1.5 py-1 text-left text-[13px] transition ${open ? 'bg-muted text-base-content' : 'text-base-content hover:bg-muted'} disabled:cursor-not-allowed disabled:text-base-content/35 disabled:hover:bg-transparent`}>
-                      <span>{localize(item.label)}{item.shortcut ? <span className="ml-1.5 font-mono text-[10px] text-base-content/40">[{item.shortcut}]</span> : null}</span>
+                      className={`h-auto w-full justify-between px-2 py-1.5 text-[13px] font-normal ${open ? 'bg-muted text-base-content' : 'text-base-content hover:bg-muted'}`}>
+                      <span className="truncate text-left">{localize(item.label)}{item.shortcut ? <span className="ml-1.5 font-mono text-[10px] text-base-content/40">[{item.shortcut}]</span> : null}</span>
                       {/* 只有真正有下拉面板的命令才画箭头：点了直接执行的命令画 ▸ 会让人
                           以为还有下一层。 */}
                       {!available
@@ -198,7 +207,7 @@ export function ImageJSidebar({ language, registry, onRun, onCommand, disabled =
                         : hasPanel
                           ? (open ? <ChevronDown size={13} className="text-base-content/55" /> : <ChevronRight size={13} className="text-base-content/35" />)
                           : null}
-                    </button>
+                    </Button>
                     {open ? (
                       /* 面板与命令项等宽（不再用左缩进 + 层级竖线：那样面板比命令项窄，
                          左侧还会多出一根与内容无关的线，整体看着不齐）。 */
@@ -216,3 +225,4 @@ export function ImageJSidebar({ language, registry, onRun, onCommand, disabled =
     </div>
   )
 }
+

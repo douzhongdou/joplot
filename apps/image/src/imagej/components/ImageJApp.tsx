@@ -1122,14 +1122,14 @@ export function ImageJApp() {
         <section key={card.id} className="grid gap-2 rounded-[calc(var(--radius-box)+0.25rem)] bg-muted/50 p-4">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{viewTitle(card.type)}</h3>
-            <button
+            <Button variant="ghost"
               type="button"
               aria-label={copy.close}
               onClick={() => removeView(card.id)}
               className="rounded-[var(--radius-field)] p-1 text-base-content/50 transition hover:bg-base-200 hover:text-base-content"
             >
               <X size={14} />
-            </button>
+            </Button>
           </div>
 
           {card.type === 'measurement' ? (
@@ -1255,7 +1255,7 @@ export function ImageJApp() {
 
             <div role="group" aria-label={copy.viewer.tool} className="inline-flex shrink-0 rounded-[var(--radius-field)] bg-muted p-0.5">
               {(['pan', 'roi'] as const).map((value) => (
-                <button
+                <Button variant="ghost"
                   key={value}
                   type="button"
                   aria-pressed={tool === value}
@@ -1265,7 +1265,7 @@ export function ImageJApp() {
                   onClick={() => setTool(value)}
                 >
                   {value === 'pan' ? copy.viewer.pan : copy.viewer.roiSelect}
-                </button>
+                </Button>
               ))}
             </div>
 
@@ -1274,7 +1274,7 @@ export function ImageJApp() {
                 {(['color', 'gray'] as const).map((value) => {
                   const active = value === 'color' ? showColor : !showColor
                   return (
-                    <button
+                    <Button variant="ghost"
                       key={value}
                       type="button"
                       aria-pressed={active}
@@ -1284,7 +1284,7 @@ export function ImageJApp() {
                       onClick={() => setShowColor(value === 'color')}
                     >
                       {value === 'color' ? copy.viewer.color : copy.viewer.gray}
-                    </button>
+                    </Button>
                   )
                 })}
               </div>
@@ -1332,9 +1332,9 @@ export function ImageJApp() {
             <section className="shrink-0 border-b border-base-300 px-3 py-3">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-base-content/60">{copy.adjust.brightness} / {copy.adjust.contrast}</h3>
-                <button type="button" aria-label={copy.close} onClick={closeParamPanel} className="rounded-[var(--radius-field)] p-1 text-base-content/50 hover:bg-muted hover:text-base-content">
+                <Button variant="ghost" type="button" aria-label={copy.close} onClick={closeParamPanel} className="rounded-[var(--radius-field)] p-1 text-base-content/50 hover:bg-muted hover:text-base-content">
                   <X size={14} />
-                </button>
+                </Button>
               </div>
               <div className="grid gap-2.5">
                 <div className="grid gap-1">
@@ -1364,9 +1364,9 @@ export function ImageJApp() {
             <section className="shrink-0 border-b border-base-300 px-3 py-3">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-base-content/60">{copy.adjust.threshold}</h3>
-                <button type="button" aria-label={copy.close} onClick={closeParamPanel} className="rounded-[var(--radius-field)] p-1 text-base-content/50 hover:bg-muted hover:text-base-content">
+                <Button variant="ghost" type="button" aria-label={copy.close} onClick={closeParamPanel} className="rounded-[var(--radius-field)] p-1 text-base-content/50 hover:bg-muted hover:text-base-content">
                   <X size={14} />
-                </button>
+                </Button>
               </div>
               <div className="grid gap-2.5">
                 <div className="flex items-center justify-between gap-2">
@@ -1392,9 +1392,9 @@ export function ImageJApp() {
             <section className="shrink-0 border-b border-base-300 px-3 py-3">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-base-content/60">{copy.filters.gaussian}</h3>
-                <button type="button" aria-label={copy.close} onClick={closeParamPanel} className="rounded-[var(--radius-field)] p-1 text-base-content/50 hover:bg-muted hover:text-base-content">
+                <Button variant="ghost" type="button" aria-label={copy.close} onClick={closeParamPanel} className="rounded-[var(--radius-field)] p-1 text-base-content/50 hover:bg-muted hover:text-base-content">
                   <X size={14} />
-                </button>
+                </Button>
               </div>
               <div className="grid gap-2.5">
                 <div className="grid gap-1">
@@ -1503,7 +1503,7 @@ export function ImageJApp() {
             {hasImage ? (
               <span className="inline-flex rounded-[var(--radius-field)] bg-base-200 p-0.5">
                 {(['image', 'roi'] as const).map((value) => (
-                  <button
+                  <Button variant="ghost"
                     key={value}
                     type="button"
                     aria-pressed={scope === value}
@@ -1514,7 +1514,7 @@ export function ImageJApp() {
                     onClick={() => setScope(value)}
                   >
                     {value === 'image' ? copy.roi.scopeImage : copy.roi.scopeRoi}
-                  </button>
+                  </Button>
                 ))}
               </span>
             ) : <span />}
@@ -1559,3 +1559,4 @@ export function ImageJApp() {
     </div>
   )
 }
+

@@ -11,6 +11,7 @@
     "./context-menu": "./src/context-menu.tsx",
     "./dialog": "./src/dialog.tsx",
     "./dropdown-menu": "./src/dropdown-menu.tsx",
+    "./input": "./src/input.tsx",
     "./label": "./src/label.tsx",
     "./popover": "./src/popover.tsx",
     "./select": "./src/select.tsx",

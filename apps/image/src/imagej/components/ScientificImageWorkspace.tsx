@@ -5,6 +5,7 @@ import { Check, ChevronLeft, ChevronRight, Download, Image as ImageIcon, Plus, R
 import { AppNavbar } from '../../components/AppNavbar'
 import { useI18n } from '../../i18n'
 import { Button } from '@joplot/ui/button'
+import { Checkbox } from '@joplot/ui/checkbox'
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@joplot/ui/dropdown-menu'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@joplot/ui/context-menu'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@joplot/ui/tabs'
@@ -131,15 +132,17 @@ function StackSliceBar({ slices, stale, disabled, pageLabel, onSelect }: {
       {slices.map((entry) => (
         <div key={entry.axis} className="flex h-6 items-center gap-1.5 px-2">
           <span className="w-2.5 shrink-0 text-[10px] font-semibold uppercase text-base-content/55">{entry.axis}</span>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             aria-label={`${entry.axis} previous slice`}
             disabled={disabled || entry.index === 0}
             onClick={() => onSelect(entry.axis, entry.index - 1)}
-            className="flex size-4 shrink-0 items-center justify-center rounded-[calc(var(--radius-field)-3px)] text-base-content/60 transition hover:bg-base-200 hover:text-base-content disabled:opacity-30"
+            className="size-4 rounded-[calc(var(--radius-field)-3px)] text-base-content/60"
           >
             <ChevronLeft size={12} />
-          </button>
+          </Button>
           <input
             type="range"
             min={0}
@@ -150,15 +153,17 @@ function StackSliceBar({ slices, stale, disabled, pageLabel, onSelect }: {
             aria-label={`${entry.axis} ${pageLabel}`}
             className="h-1 min-w-0 flex-1 accent-primary"
           />
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             aria-label={`${entry.axis} next slice`}
             disabled={disabled || entry.index + 1 >= entry.length}
             onClick={() => onSelect(entry.axis, entry.index + 1)}
-            className="flex size-4 shrink-0 items-center justify-center rounded-[calc(var(--radius-field)-3px)] text-base-content/60 transition hover:bg-base-200 hover:text-base-content disabled:opacity-30"
+            className="size-4 rounded-[calc(var(--radius-field)-3px)] text-base-content/60"
           >
             <ChevronRight size={12} />
-          </button>
+          </Button>
           <span className="w-14 shrink-0 text-right text-[10px] tabular-nums text-base-content/70">
             {stale ? '…' : entry.index + 1} / {entry.length}
           </span>
@@ -1540,14 +1545,16 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
         <section key={card.id} className="grid gap-1.5 py-2 first:pt-1 last:pb-0">
           <div className="flex items-center justify-between gap-1">
             <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-base-content/50">{viewTitle(card.type)}</h3>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               aria-label={copy.close}
               onClick={() => removeView(card.id)}
-              className="rounded-[var(--radius-field)] p-0.5 text-base-content/45 transition hover:bg-base-200 hover:text-base-content"
+              className="size-5 text-base-content/45 hover:bg-base-200 hover:text-base-content"
             >
               <X size={13} />
-            </button>
+            </Button>
           </div>
 
           {card.type === 'measurement' ? (
@@ -1778,21 +1785,23 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                   ? `${label} (${entry.shortcut.toUpperCase()}) · ${copy.tools.variantsHint}`
                   : `${label} (${entry.shortcut.toUpperCase()})`
                 return (
-                  <button
+                  <Button
                     key={entry.id}
                     type="button"
+                    variant="ghost"
+                    size="icon-sm"
                     aria-label={label}
                     aria-pressed={active}
                     title={hint}
                     disabled={!hasImage}
-                    className={`flex size-6 items-center justify-center rounded-[calc(var(--radius-field)-2px)] transition disabled:opacity-40 ${
+                    className={`size-6 rounded-[calc(var(--radius-field)-2px)] ${
                       active ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
                     }`}
                     onClick={() => setTool(entry.id)}
                     onDoubleClick={() => cycleToolVariant(entry)}
                   >
                     <Icon size={15} />
-                  </button>
+                  </Button>
                 )
               })}
             </div>
@@ -1802,17 +1811,18 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                 {(['color', 'gray'] as const).map((value) => {
                   const active = value === 'color' ? showColor : !showColor
                   return (
-                    <button
+                    <Button
                       key={value}
                       type="button"
+                      variant="ghost"
                       aria-pressed={active}
-                      className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium transition ${
+                      className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium ${
                         active ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
                       }`}
                       onClick={() => setShowColor(value === 'color')}
                     >
                       {value === 'color' ? copy.viewer.color : copy.viewer.gray}
-                    </button>
+                    </Button>
                   )
                 })}
               </div>
@@ -1821,17 +1831,17 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
             <Button type="button" variant={showOriginal ? 'secondary' : 'outline'} size="sm" aria-pressed={showOriginal} disabled={navBusy} onClick={toggleOriginal}>{copy.original}</Button>
 
             <span className="inline-flex shrink-0 items-center gap-0.5 rounded-[var(--radius-field)] bg-muted p-0.5">
-              <button type="button" aria-label={copy.zoomOut} disabled={!hasImage || navBusy} onClick={() => zoomByStep(-1)}
-                className="flex size-6 items-center justify-center rounded-[calc(var(--radius-field)-2px)] text-base-content/70 transition hover:bg-base-100 hover:text-base-content disabled:opacity-40">
+              <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.zoomOut} disabled={!hasImage || navBusy} onClick={() => zoomByStep(-1)}
+                className="size-6 rounded-[calc(var(--radius-field)-2px)] text-base-content/70 hover:bg-base-100 hover:text-base-content">
                 <ZoomOut size={14} />
-              </button>
+              </Button>
               <span className="min-w-9 shrink-0 text-center text-[11px] tabular-nums text-base-content/70">
                 {Math.round(zoom * 100)}%
               </span>
-              <button type="button" aria-label={copy.zoomIn} disabled={!hasImage || navBusy} onClick={() => zoomByStep(1)}
-                className="flex size-6 items-center justify-center rounded-[calc(var(--radius-field)-2px)] text-base-content/70 transition hover:bg-base-100 hover:text-base-content disabled:opacity-40">
+              <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.zoomIn} disabled={!hasImage || navBusy} onClick={() => zoomByStep(1)}
+                className="size-6 rounded-[calc(var(--radius-field)-2px)] text-base-content/70 hover:bg-base-100 hover:text-base-content">
                 <ZoomIn size={14} />
-              </button>
+              </Button>
             </span>
             <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={!hasImage || navBusy} onClick={showActualSize}>
               {copy.viewer.actualSize}
@@ -1854,7 +1864,10 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
         {/* 左栏「处理」：命令目录（选中项下方内联展开自己的操作面板）+ 撤销 / 状态 */}
         <aside className="order-2 flex min-h-0 flex-col border-b border-base-300 bg-base-100 lg:order-none lg:h-full lg:border-b-0 lg:border-r">
           {stack && <div className="shrink-0 border-b border-base-300 px-2.5 py-2 text-[11px]">
-            <label className="flex items-center gap-2"><input type="checkbox" checked={applyAll} onChange={(event) => setApplyAll(event.target.checked)} />{copy.stack.applyAll}</label>
+            <Label className="flex items-center gap-2">
+              <Checkbox checked={applyAll} onCheckedChange={(value) => setApplyAll(value === true)} />
+              {copy.stack.applyAll}
+            </Label>
           </div>}
           <div className="min-h-0 flex-1">
             <ImageJSidebar language={language} registry={registry} onRun={runCommand} onCommand={runStackCommand} disabled={!hasImage || busy}
@@ -1864,7 +1877,19 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
 
           <details className="max-h-40 shrink-0 overflow-auto border-t border-base-300 px-3 py-2 text-xs">
             <summary>{copy.steps.heading} · {state.recipe?.steps.length ?? 0}</summary>
-            <ol className="mt-2 grid gap-1">{state.recipe?.steps.map((step) => <li key={step.id} className="flex items-center justify-between gap-2"><button disabled={busy || !stepAppliesToSelection(step, state.selection)} onClick={() => { setShowOriginal(false); runtime.viewStep(step.id) }}>{copy.steps.ops[step.op] ?? step.op}</button><button disabled={busy} aria-label={copy.steps.remove} onClick={() => { setShowOriginal(false); runtime.removeStep(step.id) }}><X size={12} /></button></li>)}</ol>
+            <ol className="mt-2 grid gap-1">{state.recipe?.steps.map((step) => (
+              <li key={step.id} className="flex items-center justify-between gap-2">
+                <Button type="button" variant="ghost" size="sm" className="h-6 justify-start px-1.5 text-xs font-normal"
+                  disabled={busy || !stepAppliesToSelection(step, state.selection)}
+                  onClick={() => { setShowOriginal(false); runtime.viewStep(step.id) }}>
+                  {copy.steps.ops[step.op] ?? step.op}
+                </Button>
+                <Button type="button" variant="ghost" size="icon-sm" className="size-5" aria-label={copy.steps.remove}
+                  disabled={busy} onClick={() => { setShowOriginal(false); runtime.removeStep(step.id) }}>
+                  <X size={12} />
+                </Button>
+              </li>
+            ))}</ol>
           </details>
           <footer className="shrink-0 border-t border-base-300 px-2.5 py-2">
             <div className="flex items-center gap-1">
@@ -1950,18 +1975,19 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
             {hasImage ? (
               <span className="inline-flex rounded-[var(--radius-field)] bg-base-200 p-0.5">
                 {(['image', 'roi'] as const).map((value) => (
-                  <button
+                  <Button
                     key={value}
                     type="button"
+                    variant="ghost"
                     aria-pressed={scope === value}
                     disabled={value === 'roi' && !roi}
-                    className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium transition disabled:opacity-40 ${
+                    className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium ${
                       scope === value ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
                     }`}
                     onClick={() => setScope(value)}
                   >
                     {value === 'image' ? copy.roi.scopeImage : copy.roi.scopeRoi}
-                  </button>
+                  </Button>
                 ))}
               </span>
             ) : <span />}
@@ -2405,4 +2431,5 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
 

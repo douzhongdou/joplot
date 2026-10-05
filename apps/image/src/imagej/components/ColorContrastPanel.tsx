@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { Button } from '@joplot/ui/button'
+import { Checkbox } from '@joplot/ui/checkbox'
 import { Label } from '@joplot/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@joplot/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@joplot/ui/dialog'
@@ -71,7 +72,7 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, embed
       />
     </div>
     <div className="mb-2 flex justify-between font-mono text-xs"><span>{Math.round(range.min)}</span><span>{Math.round(range.max)}</span></div>
-    <label className="mb-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={log} onChange={(event) => setLog(event.target.checked)} />{copy.log}</label>
+    <label className="mb-2 flex items-center gap-2 text-xs"><Checkbox checked={log} onCheckedChange={(value) => setLog(value === true)} />{copy.log}</label>
     <div className="grid gap-2">
       {(['minimum', 'maximum', 'brightness', 'contrast'] as const).map((control) => <div key={control} className="grid gap-1">
         <Label htmlFor={`imagej-color-${control}`} className="text-xs">{copy[control]}</Label>
@@ -98,3 +99,4 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, embed
     <Dialog open={stackDialog} onOpenChange={setStackDialog}><DialogContent><DialogHeader><DialogTitle>{copy.stack}</DialogTitle><DialogDescription>{copy.stackHint}</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setStackDialog(false)}>{copy.cancel}</Button><Button variant="outline" onClick={() => apply(false)}>{copy.current}</Button><Button onClick={() => apply(true)}>{copy.all}</Button></DialogFooter></DialogContent></Dialog>
   </section>
 }
+
