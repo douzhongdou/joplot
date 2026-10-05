@@ -151,11 +151,13 @@ export function ImageJSidebar({ language, registry, onRun, onCommand, disabled =
                 type="button"
                 aria-expanded={groupOpen}
                 onClick={() => toggleGroup(group.label)}
-                className="flex w-full items-center gap-0.5 rounded-[var(--radius-field)] px-1 py-1 text-left text-[10px] font-semibold uppercase tracking-wide text-base-content/45 transition hover:bg-muted hover:text-base-content/75"
+                /* 分区标题要比命令项更"显眼"才好扫：全宽细线划出分区 + 提亮到 85% + 加粗，
+                   但字号仍小于命令项，避免抢掉内容。 */
+                className="mt-2 flex w-full items-center gap-1 border-b border-base-300/60 px-1.5 pb-1 pt-1.5 text-left text-xs font-semibold uppercase tracking-wider text-base-content/85 transition hover:border-base-300 hover:text-base-content"
               >
-                {groupOpen ? <ChevronDown size={11} className="shrink-0" /> : <ChevronRight size={11} className="shrink-0" />}
+                {groupOpen ? <ChevronDown size={13} className="shrink-0" /> : <ChevronRight size={13} className="shrink-0" />}
                 <span>{labels.groups[group.label] ?? group.label}</span>
-                <span className="ml-auto font-mono text-[9px] tabular-nums text-base-content/30">{group.items.length}</span>
+                <span className="ml-auto font-mono text-[10px] tabular-nums text-base-content/40">{group.items.length}</span>
               </button>
               {groupOpen ? (
                 <div className="grid gap-0.5">
