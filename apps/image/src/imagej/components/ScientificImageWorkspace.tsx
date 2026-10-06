@@ -250,6 +250,8 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   /** 勾选「预览」时临时加进 recipe 的那一步；取消勾选/关面板要把它移除。 */
   const [filterPreviewStepId, setFilterPreviewStepId] = useState<string | null>(null)
   const filterPreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** 视口变化后更新预览作用域的防抖定时器。 */
+  const filterScopeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [views, setViews] = useState<ViewCard[]>([])
   const viewsIdRef = useRef(1)
   const [minParticleArea, setMinParticleArea] = useState(1)
@@ -569,6 +571,33 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
       },
     }
   }
+  /**
+   * 视口变化（缩放/滚动）时让预览跟上：把预览步骤的作用域换成新的可见区域。
+   *
+   * 两处克制：先防抖（滚动是一串事件），再依赖 `updateScope` 在作用域等价时
+   * 直接返回——余量内的小幅平移不会触发任何重算。
+   */
+  const handleViewChange = (region: { x: number; y: number; width: number; height: number } | null) => {
+    if (!filterPreviewStepId || !image) return
+    if (filterScopeTimer.current) clearTimeout(filterScopeTimer.current)
+    const stepId = filterPreviewStepId
+    filterScopeTimer.current = setTimeout(() => {
+      filterScopeTimer.current = null
+      if (applyAll) return
+      const next = region
+        ? {
+            kind: 'frame' as const,
+            selection: { ...state.selection },
+            region: {
+              start: image.axes.map((axis) => (axis === 'x' ? region.x : axis === 'y' ? region.y : 0)),
+              shape: image.axes.map((axis, index) => (axis === 'x' ? region.width : axis === 'y' ? region.height : image.shape[index]!)),
+            },
+          }
+        : stepScope(null)
+      runtime.updateScope(stepId, next)
+    }, FILTER_PREVIEW_DEBOUNCE_MS)
+  }
+
   /**
    * 预览的增/改/删：勾选 = 临时加一步，调参 = 原地更新那一步，取消 = 移除。
    * 这样预览走的是真实渲染管线（分块、窗口/水平、ROI 都与最终结果一致）。
@@ -1232,6 +1261,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const selectAxis = (axis: 't' | 'c' | 'z', index: number) => { if (colorPreview.length) commitColorPreview(colorPreview, false); runtime.setSelection({ [axis]: index }) }
   const closeParamCommand = () => {
     if (filterPreviewTimer.current) { clearTimeout(filterPreviewTimer.current); filterPreviewTimer.current = null }
+    if (filterScopeTimer.current) { clearTimeout(filterScopeTimer.current); filterScopeTimer.current = null }
     if (colorPreview.length) commitColorPreview(colorPreview, false)
     // 关面板时把预览步骤一并撤销，避免留下一步"没人认领"的处理。
     if (filterPreviewStepId) { runtime.removeStep(filterPreviewStepId); setFilterPreviewStepId(null) }
@@ -2084,6 +2114,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
           ) : displayBlock ? (
             <>
               <ImageViewport
+                onViewChange={handleViewChange}
                 ref={viewportRef}
                 block={displayBlock}
                 windowLevel={displayWindow}
@@ -2572,6 +2603,7 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
 
 
 

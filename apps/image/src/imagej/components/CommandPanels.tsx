@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Sparkles } from 'lucide-react'
 import { Button } from '@joplot/ui/button'
 import { Card, CardContent } from '@joplot/ui/card'
@@ -39,9 +39,12 @@ function CommandPanelShell({ children }: {
 /**
  * 滤镜参数面板：均值 / 中值 / 高斯 / 最小 / 最大 / 锐化 / Unsharp Mask 共用。
  *
- * 参数滑杆与「预览」勾选都在这里。勾上预览就把这一步**临时**加进 recipe，调参时原地
- * 更新参数、取消勾选或关闭面板时移除——与 ImageJ 滤镜对话框的 Preview 一致，
- * 好处是预览走的是完整渲染管线（分块、窗口/水平、ROI 都一致），不是另做一套近似。
+ * 用**数字输入框**而不是滑杆（对齐 ImageJ 的滤镜对话框）：拖滑杆一秒能触发几十次重算，
+ * 手输天然有节奏，不会让人感到卡；专业用户也更愿意直接敲数字或用 ↑↓ 步进。
+ * 输入框里保留用户正在敲的原文，否则 "1" 会被夹到 min 而输不进 "12"。
+ *
+ * 「预览」勾选把这一步**临时**加进 recipe，取消勾选或关闭面板时移除——与 ImageJ 的
+ * Preview 一致，好处是预览走完整渲染管线（分块、窗口/水平、ROI 都一致）。
  */
 export function FilterCommandPanel({ copy, fields, values, preview, disabled, onValue, onPreview, onApply, onClose }: {
   copy: ImagejCopy
@@ -55,6 +58,7 @@ export function FilterCommandPanel({ copy, fields, values, preview, disabled, on
   onClose(): void
 }) {
   const ops = copy.stackOps
+  const [draft, setDraft] = useState<Record<string, string>>({})
   return (
     <CommandPanelShell close={onClose} closeLabel={copy.close} disabled={disabled}>
       <div className="grid gap-2">
@@ -63,18 +67,31 @@ export function FilterCommandPanel({ copy, fields, values, preview, disabled, on
           const id = `imagej-filter-${field.key}`
           return (
             <div key={field.key} className="grid gap-1">
-              <Label htmlFor={id} className="justify-between text-xs">
-                <span>{ops.filterParams[field.key] ?? field.key}</span>
-                <span className="font-mono tabular-nums text-base-content/60">{value}</span>
+              <Label htmlFor={id} className="text-xs">
+                {ops.filterParams[field.key] ?? field.key}
+                <span className="ml-1.5 font-mono text-[10px] font-normal text-base-content/40">{field.min}–{field.max}</span>
               </Label>
-              <Slider
+              <Input
                 id={id}
+                type="number"
                 min={field.min}
                 max={field.max}
                 step={field.step}
-                value={[value]}
+                value={draft[field.key] ?? String(value)}
                 disabled={disabled}
-                onValueChange={(next) => onValue(field.key, next[0] ?? value)}
+                onChange={(event) => {
+                  const raw = event.target.value
+                  setDraft((current) => ({ ...current, [field.key]: raw }))
+                  const parsed = Number(raw)
+                  if (raw === '' || !Number.isFinite(parsed)) return
+                  onValue(field.key, Math.max(field.min, Math.min(field.max, parsed)))
+                }}
+                onBlur={() => setDraft((current) => {
+                  const next = { ...current }
+                  delete next[field.key]
+                  return next
+                })}
+                className="h-8 text-xs"
               />
             </div>
           )
@@ -1140,6 +1157,7 @@ export function RemontageCommandPanel({ copy, sourceColumns, sourceRows, columns
     </CommandPanelShell>
   )
 }
+
 
 
 

@@ -64,7 +64,7 @@ const DOUBLE_CLICK_MS = 500
  * 选区一律用 SVG 叠加层绘制（`roiPathData`），与 canvas 共用同一套相机换算，
  * 因此不会出现选区与像素错半个像素的问题；顶点手柄在指针处理里做数学命中测试。
  */
-export function ImageViewport({ block, windowLevel, options, tool, variant, roi, onRoi, onProbe, onZoom, onStepPage, ref }: {
+export function ImageViewport({ block, windowLevel, options, tool, variant, roi, onRoi, onProbe, onZoom, onStepPage, onViewChange, ref }: {
   block: ImageBlock; windowLevel: DisplayWindowLevel; options?: RasterOptions
   tool: ToolId
   /** 工具子类型（直线：`line` / `arrow`；点：`point` / `multipoint`）。 */
@@ -73,6 +73,8 @@ export function ImageViewport({ block, windowLevel, options, tool, variant, roi,
   onRoi(roi: Roi | null): void; onProbe(probe: PixelProbe | null): void; onZoom(zoom: number): void
   /** Stack 模式下普通滚轮逐页切换，参数为 +1 / -1；省略表示没有可翻的页。 */
   onStepPage?(delta: number): void
+  /** 视口覆盖的图像区域变化时回调（含余量；整幅可见时为 null）。 */
+  onViewChange?: (region: { x: number; y: number; width: number; height: number } | null) => void
   ref?: Ref<ImageViewportHandle>
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null), canvasRef = useRef<HTMLCanvasElement>(null)
@@ -99,6 +101,7 @@ export function ImageViewport({ block, windowLevel, options, tool, variant, roi,
     | null
   >(null)
   const stepPageRef = useRef(onStepPage); stepPageRef.current = onStepPage
+  const onViewChangeRef = useRef(onViewChange); onViewChangeRef.current = onViewChange
   const wheelAccum = useRef(0)
   /** 最近一次落点的时间与位置：用于识别多步工具的双击收尾。 */
   const lastClick = useRef<{ x: number; y: number; at: number } | null>(null)
@@ -148,26 +151,48 @@ export function ImageViewport({ block, windowLevel, options, tool, variant, roi,
   }
   const applyZoomRef = useRef(applyZoom); applyZoomRef.current = applyZoom
 
+  /** 当前视口覆盖的图像区域；整幅可见时返回 null（见 ImageViewportHandle.visibleRegion）。 */
+  const computeVisibleRegion = () => {
+    const camera = cameraRef.current
+    if (!camera.viewportWidth || !camera.viewportHeight) return null
+    const topLeft = screenToImage(0, 0, camera)
+    const bottomRight = screenToImage(camera.viewportWidth, camera.viewportHeight, camera)
+    // 留一圈余量：小幅平移/缩放不必重算，仍落在已渲染的范围内。
+    const margin = Math.round(Math.max(camera.viewportWidth, camera.viewportHeight) / camera.zoom * 0.4)
+    const x0 = Math.max(0, Math.floor(topLeft.x) - margin)
+    const y0 = Math.max(0, Math.floor(topLeft.y) - margin)
+    const x1 = Math.min(iw, Math.ceil(bottomRight.x) + margin)
+    const y1 = Math.min(ih, Math.ceil(bottomRight.y) + margin)
+    const width = Math.max(1, x1 - x0), height = Math.max(1, y1 - y0)
+    // 视口已经覆盖整幅图时就不必裁剪了。
+    if (x0 === 0 && y0 === 0 && width >= iw && height >= ih) return null
+    return { x: x0, y: y0, width, height }
+  }
+  const computeVisibleRegionRef = useRef(computeVisibleRegion); computeVisibleRegionRef.current = computeVisibleRegion
+
+  /**
+   * 相机变化后把新的可见区域报给上层（滤镜预览据此把计算收窄到视口）。
+   *
+   * 只有在区域**真的变了**才回调：余量内的平移不该触发重算。
+   * 同样地，区域未变时上层也不会有任何动作。
+   */
+  const lastRegionRef = useRef<string>('')
+  useLayoutEffect(() => {
+    const report = () => {
+      const region = computeVisibleRegionRef.current()
+      const key = region ? `${region.x},${region.y},${region.width},${region.height}` : ''
+      if (key === lastRegionRef.current) return
+      lastRegionRef.current = key
+      onViewChangeRef.current?.(region)
+    }
+    report()
+  }, [camera.panX, camera.panY, camera.zoom, camera.viewportWidth, camera.viewportHeight, iw, ih])
+
   useImperativeHandle(ref, () => ({
     fit: () => applyZoomRef.current(fitZoom(iw, ih, viewRef.current.w - 24, viewRef.current.h - 24)),
     actualSize: () => applyZoomRef.current(oneToOneZoom(viewRef.current.dpr)),
     zoomBy: (factor) => applyZoomRef.current(zoomRef.current * factor, viewRef.current.w / 2, viewRef.current.h / 2),
-    visibleRegion: () => {
-      const camera = cameraRef.current
-      if (!camera.viewportWidth || !camera.viewportHeight) return null
-      const topLeft = screenToImage(0, 0, camera)
-      const bottomRight = screenToImage(camera.viewportWidth, camera.viewportHeight, camera)
-      // 留一圈余量：小幅平移/缩放不必重算，仍落在已渲染的范围内。
-      const margin = Math.round(Math.max(camera.viewportWidth, camera.viewportHeight) / camera.zoom * 0.4)
-      const x0 = Math.max(0, Math.floor(topLeft.x) - margin)
-      const y0 = Math.max(0, Math.floor(topLeft.y) - margin)
-      const x1 = Math.min(iw, Math.ceil(bottomRight.x) + margin)
-      const y1 = Math.min(ih, Math.ceil(bottomRight.y) + margin)
-      const width = Math.max(1, x1 - x0), height = Math.max(1, y1 - y0)
-      // 视口已经覆盖整幅图时就不必裁剪了。
-      if (x0 === 0 && y0 === 0 && width >= iw && height >= ih) return null
-      return { x: x0, y: y0, width, height }
-    },
+    visibleRegion: () => computeVisibleRegionRef.current(),
   }))
 
   /* 测量视口；尺寸变化时重新适配窗口。 */
@@ -528,3 +553,4 @@ function angleLabel(roi: Roi, camera: CameraState) {
     {`${angle.toFixed(1)}°`}
   </text>
 }
+

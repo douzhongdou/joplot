@@ -90,6 +90,30 @@ export function updateStepParams(
   return changed ? { ...recipe, revision: recipe.revision + 1, steps } : recipe
 }
 
+/**
+ * 修改某一步的作用域（用于滤镜预览跟随视口）。
+ *
+ * 与 remove + append 相比只产生一次修订、一次渲染；作用域没变时原样返回，
+ * 避免平移到余量内也触发重算。
+ */
+export function updateStepScope(recipe: Recipe, stepId: string, scope: StepScope): Recipe {
+  let changed = false
+  const steps = recipe.steps.map((step) => {
+    if (step.id !== stepId) return step
+    if (sameScope(step.scope, scope)) return step
+    changed = true
+    return { ...step, scope }
+  })
+  return changed ? { ...recipe, revision: recipe.revision + 1, steps } : recipe
+}
+
+/** 作用域是否等价（都是小对象，直接结构化比较）。 */
+function sameScope(a: StepScope | undefined, b: StepScope | undefined): boolean {
+  if (a === b) return true
+  if (!a || !b || a.kind !== b.kind) return false
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
 /** 单步的稳定版本键，用于缓存。 */
 export function stepVersionKey(step: RecipeStep): string {
   const params = Object.entries(step.params)

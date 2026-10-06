@@ -5,7 +5,7 @@
  */
 import type { Dataset, SliceSelection } from './dataset.ts'
 import { datasetVersionKey } from './dataset.ts'
-import { appendStep, createRecipe, makeStep, RecipeHistory, recipeVersionKey, removeStep, updateStepParams, type Recipe, type StepScope } from './recipe.ts'
+import { appendStep, createRecipe, makeStep, RecipeHistory, recipeVersionKey, removeStep, updateStepParams, updateStepScope, type Recipe, type StepScope } from './recipe.ts'
 import { ByteCache } from './scheduler/cache.ts'
 import { TASK_PRIORITY, TaskQueue, VersionGuard, type SchedulerTask, type TaskPriority } from './scheduler/queue.ts'
 import type { ChannelStats, ParticleRow } from '../lib/engineTypes.ts'
@@ -322,6 +322,19 @@ export class ImageRuntime {
       this.history.commit(updateStepParams(this.history.current(), stepId, validation.values))
     }
     this.emit({ recipe: this.history.current() })
+    void this.run()
+  }
+
+  /**
+   * 原地改某一步的作用域（滤镜预览跟随视口用）。
+   * 作用域没变时不产生新修订也不重跑——平移到余量内不该触发重算。
+   */
+  updateScope(stepId: string, scope: StepScope): void {
+    if (!this.history) return
+    const next = updateStepScope(this.history.current(), stepId, scope)
+    if (next === this.history.current()) return
+    this.history.commit(next)
+    this.emit({ recipe: next })
     void this.run()
   }
 
@@ -1213,4 +1226,5 @@ export class ImageRuntime {
     this.listeners.clear()
   }
 }
+
 
