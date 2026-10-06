@@ -549,6 +549,27 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     return Object.fromEntries((FILTER_FIELDS[op] ?? []).map((field) => [field.key, stored[field.key] ?? field.fallback]))
   }
   /**
+   * 预览步骤的作用域。
+   *
+   * 未勾 "应用到整个 Stack" 时，把作用域收窄到**当前视口覆盖的区域**（含余量）：
+   * 整幅 4096×3072 算一次滤镜要几百毫秒，而屏幕上通常只看得到其中一小块。
+   * 区域边界由算子声明的 halo 补像素，所以带内结果与全图计算一致；
+   * 整幅图都可见时 `visibleRegion()` 返回 null，退化成原来的整帧作用域。
+   */
+  const filterPreviewScope = (): StepScope => {
+    const scope = stepScope(null)
+    if (applyAll || scope.kind !== 'frame' || !image) return scope
+    const bounds = viewportRef.current?.visibleRegion()
+    if (!bounds) return scope
+    return {
+      ...scope,
+      region: {
+        start: image.axes.map((axis) => (axis === 'x' ? bounds.x : axis === 'y' ? bounds.y : 0)),
+        shape: image.axes.map((axis, index) => (axis === 'x' ? bounds.width : axis === 'y' ? bounds.height : image.shape[index]!)),
+      },
+    }
+  }
+  /**
    * 预览的增/改/删：勾选 = 临时加一步，调参 = 原地更新那一步，取消 = 移除。
    * 这样预览走的是真实渲染管线（分块、窗口/水平、ROI 都与最终结果一致）。
    */
@@ -559,7 +580,8 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     }
     setShowOriginal(false)
     if (filterPreviewStepId) runtime.updateParams(filterPreviewStepId, params)
-    else setFilterPreviewStepId(runtime.addStep(op, params, stepScope(null)) ?? null)
+    // 每次重新勾选都重新取一次可见区域，跟随用户当下的缩放/滚动位置。
+    else setFilterPreviewStepId(runtime.addStep(op, params, filterPreviewScope()) ?? null)
   }
   /** 调参：先记下来，正在预览就（防抖后）实时更新。 */
   const changeFilterValue = (op: ParamOp, key: string, value: number) => {

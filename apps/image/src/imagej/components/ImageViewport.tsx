@@ -25,7 +25,19 @@ import {
   type RoiKind,
 } from '../lib/roi'
 
-export interface ImageViewportHandle { fit(): void; actualSize(): void; zoomBy(factor: number): void }
+export interface ImageViewportHandle {
+  fit(): void
+  actualSize(): void
+  zoomBy(factor: number): void
+  /**
+   * 当前视口覆盖的图像区域（含一圈余量）；整幅图都可见时返回 null。
+   *
+   * 滤镜预览用它把计算量从整幅图压到一个屏幕：区域边界靠算子声明的 halo 补像素，
+   * 所以带内结果是正确的、带外保持原样——预览时大幅滚动会看到还没处理的像素，
+   * 这是"只算可视区域"的固有取舍。
+   */
+  visibleRegion(): { x: number; y: number; width: number; height: number } | null
+}
 export interface PixelProbe { x: number; y: number; value: number }
 
 /** 视口底色；与光栅化内核里的越界像素色一致，两者拼接处看不出接缝。 */
@@ -140,6 +152,22 @@ export function ImageViewport({ block, windowLevel, options, tool, variant, roi,
     fit: () => applyZoomRef.current(fitZoom(iw, ih, viewRef.current.w - 24, viewRef.current.h - 24)),
     actualSize: () => applyZoomRef.current(oneToOneZoom(viewRef.current.dpr)),
     zoomBy: (factor) => applyZoomRef.current(zoomRef.current * factor, viewRef.current.w / 2, viewRef.current.h / 2),
+    visibleRegion: () => {
+      const camera = cameraRef.current
+      if (!camera.viewportWidth || !camera.viewportHeight) return null
+      const topLeft = screenToImage(0, 0, camera)
+      const bottomRight = screenToImage(camera.viewportWidth, camera.viewportHeight, camera)
+      // 留一圈余量：小幅平移/缩放不必重算，仍落在已渲染的范围内。
+      const margin = Math.round(Math.max(camera.viewportWidth, camera.viewportHeight) / camera.zoom * 0.4)
+      const x0 = Math.max(0, Math.floor(topLeft.x) - margin)
+      const y0 = Math.max(0, Math.floor(topLeft.y) - margin)
+      const x1 = Math.min(iw, Math.ceil(bottomRight.x) + margin)
+      const y1 = Math.min(ih, Math.ceil(bottomRight.y) + margin)
+      const width = Math.max(1, x1 - x0), height = Math.max(1, y1 - y0)
+      // 视口已经覆盖整幅图时就不必裁剪了。
+      if (x0 === 0 && y0 === 0 && width >= iw && height >= ih) return null
+      return { x: x0, y: y0, width, height }
+    },
   }))
 
   /* 测量视口；尺寸变化时重新适配窗口。 */
