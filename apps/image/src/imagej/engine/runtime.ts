@@ -114,6 +114,8 @@ function warmupBudgetLimit(): number {
 }
 /** 预热放宽预算时的余量系数：留出缓存条目之外的开销。 */
 const WARMUP_BUDGET_SLACK = 1.15
+/** recipe 变化后重排整卷预热的防抖窗口（拖参数滑杆时不要每次都重排）。 */
+const WARMUP_DEBOUNCE_MS = 400
 
 function selectionKey(selection: SliceSelection): string {
   return ['t', 'c', 'z'].map((axis) => `${axis}=${selection[axis as 't' | 'c' | 'z'] ?? 0}`).join(',')
@@ -142,6 +144,7 @@ export class ImageRuntime {
   private prefetchDirection?: { axis: 't' | 'c' | 'z'; delta: number }
   /** 整卷预热进度；未开始或已完成为 undefined。 */
   private warmup?: { total: number; done: number }
+  private warmupTimer?: ReturnType<typeof setTimeout>
   /** 已预热过的数据集版本，避免每页跑完后重复整卷扫描。 */
   private warmupFinished?: string
   private disposed = false
@@ -907,7 +910,7 @@ export class ImageRuntime {
       this.cache.pin(key)
       this.emit({ image: cached.image, imageStale: false, results: cached.results, stats: cached.stats, table: cached.table, lastRunMs: cached.ms, estimatedBytes: cached.estimatedBytes, status: 'ready' })
       this.schedulePrefetch()
-      this.scheduleWarmup()
+      this.scheduleWarmupSoon()
       return
     }
     this.emit({ status: 'running', error: undefined })
@@ -935,7 +938,7 @@ export class ImageRuntime {
         estimatedBytes: result.estimatedBytes,
       })
       this.schedulePrefetch()
-      this.scheduleWarmup()
+      this.scheduleWarmupSoon()
     } catch (error) {
       if (this.guard.version() !== version) return
       this.emit({ status: 'error', error: error instanceof Error ? error.message : String(error) })
@@ -1153,6 +1156,29 @@ export class ImageRuntime {
     this.emit({ preload: warmup ? { done: warmup.done, total: warmup.total } : undefined })
   }
 
+  /**
+   * recipe 变化会重排整卷预热，而这个入口会被 `runOnce` 每次执行后调用。
+   *
+   * 拖参数滑杆会高频改 recipe（`updateParams` → `run` → 这里），若每次都重排，
+   * 整卷任务会被反复清空重建——界面一直显示"正在载入"而且很卡。所以：
+   * 旧预热的结果已随旧 recipe 作废，先取消它并收起进度，等改动停下来再重新铺。
+   */
+  private scheduleWarmupSoon(): void {
+    if (!this.prefetchEnabled || this.disposed) return
+    this.cancelWarmup()
+    if (this.warmupTimer) clearTimeout(this.warmupTimer)
+    this.warmupTimer = setTimeout(() => {
+      this.warmupTimer = undefined
+      this.scheduleWarmup()
+    }, WARMUP_DEBOUNCE_MS)
+  }
+
+  /** 撤掉队列里所有预热任务并收起进度（`noteWarmupPage` 对空进度是安全的）。 */
+  private cancelWarmup(): void {
+    if (this.warmup) { this.warmup = undefined; this.emitWarmup() }
+    this.queue.cancelWhere((task) => task.id.startsWith('warmup:'))
+  }
+
   private async pump(): Promise<void> {
     if (this.pumping || this.disposed) return
     this.pumping = true
@@ -1178,6 +1204,7 @@ export class ImageRuntime {
 
   dispose(): void {
     this.disposed = true
+    if (this.warmupTimer) { clearTimeout(this.warmupTimer); this.warmupTimer = undefined }
     this.queue.clear()
     if (this.ownsCache) this.cache.clear()
     const datasetId = this.state.dataset?.id
@@ -1186,3 +1213,4 @@ export class ImageRuntime {
     this.listeners.clear()
   }
 }
+

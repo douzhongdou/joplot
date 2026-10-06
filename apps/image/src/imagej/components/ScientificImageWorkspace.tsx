@@ -47,6 +47,8 @@ type ParamCommand =
   | 'Mean' | 'Median' | 'Gaussian Blur' | 'Minimum' | 'Maximum' | 'Sharpen' | 'Unsharp Mask'
 type ParamOp = 'levels' | 'threshold' | 'debayer' | 'mean3x3' | 'median3x3' | 'gaussian' | 'minimum3x3' | 'maximum3x3' | 'sharpen3x3' | 'unsharpMask'
 /** 需要一个"参数 + 预览"面板的滤镜算子（面板由 FilterCommandPanel 统一渲染）。 */
+/** 拖滤镜参数滑杆时，等停手这么久再真的重算预览。 */
+const FILTER_PREVIEW_DEBOUNCE_MS = 120
 const FILTER_OPS: readonly ParamOp[] = ['mean3x3', 'median3x3', 'gaussian', 'minimum3x3', 'maximum3x3', 'sharpen3x3', 'unsharpMask']
 /** 命令目录 FILTERS 组里这两列顺序一致的命令名（都带参数面板）。 */
 const FILTER_COMMANDS: readonly ParamCommand[] = ['Mean', 'Median', 'Gaussian Blur', 'Minimum', 'Maximum', 'Sharpen', 'Unsharp Mask']
@@ -247,6 +249,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const [filterValues, setFilterValues] = useState<Record<string, Record<string, number>>>({})
   /** 勾选「预览」时临时加进 recipe 的那一步；取消勾选/关面板要把它移除。 */
   const [filterPreviewStepId, setFilterPreviewStepId] = useState<string | null>(null)
+  const filterPreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [views, setViews] = useState<ViewCard[]>([])
   const viewsIdRef = useRef(1)
   const [minParticleArea, setMinParticleArea] = useState(1)
@@ -558,11 +561,16 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     if (filterPreviewStepId) runtime.updateParams(filterPreviewStepId, params)
     else setFilterPreviewStepId(runtime.addStep(op, params, stepScope(null)) ?? null)
   }
-  /** 调参：先记下来，正在预览就实时更新。 */
+  /** 调参：先记下来，正在预览就（防抖后）实时更新。 */
   const changeFilterValue = (op: ParamOp, key: string, value: number) => {
     const next = { ...filterParamValues(op), [key]: value }
     setFilterValues((current) => ({ ...current, [op]: next }))
-    if (filterPreviewStepId) runtime.updateParams(filterPreviewStepId, next)
+    if (!filterPreviewStepId) return
+    // 拖滑杆会连续触发。全图滤镜一次要几百毫秒，每次都排队会让手感很卡，
+    // 所以停手 120ms 再更新那一步——预览仍是即时的，只是不再逐帧重算。
+    if (filterPreviewTimer.current) clearTimeout(filterPreviewTimer.current)
+    const stepId = filterPreviewStepId
+    filterPreviewTimer.current = setTimeout(() => { filterPreviewTimer.current = null; runtime.updateParams(stepId, next) }, FILTER_PREVIEW_DEBOUNCE_MS)
   }
   /** 执行：已经在预览就直接留下那一步，否则按当前参数提交一步。 */
   const applyFilter = (op: ParamOp) => {
@@ -597,6 +605,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     const op = COMMAND_OPS[command]
     if (op !== 'levels' && colorPreview.length) commitColorPreview(colorPreview, false)
     // 切换面板前先把上一个滤镜的预览步骤撤掉，否则会留在处理台账里。
+    if (filterPreviewTimer.current) { clearTimeout(filterPreviewTimer.current); filterPreviewTimer.current = null }
     if (filterPreviewStepId) { runtime.removeStep(filterPreviewStepId); setFilterPreviewStepId(null) }
     setShowOriginal(false); setShowColor(op !== 'threshold'); setParamCommand(command)
   }
@@ -1200,6 +1209,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   }
   const selectAxis = (axis: 't' | 'c' | 'z', index: number) => { if (colorPreview.length) commitColorPreview(colorPreview, false); runtime.setSelection({ [axis]: index }) }
   const closeParamCommand = () => {
+    if (filterPreviewTimer.current) { clearTimeout(filterPreviewTimer.current); filterPreviewTimer.current = null }
     if (colorPreview.length) commitColorPreview(colorPreview, false)
     // 关面板时把预览步骤一并撤销，避免留下一步"没人认领"的处理。
     if (filterPreviewStepId) { runtime.removeStep(filterPreviewStepId); setFilterPreviewStepId(null) }
@@ -2540,6 +2550,7 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
 
 
 
