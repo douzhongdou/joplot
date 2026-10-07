@@ -593,7 +593,7 @@ export function HistogramChart({
       />
       {readout ? (
         <div
-          className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-[var(--radius-field)] border border-base-300 bg-base-100/95 px-1.5 py-1 font-mono text-[10px] leading-tight tabular-nums text-base-content shadow-sm"
+          className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-[var(--radius-field)] border border-base-300 bg-base-100/95 px-1.5 py-1 font-mono text-xs leading-tight tabular-nums text-base-content shadow-sm"
           style={{ left: readoutLeft }}
         >
           <div className="font-medium text-base-content">{copy.level} {readout.level}</div>

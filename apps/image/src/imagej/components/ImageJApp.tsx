@@ -18,6 +18,7 @@ import { useI18n } from '../../i18n'
 import { Button } from '@joplot/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@joplot/ui/dropdown-menu'
 import { Label } from '@joplot/ui/label'
+import { Slider } from '@joplot/ui/slider'
 import { createImagejCopy, type ImagejCopy } from '../lib/i18n'
 import { analyzeParticles, closeBinary, dilate, erode, fillHoles, openBinary, type Particle } from '../lib/binary'
 import { decodeTiff, encodeTiff } from '../lib/tiff'
@@ -1146,7 +1147,7 @@ export function ImageJApp() {
                   [copy.stats.stdDev, stats.stdDev.toFixed(2)],
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-[var(--radius-field)] bg-base-100 px-3 py-2">
-                    <dt className="text-[11px] text-base-content/55">{label}</dt>
+                    <dt className="text-xs text-base-content/55">{label}</dt>
                     <dd className="font-mono text-sm font-semibold tabular-nums text-base-content">{value}</dd>
                   </div>
                 ))}
@@ -1158,7 +1159,7 @@ export function ImageJApp() {
 
           {card.type === 'histogram' ? (
             <div className="grid gap-1">
-              <div className="flex justify-end text-[11px] text-base-content/55">
+              <div className="flex justify-end text-xs text-base-content/55">
                 <span>{copy.stats.thresholdMark}: {thresholdLevel}</span>
               </div>
               <canvas ref={histogramCanvasRef} className="block w-full rounded-[var(--radius-field)] bg-base-100" style={{ height: 112 }} />
@@ -1168,7 +1169,7 @@ export function ImageJApp() {
           {card.type === 'profile' ? (
             <div className="grid gap-1">
               <canvas ref={profileCanvasRef} className="block w-full rounded-[var(--radius-field)] bg-base-100" style={{ height: 112 }} />
-              <p className="text-[11px] text-base-content/55">{copy.views.profileNote}</p>
+              <p className="text-xs text-base-content/55">{copy.views.profileNote}</p>
             </div>
           ) : null}
 
@@ -1314,11 +1315,11 @@ export function ImageJApp() {
                 <Button type="button" variant="outline" size="sm" className="h-8" disabled={pageIndex === 0} onClick={() => selectPage(pageIndex - 1)}>←</Button>
                 <span className="text-xs tabular-nums text-base-content/70">{pageIndex + 1} / {stack.length}</span>
                 <Button type="button" variant="outline" size="sm" className="h-8" disabled={pageIndex + 1 >= stack.length} onClick={() => selectPage(pageIndex + 1)}>→</Button>
-                <input type="range" min={0} max={stack.length - 1} value={pageIndex} onChange={(event) => selectPage(Number(event.target.value))} aria-label={copy.stack.page} className="w-28 accent-primary" />
+                <Slider min={0} max={stack.length - 1} step={1} value={[pageIndex]} onValueChange={(next) => selectPage(next[0] ?? pageIndex)} aria-label={copy.stack.page} className="w-28" />
               </span>
             ) : null}
 
-            <span className="ml-auto hidden shrink-0 truncate pl-2 font-mono text-[11px] text-base-content/55 md:inline">
+            <span className="ml-auto hidden shrink-0 truncate pl-2 font-mono text-xs text-base-content/55 md:inline">
               {probe ? `(${probe.x}, ${probe.y}) = ${probe.value} · ` : ''}{roiLabel}
             </span>
           </>
@@ -1342,16 +1343,14 @@ export function ImageJApp() {
                     <span>{copy.adjust.brightness}</span>
                     <span className="font-mono tabular-nums text-base-content/60">{brightness}</span>
                   </Label>
-                  <input id="imagej-brightness" type="range" min={-127} max={127} step={1} value={brightness} disabled={!hasImage}
-                    onChange={(event) => setBrightness(Number(event.target.value))} className="w-full accent-primary" />
+                  <Slider id="imagej-brightness" min={-127} max={127} step={1} value={[brightness]} disabled={!hasImage} onValueChange={(next) => setBrightness(next[0] ?? brightness)} />
                 </div>
                 <div className="grid gap-1">
                   <Label htmlFor="imagej-contrast" className="justify-between text-xs">
                     <span>{copy.adjust.contrast}</span>
                     <span className="font-mono tabular-nums text-base-content/60">{contrast}</span>
                   </Label>
-                  <input id="imagej-contrast" type="range" min={1} max={100} step={1} value={contrast} disabled={!hasImage}
-                    onChange={(event) => setContrast(Number(event.target.value))} className="w-full accent-primary" />
+                  <Slider id="imagej-contrast" min={1} max={100} step={1} value={[contrast]} disabled={!hasImage} onValueChange={(next) => setContrast(next[0] ?? contrast)} />
                 </div>
                 <Button type="button" size="sm" className="h-8" disabled={!hasImage || !levelsActive} onClick={applyCurrentLevels}>
                   {copy.adjust.applyLevels}
@@ -1373,8 +1372,7 @@ export function ImageJApp() {
                   <Label htmlFor="imagej-threshold-level" className="text-xs">{copy.adjust.threshold}</Label>
                   <span className="font-mono text-xs tabular-nums text-base-content/70">{thresholdLevel}</span>
                 </div>
-                <input id="imagej-threshold-level" type="range" min={0} max={255} step={1} value={thresholdLevel} disabled={!hasImage}
-                  aria-label={copy.adjust.threshold} onChange={(event) => setThresholdLevel(Number(event.target.value))} className="w-full accent-primary" />
+                <Slider id="imagej-threshold-level" min={0} max={255} step={1} value={[thresholdLevel]} disabled={!hasImage} aria-label={copy.adjust.threshold} onValueChange={(next) => setThresholdLevel(next[0] ?? thresholdLevel)} />
                 <div className="grid grid-cols-2 gap-2">
                   <Button type="button" size="sm" className="h-8" disabled={!hasImage} onClick={applyCurrentThreshold}>
                     {copy.adjust.thresholdApply}
@@ -1402,8 +1400,7 @@ export function ImageJApp() {
                     <span>{copy.filters.sigma}</span>
                     <span className="font-mono tabular-nums text-base-content/60">{gaussianSigma.toFixed(1)}</span>
                   </Label>
-                  <input id="imagej-gaussian-sigma" type="range" min={0.5} max={5} step={0.1} value={gaussianSigma} disabled={!hasImage}
-                    onChange={(event) => setGaussianSigma(Number(event.target.value))} className="w-full accent-primary" />
+                  <Slider id="imagej-gaussian-sigma" min={0.5} max={5} step={0.1} value={[gaussianSigma]} disabled={!hasImage} onValueChange={(next) => setGaussianSigma(next[0] ?? gaussianSigma)} />
                 </div>
                 <Button type="button" size="sm" className="h-8" disabled={!hasImage} onClick={() => runAdvanced((image) => gaussianBlur(image, gaussianSigma))}>
                   {copy.filters.gaussian}
@@ -1508,7 +1505,7 @@ export function ImageJApp() {
                     type="button"
                     aria-pressed={scope === value}
                     disabled={value === 'roi' && !roi}
-                    className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium transition disabled:opacity-40 ${
+                    className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-xs font-medium transition disabled:opacity-40 ${
                       scope === value ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
                     }`}
                     onClick={() => setScope(value)}
@@ -1559,4 +1556,6 @@ export function ImageJApp() {
     </div>
   )
 }
+
+
 

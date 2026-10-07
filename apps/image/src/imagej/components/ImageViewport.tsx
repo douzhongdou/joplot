@@ -537,7 +537,7 @@ function lineLabel(roi: Roi, camera: CameraState) {
   const dx = roi.x2 - roi.x1, dy = roi.y2 - roi.y1
   const cx = camera.panX + ((roi.x1 + roi.x2) / 2) * camera.zoom
   const cy = camera.panY + ((roi.y1 + roi.y2) / 2) * camera.zoom
-  return <text x={cx + 6} y={cy - 6} className="fill-base-content text-[11px]" stroke="var(--color-base-100, #fff)" strokeWidth={3}>
+  return <text x={cx + 6} y={cy - 6} className="fill-base-content text-xs" stroke="var(--color-base-100, #fff)" strokeWidth={3}>
     {`${Math.hypot(dx, dy).toFixed(1)} px · ${(Math.atan2(-dy, dx) * 180 / Math.PI).toFixed(1)}°`}
   </text>
 }
@@ -549,7 +549,7 @@ function angleLabel(roi: Roi, camera: CameraState) {
   const v1x = ax - bx, v1y = ay - by, v2x = cx - bx, v2y = cy - by
   const angle = Math.acos(Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / ((Math.hypot(v1x, v1y) || 1) * (Math.hypot(v2x, v2y) || 1))))) * 180 / Math.PI
   const screenX = camera.panX + bx * camera.zoom, screenY = camera.panY + by * camera.zoom
-  return <text x={screenX + 8} y={screenY - 8} className="fill-base-content text-[11px]" stroke="var(--color-base-100, #fff)" strokeWidth={3}>
+  return <text x={screenX + 8} y={screenY - 8} className="fill-base-content text-xs" stroke="var(--color-base-100, #fff)" strokeWidth={3}>
     {`${angle.toFixed(1)}°`}
   </text>
 }

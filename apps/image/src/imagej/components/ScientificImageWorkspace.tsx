@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@joplot/ui/tabs'
 import { ToggleGroup, ToggleGroupItem } from '@joplot/ui/toggle-group'
 import { Label } from '@joplot/ui/label'
+import { Slider } from '@joplot/ui/slider'
 import { createImagejCopy } from '../lib/i18n'
 import { readDroppedContent } from '../lib/dropFiles'
 import { toRoi, type RoiInput } from '../lib/processor'
@@ -170,7 +171,7 @@ function StackSliceBar({ slices, stale, disabled, pageLabel, onSelect }: {
     <div className="flex shrink-0 flex-col border-t border-base-300 bg-base-100">
       {slices.map((entry) => (
         <div key={entry.axis} className="flex h-6 items-center gap-1.5 px-2">
-          <span className="w-2.5 shrink-0 text-[10px] font-semibold uppercase text-base-content/55">{entry.axis}</span>
+          <span className="w-2.5 shrink-0 text-xs font-semibold uppercase text-base-content/55">{entry.axis}</span>
           <Button
             type="button"
             variant="ghost"
@@ -182,15 +183,14 @@ function StackSliceBar({ slices, stale, disabled, pageLabel, onSelect }: {
           >
             <ChevronLeft size={12} />
           </Button>
-          <input
-            type="range"
+          <Slider
             min={0}
             max={entry.length - 1}
-            value={entry.index}
+            step={1}
+            value={[entry.index]}
             disabled={disabled}
-            onChange={(event) => onSelect(entry.axis, Number(event.target.value))}
+            onValueChange={(next) => onSelect(entry.axis, next[0] ?? entry.index)}
             aria-label={`${entry.axis} ${pageLabel}`}
-            className="h-1 min-w-0 flex-1 accent-primary"
           />
           <Button
             type="button"
@@ -203,7 +203,7 @@ function StackSliceBar({ slices, stale, disabled, pageLabel, onSelect }: {
           >
             <ChevronRight size={12} />
           </Button>
-          <span className="w-14 shrink-0 text-right text-[10px] tabular-nums text-base-content/70">
+          <span className="w-14 shrink-0 text-right text-xs tabular-nums text-base-content/70">
             {stale ? '…' : entry.index + 1} / {entry.length}
           </span>
         </div>
@@ -1687,9 +1687,9 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const viewCards = views.length ? (
     <div className="grid gap-2">
       {views.map((card) => (
-        <Card key={card.id} className="gap-1.5 rounded-sm border-base-300 p-1 shadow-none">
-          <CardHeader className="flex flex-row items-center justify-between gap-1 p-0">
-            <CardTitle className="text-[10px] font-semibold uppercase tracking-[0.14em] text-base-content/50">{viewTitle(card.type)}</CardTitle>
+        <Card key={card.id} className="gap-1 rounded-sm border-base-300 px-1 py-1 shadow-none">
+          <CardHeader className="flex flex-row items-center justify-between gap-1 px-0 py-0">
+            <CardTitle className="text-sm font-semibold text-base-content/50">{viewTitle(card.type)}</CardTitle>
             <CardAction className="row-span-1">
               <Button
                 type="button"
@@ -1703,7 +1703,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               </Button>
             </CardAction>
           </CardHeader>
-          <CardContent className="grid gap-1.5 p-0">
+          <CardContent className="grid gap-1 px-0 py-0">
 
           {card.type === 'measurement' ? (
             !hasImage ? (
@@ -1719,8 +1719,8 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                   [copy.stats.stdDev, stats.stdDev.toFixed(2)],
                 ].map(([label, value]) => (
                   <div key={label} className="flex items-baseline justify-between gap-2">
-                    <dt className="truncate text-[10px] text-base-content/55">{label}</dt>
-                    <dd className="font-mono text-[12px] font-semibold tabular-nums text-base-content">{value}</dd>
+                    <dt className="truncate text-xs text-base-content/55">{label}</dt>
+                    <dd className="font-mono text-xs font-semibold tabular-nums text-base-content">{value}</dd>
                   </div>
                 ))}
               </dl>
@@ -1742,7 +1742,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
           {card.type === 'profile' ? (
             <div className="grid gap-0.5">
               <canvas ref={profileCanvasRef} className="block w-full" style={{ height: 96 }} />
-              <p className="text-[10px] text-base-content/55">{copy.views.profileNote}</p>
+              <p className="text-xs text-base-content/55">{copy.views.profileNote}</p>
             </div>
           ) : null}
 
@@ -1751,7 +1751,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               <>
                 <div className="flex flex-wrap items-end gap-2">
                   <div className="grid gap-0.5">
-                    <Label htmlFor="imagej-particle-min-area" className="text-[11px]">{copy.binary.minArea}</Label>
+                    <Label htmlFor="imagej-particle-min-area" className="text-xs">{copy.binary.minArea}</Label>
                     <Input
                       id="imagej-particle-min-area"
                       type="number"
@@ -1808,7 +1808,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                 <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="block h-24 w-full text-primary" role="img" aria-label={copy.views.zprofile}>
                   <polyline fill="none" stroke="currentColor" strokeWidth={1.2} vectorEffect="non-scaling-stroke" points={zProfilePoints} />
                 </svg>
-                <p className="text-[10px] text-base-content/55">
+                <p className="text-xs text-base-content/55">
                   {copy.views.zProfileNote}
                   {stackStats ? ` · ${copy.stats.min} ${zProfileRange[0]} · ${copy.stats.max} ${zProfileRange[1]}` : ''}
                 </p>
@@ -1866,8 +1866,8 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                   [copy.stackOps.mode, Number.isNaN(stackStats.summary.mode) ? '—' : String(stackStats.summary.mode)],
                 ] as const).map(([label, value]) => (
                   <div key={label} className="flex items-baseline justify-between gap-2">
-                    <dt className="truncate text-[10px] text-base-content/55">{label}</dt>
-                    <dd className="font-mono text-[12px] font-semibold tabular-nums text-base-content">{value}</dd>
+                    <dt className="truncate text-xs text-base-content/55">{label}</dt>
+                    <dd className="font-mono text-xs font-semibold tabular-nums text-base-content">{value}</dd>
                   </div>
                 ))}
               </dl>
@@ -1893,7 +1893,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                     />
                   ))}
                 </svg>
-                <p className="text-[10px] text-base-content/55">
+                <p className="text-xs text-base-content/55">
                   {copy.views.xyProfileNote}
                   {state.stackProfiles ? ` · ${state.stackProfiles.min.toFixed(2)} – ${state.stackProfiles.max.toFixed(2)} · ${state.stackProfiles.frameCount} × ${state.stackProfiles.length}` : ''}
                 </p>
@@ -1978,7 +1978,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                       type="button"
                       variant="ghost"
                       aria-pressed={active}
-                      className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium ${
+                      className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-xs font-medium ${
                         active ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
                       }`}
                       onClick={() => setShowColor(value === 'color')}
@@ -1997,7 +1997,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                 className="size-6 rounded-[calc(var(--radius-field)-2px)] text-base-content/70 hover:bg-base-100 hover:text-base-content">
                 <ZoomOut size={14} />
               </Button>
-              <span className="min-w-9 shrink-0 text-center text-[11px] tabular-nums text-base-content/70">
+              <span className="min-w-9 shrink-0 text-center text-xs tabular-nums text-base-content/70">
                 {Math.round(zoom * 100)}%
               </span>
               <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.zoomIn} disabled={!hasImage || navBusy} onClick={() => zoomByStep(1)}
@@ -2015,7 +2015,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               {copy.roi.clear}
             </Button>
 
-            <span className="ml-auto hidden shrink-0 truncate pl-2 font-mono text-[11px] text-base-content/55 md:inline">
+            <span className="ml-auto hidden shrink-0 truncate pl-2 font-mono text-xs text-base-content/55 md:inline">
               {probe ? `(${probe.x}, ${probe.y}) = ${probe.value} · ` : ''}{roiLabel}
             </span>
           </>
@@ -2025,7 +2025,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
       <div className="grid min-h-0 min-w-0 grid-cols-1 overflow-y-auto lg:grid-cols-[260px_minmax(0,1fr)_300px] lg:overflow-hidden">
         {/* 左栏「处理」：命令目录（选中项下方内联展开自己的操作面板）+ 撤销 / 状态 */}
         <aside className="order-2 flex min-h-0 flex-col border-b border-base-300 bg-base-100 lg:order-none lg:h-full lg:border-b-0 lg:border-r">
-          {stack && <div className="shrink-0 border-b border-base-300 px-2.5 py-2 text-[11px]">
+          {stack && <div className="shrink-0 border-b border-base-300 px-2.5 py-2 text-xs">
             <Label className="flex items-center gap-2">
               <Checkbox checked={applyAll} onCheckedChange={(value) => setApplyAll(value === true)} />
               {copy.stack.applyAll}
@@ -2068,7 +2068,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                 <Redo2 size={14} />
               </Button>
             </div>
-            <div role="status" aria-live="polite" className="mt-1 min-h-4 text-[11px] text-base-content/60">
+            <div role="status" aria-live="polite" className="mt-1 min-h-4 text-xs text-base-content/60">
               {preload ? `${copy.stack.preloading} ${preload.done} / ${preload.total}` : status}
               {!preload && state.lastRunMs !== undefined ? ` · ${state.lastRunMs} ms` : ''}
               {state.sliceLabels?.[pageIndex] ? ` · ${state.sliceLabels[pageIndex]}` : ''}
@@ -2154,7 +2154,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                     key={value}
                     value={value}
                     disabled={value === 'roi' && !roi}
-                    className="h-6 min-w-0 flex-none rounded-[calc(var(--radius-field)-2px)] px-2 text-[11px] font-medium text-base-content/55 shadow-none hover:bg-transparent hover:text-base-content data-[state=on]:bg-base-100 data-[state=on]:text-base-content data-[state=on]:shadow-sm"
+                    className="h-6 min-w-0 flex-none rounded-[calc(var(--radius-field)-2px)] px-2 text-xs font-medium text-base-content/55 shadow-none hover:bg-transparent hover:text-base-content data-[state=on]:bg-base-100 data-[state=on]:text-base-content data-[state=on]:shadow-sm"
                   >
                     {value === 'image' ? copy.roi.scopeImage : copy.roi.scopeRoi}
                   </ToggleGroupItem>
@@ -2729,6 +2729,7 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
 
 
 

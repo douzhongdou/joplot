@@ -33,7 +33,7 @@ export function AppNavbar({
       <Link
         href={IMAGEJ_PATH}
         aria-current={section === 'imagej' ? 'page' : undefined}
-        className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-field)] px-1 text-[13px] font-semibold text-base-content"
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-field)] px-1 text-sm font-semibold text-base-content"
       >
         <ImageIcon size={16} strokeWidth={2.1} aria-hidden="true" />
         <span className="hidden sm:inline">{t('chrome.brand')}</span>

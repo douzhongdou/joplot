@@ -69,7 +69,7 @@ export function FilterCommandPanel({ copy, fields, values, preview, disabled, on
             <div key={field.key} className="grid gap-1">
               <Label htmlFor={id} className="text-xs">
                 {ops.filterParams[field.key] ?? field.key}
-                <span className="ml-1.5 font-mono text-[10px] font-normal text-base-content/40">
+                <span className="ml-1.5 font-mono text-xs font-normal text-base-content/40">
                   {field.max === undefined ? `≥ ${field.min}` : `${field.min}–${field.max}`}
                 </span>
               </Label>
@@ -367,8 +367,8 @@ export function ZProjectCommandPanel({ copy, grouped, method, start, stop, group
               onChange={(event) => onGroupSize(Math.max(1, Math.round(Number(event.target.value) || 1)))}
               className={fieldClass}
             />
-            <p className="text-[10px] text-base-content/55">{ops.groupHint}</p>
-            <p className="text-[10px] text-base-content/55">{ops.factors}: {factors.join(', ')}</p>
+            <p className="text-xs text-base-content/55">{ops.groupHint}</p>
+            <p className="text-xs text-base-content/55">{ops.factors}: {factors.join(', ')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-2">
@@ -548,7 +548,7 @@ export function MontageToStackCommandPanel({ copy, columns, rows, border, hint, 
           <Input id="imagej-mts-border" type="number" min={0} step={1} value={border} disabled={disabled}
             onChange={(event) => onBorder(Math.max(0, Math.round(Number(event.target.value) || 0)))} className={fieldClass} />
         </div>
-        {hint ? <p className="text-[10px] text-base-content/55">{hint}</p> : null}
+        {hint ? <p className="text-xs text-base-content/55">{hint}</p> : null}
         <Button type="button" size="sm" className="h-8" disabled={disabled} onClick={onApply}>{ops.run}</Button>
       </div>
     </CommandPanelShell>
@@ -619,7 +619,7 @@ export function ResliceCommandPanel({ copy, spacing, startAt, flip, rotate, hasR
           <Checkbox checked={rotate} disabled={disabled} onCheckedChange={(value) => onRotate(value === true)} />
           {ops.rotate90}
         </label>
-        {hasRoi ? null : <p className="text-[10px] text-base-content/55">{copy.roi.needRoi}</p>}
+        {hasRoi ? null : <p className="text-xs text-base-content/55">{copy.roi.needRoi}</p>}
         <Button type="button" size="sm" className="h-8" disabled={disabled} onClick={onApply}>{ops.run}</Button>
       </div>
     </CommandPanelShell>
@@ -717,7 +717,7 @@ export function ReduceCommandPanel({ copy, factor, sliceCount, disabled, onFacto
             onChange={(event) => onFactor(Math.max(1, Math.round(Number(event.target.value) || 1)))}
             className={fieldClass}
           />
-          <p className="text-[10px] text-base-content/55">{kept} / {sliceCount}</p>
+          <p className="text-xs text-base-content/55">{kept} / {sliceCount}</p>
         </div>
         <Button type="button" size="sm" className="h-8" disabled={disabled} onClick={onApply}>{ops.run}</Button>
       </div>
@@ -752,7 +752,7 @@ export function SubstackCommandPanel({ copy, value, sliceCount, disabled, onChan
             onChange={(event) => onChange(event.target.value)}
             className={fieldClass}
           />
-          <p className="text-[10px] text-base-content/55">{ops.pagesHint} · 1 / {sliceCount}</p>
+          <p className="text-xs text-base-content/55">{ops.pagesHint} · 1 / {sliceCount}</p>
         </div>
         <Button type="button" size="sm" className="h-8" disabled={disabled || !value.trim()} onClick={onApply}>{ops.run}</Button>
       </div>
@@ -798,7 +798,7 @@ export function CombineCommandPanel({ copy, op, documents, source, x, y, vertica
               {documents.map((document) => <SelectItem key={document.id} value={document.id}>{document.title}</SelectItem>)}
             </SelectContent>
           </Select>
-          {missing ? <p className="text-[10px] text-base-content/55">{ops.needSecondDocument}</p> : null}
+          {missing ? <p className="text-xs text-base-content/55">{ops.needSecondDocument}</p> : null}
         </div>
         {op === 'insert' ? (
           <div className="grid grid-cols-2 gap-2">
@@ -1096,7 +1096,7 @@ export function Project3dCommandPanel({ copy, method, axis, initialAngle, totalR
           {numberField('imagej-3d-total', ops.totalRotation, totalRotation, onTotalRotation, 1, 0, 359)}
           {numberField('imagej-3d-increment', ops.angleIncrement, angleIncrement, onAngleIncrement, 1, 1, 359)}
         </div>
-        <p className="text-[10px] text-base-content/55">{angleCount}</p>
+        <p className="text-xs text-base-content/55">{angleCount}</p>
         <div className="grid grid-cols-3 gap-2">
           {numberField('imagej-3d-opacity', ops.opacity, opacity, onOpacity, 5, 0, 100)}
           {numberField('imagej-3d-surface', ops.surfaceCueing, surfaceCueing, onSurfaceCueing, 5, 0, 100)}
@@ -1147,7 +1147,7 @@ export function RemontageCommandPanel({ copy, sourceColumns, sourceRows, columns
   return (
     <CommandPanelShell close={onClose} closeLabel={copy.close} disabled={disabled}>
       <div className="grid gap-2">
-        {hint ? <p className="text-[10px] text-base-content/55">{hint}</p> : null}
+        {hint ? <p className="text-xs text-base-content/55">{hint}</p> : null}
         <div className="grid grid-cols-2 gap-2">
           {numberField('imagej-remontage-sc', ops.sourceColumns, sourceColumns, onSourceColumns, 1)}
           {numberField('imagej-remontage-sr', ops.sourceRows, sourceRows, onSourceRows, 1)}

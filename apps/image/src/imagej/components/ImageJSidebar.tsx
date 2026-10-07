@@ -164,9 +164,9 @@ export function ImageJSidebar({ language, registry, onRun, onCommand, disabled =
               <AccordionItem key={group.label} value={group.label} className="border-b-0">
                 {/* shadcn sidebar 风格的分组头：小号大写弱化文本，hover 才出底色。
                     不用色块也不用分隔线 —— 全部折叠时一排水印文本比一排黑块干净得多。 */}
-                <AccordionTrigger className="h-auto w-full items-center justify-start gap-1 rounded-[var(--radius-field)] px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-base-content/50 hover:bg-base-200/60 hover:text-base-content hover:no-underline [&>svg]:size-3 [&>svg]:text-base-content/40">
+                <AccordionTrigger className="h-auto w-full items-center justify-start gap-1 rounded-[var(--radius-field)] px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-base-content/50 hover:bg-base-200/60 hover:text-base-content hover:no-underline [&>svg]:size-3 [&>svg]:text-base-content/40">
                   <span>{labels.groups[group.label] ?? group.label}</span>
-                  <span className="ml-auto mr-1 font-mono text-[10px] font-normal tabular-nums text-base-content/35">{group.items.length}</span>
+                  <span className="ml-auto mr-1 font-mono text-xs font-normal tabular-nums text-base-content/35">{group.items.length}</span>
                 </AccordionTrigger>
                 <AccordionContent className="pb-1.5">
                   <div className="grid gap-1">
@@ -198,12 +198,12 @@ export function ImageJSidebar({ language, registry, onRun, onCommand, disabled =
                           else if (item.command && onCommand) onCommand(item.command)
                           else if (item.op && operator) onRun(item.op)
                         }}
-                        className={`h-auto w-full justify-between px-2 py-1.5 text-[13px] font-normal ${open ? 'bg-muted text-base-content' : 'text-base-content hover:bg-muted'}`}>
-                        <span className="truncate text-left">{localize(item.label)}{item.shortcut ? <span className="ml-1.5 font-mono text-[10px] text-base-content/40">[{item.shortcut}]</span> : null}</span>
+                        className={`h-auto w-full justify-between px-2 py-1.5 text-sm font-normal ${open ? 'bg-muted text-base-content' : 'text-base-content hover:bg-muted'}`}>
+                        <span className="truncate text-left">{localize(item.label)}{item.shortcut ? <span className="ml-1.5 font-mono text-xs text-base-content/40">[{item.shortcut}]</span> : null}</span>
                         {/* 只有真正有下拉面板的命令才画箭头：点了直接执行的命令画 ▸ 会让人
                             以为还有下一层。 */}
                         {!available
-                          ? <span className="text-[10px]">{labels.unavailable}</span>
+                          ? <span className="text-xs">{labels.unavailable}</span>
                           : hasPanel
                             ? (open ? <ChevronDown size={13} className="text-base-content/55" /> : <ChevronRight size={13} className="text-base-content/35" />)
                             : null}
