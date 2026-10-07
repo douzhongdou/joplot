@@ -8,7 +8,7 @@ import { Button } from '@joplot/ui/button'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@joplot/ui/accordion'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@joplot/ui/card'
 import { Checkbox } from '@joplot/ui/checkbox'
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@joplot/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@joplot/ui/dropdown-menu'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@joplot/ui/context-menu'
 import { Input } from '@joplot/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@joplot/ui/table'
@@ -40,7 +40,7 @@ import { RawSensorDialog, type RawSensorPrompt } from './RawSensorDialog'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@joplot/ui/dialog'
 import { AnimationCommandPanel, CombineCommandPanel, DebayerCommandPanel, FilterCommandPanel, LabelCommandPanel, LevelsCommandPanel, MontageCommandPanel, MontageToStackCommandPanel, OrthogonalCommandPanel, Project3dCommandPanel, ReduceCommandPanel, RemontageCommandPanel, ResliceCommandPanel, SetLabelCommandPanel, SubstackCommandPanel, ThresholdCommandPanel, ZProjectCommandPanel } from './CommandPanels'
 import { HistogramChart } from './HistogramChart'
-import { applyColorAdjustments, type ColorAdjustment } from '../engine/colorAdjustments'
+import { applyColorAdjustments, imagejAutoRange, type ColorAdjustment } from '../engine/colorAdjustments'
 import { needsSensorOptions, type RawSensorOptions } from '../engine/raw/sensor'
 
 /** 需要先调参数再执行的操作：面板在对应命令项下方展开，所以这里存命令 label。 */
@@ -256,6 +256,8 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const filterPreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** 视口变化后更新预览作用域的防抖定时器。 */
   const filterScopeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** ImageJ 的 Auto 重复点击会逐次更激进，这里记住上一次的 autoThreshold。 */
+  const levelsAutoThreshold = useRef(0)
   const [views, setViews] = useState<ViewCard[]>([])
   const viewsIdRef = useRef(1)
   const [minParticleArea, setMinParticleArea] = useState(1)
@@ -547,6 +549,22 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     const next = entry.variants[(index + 1) % entry.variants.length]!.id
     setToolVariants((prev) => ({ ...prev, [entry.id]: next }))
     setTool(entry.id)
+  }
+
+  /**
+   * 自动亮度/对比度（ImageJ 的 B&C ▸ Auto）。
+   *
+   * 按 ContrastAdjuster.autoAdjust 的规则从直方图求显示范围：忽略占比超过 10% 的桶，
+   * 再从两端各切掉约 1/5000 的像素。`autoThreshold` 每次点击减半，所以连点会越来越激进，
+   * 与 ImageJ 一致。
+   */
+  const applyLevelsAuto = () => {
+    if (!image || busy || !stats) return
+    const next = imagejAutoRange(stats.histogram, stats.count, stats.min, stats.max, levelsAutoThreshold.current, stats.histogramMin, stats.histogramMax)
+    levelsAutoThreshold.current = next.autoThreshold
+    setError(''); setShowOriginal(false)
+    if (colorPreview.length) commitColorPreview(colorPreview, false)
+    runtime.addStep('levels', { mode: 'rgb-range', minimum: next.min, maximum: next.max, channel: 'all' }, stepScope(null))
   }
 
   /** 某个滤镜面板当前的参数值（缺省用声明的默认值补）。 */
@@ -1670,7 +1688,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     : paramOp === 'levels'
     ? isRgb && image
       ? <ColorContrastPanel embedded session={colorSession} block={image} roi={roi ? roiBounds(roi) : null} language={language} busy={busy} hasStack={Boolean(stack)} onPreview={setColorPreview} onApply={commitColorPreview} onClose={closeParamCommand} />
-      : <LevelsCommandPanel copy={copy} brightness={brightness} contrast={contrast} active={levelsActive} disabled={!hasImage || busy} onBrightness={setBrightness} onContrast={setContrast} onApply={applyCurrentLevels} onClose={closeParamCommand} />
+      : <LevelsCommandPanel copy={copy} brightness={brightness} contrast={contrast} active={levelsActive} disabled={!hasImage || busy} onBrightness={setBrightness} onContrast={setContrast} onAuto={applyLevelsAuto} onApply={applyCurrentLevels} onClose={closeParamCommand} />
     : paramOp === 'threshold'
       ? <ThresholdCommandPanel copy={copy} level={thresholdLevel} minimum={stats?.histogramMin ?? 0} maximum={stats?.histogramMax ?? 255} step={image?.dtype === 'float32' ? 'any' : 1} disabled={!hasImage || busy} onLevel={setThresholdLevel} onApply={applyCurrentThreshold} onOtsu={applyOtsu} onClose={closeParamCommand} />
       : paramOp && FILTER_OPS.includes(paramOp) && FILTER_FIELDS[paramOp]
@@ -2256,7 +2274,6 @@ export function ScientificImageWorkspace() {
   if (!engineRef.current) engineRef.current = createWorkspaceEngine()
   const engine = engineRef.current
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [autoDebayer, setAutoDebayer] = useState(false)
   const [documents, setDocuments] = useState<DocumentEntry[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const documentsRef = useRef(documents); documentsRef.current = documents
@@ -2324,7 +2341,6 @@ export function ScientificImageWorkspace() {
         await runtime.openFile(file, asked)
       }
     }
-    if (autoDebayer && RAW_FILE.test(file.name)) void runtime.addStep('debayer', { pattern: 'auto', algorithm: 'malvar' }, { kind: 'stack' })
     return settled
   }
 
@@ -2376,9 +2392,7 @@ export function ScientificImageWorkspace() {
     }
     setDocuments((docs) => [...docs, entry])
     setActiveId(entry.id)
-    const opened = runtime.openStack(files, entry.rawOptions)
-    if (autoDebayer && files.some((file) => RAW_FILE.test(file.name))) void opened.then(() => runtime.addStep('debayer', { pattern: 'auto', algorithm: 'malvar' }, { kind: 'stack' }))
-    else void opened
+    void runtime.openStack(files, entry.rawOptions)
   }
 
   /**
@@ -2657,8 +2671,6 @@ export function ScientificImageWorkspace() {
           <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>{copy.openImage}</DropdownMenuItem>
           <DropdownMenuItem onSelect={pickFolder}>{copy.tabs.openFolder}</DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuCheckboxItem checked={autoDebayer} onCheckedChange={(value) => setAutoDebayer(value === true)}>{copy.tabs.autoDebayer}</DropdownMenuCheckboxItem>
-          <DropdownMenuSeparator />
           <DropdownMenuItem disabled={documents.length < 2} onSelect={() => setStackDialog(true)}>{copy.tabs.buildStack}</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -2742,6 +2754,8 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
+
 
 
 

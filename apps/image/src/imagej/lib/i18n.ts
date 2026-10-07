@@ -58,6 +58,8 @@ export interface ImagejCopy {
     brightness: string
     contrast: string
     applyLevels: string
+    /** ImageJ 的 Auto：按直方图裁剪自动给出显示范围。 */
+    auto: string
     threshold: string
     thresholdApply: string
     otsu: string
@@ -109,7 +111,7 @@ export interface ImagejCopy {
   }
   exportPng: string
   close: string
-  tabs: { closeOthers: string; closeToRight: string; openFolder: string; mergePrevious: string; mergeNext: string; buildStack: string; rename: string; splitStack: string; reorderStack: string; autoDebayer: string }
+  tabs: { closeOthers: string; closeToRight: string; openFolder: string; mergePrevious: string; mergeNext: string; buildStack: string; rename: string; splitStack: string; reorderStack: string }
   rename: { title: string; label: string; confirm: string; cancel: string }
   reorder: { title: string; hint: string; apply: string; cancel: string; up: string; down: string; drag: string }
   ejectPage: string
@@ -124,8 +126,6 @@ export interface ImagejCopy {
     stride: string
     strideAuto: string
     frames: string
-    pattern: string
-    patternNone: string
     inferHeight: string
     sizeLabel: string
     match: string
@@ -362,6 +362,7 @@ const zhCN: ImagejCopy = {
     brightness: '亮度',
     contrast: '对比度',
     applyLevels: '应用亮度/对比度',
+    auto: '自动',
     threshold: '阈值',
     thresholdApply: '应用阈值',
     otsu: '自动 Otsu 阈值',
@@ -401,7 +402,7 @@ const zhCN: ImagejCopy = {
   },
   exportPng: '导出 PNG',
   close: '关闭',
-  tabs: { closeOthers: '关闭其他', closeToRight: '关闭右侧标签', openFolder: '打开文件夹…', mergePrevious: '与左侧标签合并为 Stack', mergeNext: '与右侧标签合并为 Stack', buildStack: '创建 Stack…', rename: '重命名…', splitStack: '拆分 Stack', reorderStack: '调整顺序…', autoDebayer: '打开 RAW 时自动去马赛克' },
+  tabs: { closeOthers: '关闭其他', closeToRight: '关闭右侧标签', openFolder: '打开文件夹…', mergePrevious: '与左侧标签合并为 Stack', mergeNext: '与右侧标签合并为 Stack', buildStack: '创建 Stack…', rename: '重命名…', splitStack: '拆分 Stack', reorderStack: '调整顺序…' },
   rename: { title: '重命名', label: '名称', confirm: '确定', cancel: '取消' },
   reorder: { title: '调整 Stack 顺序', hint: '拖拽行调整页面顺序，应用后重建 Stack', apply: '应用', cancel: '取消', up: '上移', down: '下移', drag: '拖拽排序' },
   ejectPage: '移出当前切片',
@@ -416,8 +417,6 @@ const zhCN: ImagejCopy = {
     stride: '每行字节数',
     strideAuto: '0 表示紧凑排列',
     frames: '帧数',
-    pattern: '滤镜序列',
-    patternNone: '无（单色）',
     inferHeight: '按文件大小填高度',
     sizeLabel: '文件大小',
     match: '参数需要 {needed} 字节，与文件大小相符',
@@ -651,6 +650,7 @@ const en: ImagejCopy = {
     brightness: 'Brightness',
     contrast: 'Contrast',
     applyLevels: 'Apply brightness/contrast',
+    auto: 'Auto',
     threshold: 'Threshold',
     thresholdApply: 'Apply threshold',
     otsu: 'Auto Otsu threshold',
@@ -690,7 +690,7 @@ const en: ImagejCopy = {
   },
   exportPng: 'Export PNG',
   close: 'Close',
-  tabs: { closeOthers: 'Close others', closeToRight: 'Close tabs to the right', openFolder: 'Open folder…', mergePrevious: 'Merge with tab on the left into a stack', mergeNext: 'Merge with tab on the right into a stack', buildStack: 'Set up stack…', rename: 'Rename…', splitStack: 'Split stack', reorderStack: 'Reorder…', autoDebayer: 'Debayer RAW automatically on open' },
+  tabs: { closeOthers: 'Close others', closeToRight: 'Close tabs to the right', openFolder: 'Open folder…', mergePrevious: 'Merge with tab on the left into a stack', mergeNext: 'Merge with tab on the right into a stack', buildStack: 'Set up stack…', rename: 'Rename…', splitStack: 'Split stack', reorderStack: 'Reorder…' },
   rename: { title: 'Rename', label: 'Name', confirm: 'OK', cancel: 'Cancel' },
   reorder: { title: 'Reorder stack', hint: 'Drag rows to change page order; the stack is rebuilt on apply', apply: 'Apply', cancel: 'Cancel', up: 'Move up', down: 'Move down', drag: 'Drag to reorder' },
   ejectPage: 'Eject current slice',
@@ -705,8 +705,6 @@ const en: ImagejCopy = {
     stride: 'Row bytes',
     strideAuto: '0 means tightly packed',
     frames: 'Frames',
-    pattern: 'CFA pattern',
-    patternNone: 'None (mono)',
     inferHeight: 'Fill height from file size',
     sizeLabel: 'File size',
     match: 'Parameters need {needed} bytes, matching the file size',
@@ -940,6 +938,7 @@ const jaJP: ImagejCopy = {
     brightness: '明るさ',
     contrast: 'コントラスト',
     applyLevels: '明るさ/コントラストを適用',
+    auto: '自動',
     threshold: 'しきい値',
     thresholdApply: 'しきい値を適用',
     otsu: '自動 Otsu しきい値',
@@ -979,7 +978,7 @@ const jaJP: ImagejCopy = {
   },
   exportPng: 'PNG を書き出す',
   close: '閉じる',
-  tabs: { closeOthers: '他を閉じる', closeToRight: '右側を閉じる', openFolder: 'フォルダーを開く…', mergePrevious: '左のタブとスタックに統合', mergeNext: '右のタブとスタックに統合', buildStack: 'スタックを作成…', rename: '名前を変更…', splitStack: 'スタックを分割', reorderStack: '順序を変更…', autoDebayer: 'RAW を開いたら自動でデベイヤ' },
+  tabs: { closeOthers: '他を閉じる', closeToRight: '右側を閉じる', openFolder: 'フォルダーを開く…', mergePrevious: '左のタブとスタックに統合', mergeNext: '右のタブとスタックに統合', buildStack: 'スタックを作成…', rename: '名前を変更…', splitStack: 'スタックを分割', reorderStack: '順序を変更…' },
   rename: { title: '名前を変更', label: '名前', confirm: 'OK', cancel: 'キャンセル' },
   reorder: { title: 'スタックの順序', hint: '行をドラッグしてページ順を変更し、適用すると再構築します', apply: '適用', cancel: 'キャンセル', up: '上へ', down: '下へ', drag: 'ドラッグで並べ替え' },
   ejectPage: '現在のスライスを出す',
@@ -994,8 +993,6 @@ const jaJP: ImagejCopy = {
     stride: '1 行のバイト数',
     strideAuto: '0 は詰め込み',
     frames: 'フレーム数',
-    pattern: 'CFA パターン',
-    patternNone: 'なし（モノ）',
     inferHeight: 'ファイルサイズから高さを算出',
     sizeLabel: 'ファイルサイズ',
     match: 'パラメーターは {needed} バイトで、ファイルサイズと一致します',
@@ -1176,5 +1173,6 @@ const COPIES: Record<ImagejLanguage, ImagejCopy> = {
 export function createImagejCopy(language: ImagejLanguage): ImagejCopy {
   return COPIES[language] ?? COPIES.en
 }
+
 
 

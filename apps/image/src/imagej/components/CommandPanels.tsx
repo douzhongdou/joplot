@@ -110,7 +110,7 @@ export function FilterCommandPanel({ copy, fields, values, preview, disabled, on
 }
 
 /** 「亮度/对比度」：灰度图的亮度、对比度滑杆（RGB 图改用 ColorContrastPanel）。 */
-export function LevelsCommandPanel({ copy, brightness, contrast, active, disabled, onBrightness, onContrast, onApply, onClose }: {
+export function LevelsCommandPanel({ copy, brightness, contrast, active, disabled, onBrightness, onContrast, onAuto, onApply, onClose }: {
   copy: ImagejCopy
   brightness: number
   contrast: number
@@ -119,6 +119,8 @@ export function LevelsCommandPanel({ copy, brightness, contrast, active, disable
   disabled: boolean
   onBrightness(value: number): void
   onContrast(value: number): void
+  /** 自动对比度（ImageJ 的 Auto）。 */
+  onAuto(): void
   onApply(): void
   onClose(): void
 }) {
@@ -155,9 +157,16 @@ export function LevelsCommandPanel({ copy, brightness, contrast, active, disable
             onValueChange={(values) => onContrast(values[0] ?? contrast)}
           />
         </div>
-        <Button type="button" size="sm" className="h-8" disabled={disabled || !active} onClick={onApply}>
-          {copy.adjust.applyLevels}
-        </Button>
+        <div className="grid grid-cols-2 gap-2">
+          {/* ImageJ 的 Brightness/Contrast 对话框也有 Auto：按 ContrastAdjuster.autoAdjust
+              的直方图裁剪规则自动给出显示范围（重复点击会逐次更激进）。 */}
+          <Button type="button" variant="secondary" size="sm" className="h-8" disabled={disabled} onClick={onAuto}>
+            {copy.adjust.auto}
+          </Button>
+          <Button type="button" size="sm" className="h-8" disabled={disabled || !active} onClick={onApply}>
+            {copy.adjust.applyLevels}
+          </Button>
+        </div>
       </div>
     </CommandPanelShell>
   )

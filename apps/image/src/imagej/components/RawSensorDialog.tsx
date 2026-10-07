@@ -7,7 +7,6 @@ import { Input } from '@joplot/ui/input'
 import { Label } from '@joplot/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@joplot/ui/select'
 import type { ImagejCopy } from '../lib/i18n'
-import type { CfaPatternName } from '../engine/debayer.ts'
 import {
   guessSensorGeometry,
   inferFrames,
@@ -34,7 +33,6 @@ interface Draft {
   offset: string
   stride: string
   frames: string
-  pattern: CfaPatternName | 'none'
 }
 
 const EMPTY_DRAFT: Draft = {
@@ -44,7 +42,6 @@ const EMPTY_DRAFT: Draft = {
   offset: '0',
   stride: '0',
   frames: '1',
-  pattern: 'rggb',
 }
 
 /** 类型名用传感器行话：RAW8 / RAW10 / RAW12 / RAW16，而不是 uint16 这类容器名。 */
@@ -74,8 +71,6 @@ function sourceLabel(source: SensorGuess['source'], copy: ImagejCopy['rawSensor'
 function guessKey(guess: SensorGuess): string {
   return `${guess.width}x${guess.height}:${guess.type}`
 }
-
-const PATTERNS: readonly CfaPatternName[] = ['rggb', 'bggr', 'grbg', 'gbrg']
 
 const fieldClass = 'h-8 px-2 text-xs md:text-xs'
 
@@ -149,7 +144,9 @@ export function RawSensorDialog({ prompt, copy, onConfirm, onCancel }: {
       offset: numberOr(draft.offset, 0),
       stride: numberOr(draft.stride, 0),
       frames: numberOr(draft.frames, 1),
-      pattern: draft.pattern,
+      // 导入只负责把传感器原始数据读进来，**不在这里问 CFA 图案**——图案是 debayer 的输入。
+      // 按最常见的 RGGB 记进元数据，debayer 的「自动」就能直接用，用户要改也在那一步改。
+      pattern: 'rggb',
     }
     const size = file?.size ?? 0
     let options: RawSensorOptions | undefined
@@ -255,21 +252,9 @@ export function RawSensorDialog({ prompt, copy, onConfirm, onCancel }: {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1">
-              <Label htmlFor="raw-frames" className="text-xs">{copy.frames}</Label>
-              <Input id="raw-frames" type="number" min={1} className={fieldClass} value={draft.frames} onChange={(event) => set('frames', event.target.value)} />
-            </div>
-            <div className="grid gap-1">
-              <Label className="text-xs">{copy.pattern}</Label>
-              <Select value={draft.pattern} onValueChange={(value) => set('pattern', value as CfaPatternName | 'none')}>
-                <SelectTrigger className={fieldClass}><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {PATTERNS.map((pattern) => <SelectItem key={pattern} value={pattern}>{pattern.toUpperCase()}</SelectItem>)}
-                  <SelectItem value="none">{copy.patternNone}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="grid gap-1">
+            <Label htmlFor="raw-frames" className="text-xs">{copy.frames}</Label>
+            <Input id="raw-frames" type="number" min={1} className={fieldClass} value={draft.frames} onChange={(event) => set('frames', event.target.value)} />
           </div>
 
           <div className="grid gap-1">
