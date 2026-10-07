@@ -59,7 +59,8 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, embed
   const bins = analysis?.histogram
   const domain = { min: analysis?.histogramMin ?? 0, max: analysis?.histogramMax ?? defaultMax }
   const color = channel === 'red' ? '#dc2626' : channel === 'green' ? '#16a34a' : channel === 'blue' ? '#2563eb' : 'var(--primary)'
-  return <section className={embedded ? '' : 'shrink-0 border-b border-base-300 px-3 py-3'}>
+  // 内联展开时留出与命令项之间的间距，和其它命令面板（CommandPanelShell 的 mt-1）一致。
+  return <section className={embedded ? 'mt-1' : 'shrink-0 border-b border-base-300 px-3 py-3'}>
     {embedded ? null : <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-semibold">{copy.title}</h3></div>}
     <div className="rounded-[var(--radius-field)] border border-base-300 bg-muted/40">
       <HistogramChart
