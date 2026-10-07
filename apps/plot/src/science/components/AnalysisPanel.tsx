@@ -258,7 +258,7 @@ export function AnalysisPanel({
                         type="button"
                         variant="ghost"
                         size="icon-sm"
-                        className="size-7 rounded-[var(--radius-field)] text-base-content/45 hover:bg-base-content/10 hover:text-base-content dark:hover:bg-base-content/10 focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-ring/40 data-[state=open]:bg-base-content/10 data-[state=open]:text-base-content"
+                        className="size-7 rounded-[var(--radius-field)] text-base-content/45 hover:bg-base-content/10 hover:text-base-content dark:hover:bg-base-content/10 focus-visible:border-transparent data-[state=open]:bg-base-content/10 data-[state=open]:text-base-content"
                         aria-label={copy.stepMenu}
                       >
                         <Ellipsis size={16} strokeWidth={2.2} />

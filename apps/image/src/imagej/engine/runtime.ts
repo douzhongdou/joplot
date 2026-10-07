@@ -16,6 +16,7 @@ import type { ImageBlock, Region } from './types.ts'
 import { defaultOperatorParams, getOperator, validateOperatorParams } from './operators.ts'
 import type { EngineClient, EngineResult, EngineRunOptions } from './worker/client.ts'
 import type { StepOutcomeWire } from './worker/protocol.ts'
+import type { RawSensorOptions } from './raw/sensor.ts'
 
 export type RuntimeStatus = 'empty' | 'importing' | 'ready' | 'running' | 'error'
 
@@ -218,13 +219,14 @@ export class ImageRuntime {
     return this.dataVersionFor(recipe, this.state.throughStepId) !== version
   }
 
-  async openFile(file: File): Promise<void> {
-    return this.openWith(() => this.client.import(file))
+  /** 打开单个文件；无头传感器裸数据需要 `options`（宽高、像素类型等无法从文件推断）。 */
+  async openFile(file: File, options?: RawSensorOptions): Promise<void> {
+    return this.openWith(() => this.client.import(file, options))
   }
 
   /** 把多个文件作为一个 Stack 打开（文件夹导入 / 合并 tab）。 */
-  async openStack(files: readonly File[]): Promise<void> {
-    return this.openWith(() => this.client.importStack([...files]))
+  async openStack(files: readonly File[], options?: ReadonlyMap<string, RawSensorOptions>): Promise<void> {
+    return this.openWith(() => this.client.importStack([...files], options))
   }
 
   private async openWith(importer: () => Promise<Dataset>): Promise<void> {

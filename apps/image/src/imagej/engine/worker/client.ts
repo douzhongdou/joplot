@@ -6,6 +6,7 @@
  */
 import type { Dataset, SliceSelection } from '../dataset.ts'
 import type { Recipe } from '../recipe.ts'
+import type { RawSensorOptions } from '../raw/sensor.ts'
 import type { Dtype, ImageBlock, PixelArray, Region } from '../types.ts'
 import type { ChannelStats, ParticleRow } from '../../lib/engineTypes.ts'
 import type { ImageAnalysis } from '../analysis.ts'
@@ -205,8 +206,8 @@ export interface CombineOptions {
 
 export interface EngineClient {
   readonly kind: 'worker' | 'inline'
-  import(file: File): Promise<Dataset>
-  importStack(files: File[]): Promise<Dataset>
+  import(file: File, options?: RawSensorOptions): Promise<Dataset>
+  importStack(files: File[], options?: ReadonlyMap<string, RawSensorOptions>): Promise<Dataset>
   run(options: EngineRunOptions): Promise<EngineResult>
   /** 只算当前切片的整帧分析（不返回图像），用于把分析移出显示路径。 */
   analyze(options: EngineRunOptions): Promise<ImageAnalysis | undefined>
@@ -294,14 +295,14 @@ class WorkerEngineClient implements EngineClient {
     })
   }
 
-  async import(file: File): Promise<Dataset> {
-    const response = await this.request({ type: 'import', id: this.nextId++, file })
+  async import(file: File, options?: RawSensorOptions): Promise<Dataset> {
+    const response = await this.request({ type: 'import', id: this.nextId++, file, options })
     if (response.type !== 'imported') throw new Error('Worker 未返回导入结果')
     return response.dataset
   }
 
-  async importStack(files: File[]): Promise<Dataset> {
-    const response = await this.request({ type: 'import-stack', id: this.nextId++, files })
+  async importStack(files: File[], options?: ReadonlyMap<string, RawSensorOptions>): Promise<Dataset> {
+    const response = await this.request({ type: 'import-stack', id: this.nextId++, files, options })
     if (response.type !== 'imported') throw new Error('Worker 未返回导入结果')
     return response.dataset
   }
@@ -574,13 +575,13 @@ class InlineEngineClient implements EngineClient {
   readonly kind = 'inline' as const
   private readonly host = new EngineHost()
 
-  async import(file: File): Promise<Dataset> {
-    const result = await this.host.import(file)
+  async import(file: File, options?: RawSensorOptions): Promise<Dataset> {
+    const result = await this.host.import(file, undefined, options)
     return result.dataset
   }
 
-  async importStack(files: File[]): Promise<Dataset> {
-    const result = await this.host.importStack(files)
+  async importStack(files: File[], options?: ReadonlyMap<string, RawSensorOptions>): Promise<Dataset> {
+    const result = await this.host.importStack(files, undefined, options)
     return result.dataset
   }
 
@@ -669,7 +670,7 @@ export function createEngineClient(options?: { preferWorker?: boolean; workerFac
   const get = (): EngineClient => client ??= createActiveEngineClient(options)
   return {
     kind: options?.preferWorker !== false && typeof Worker !== 'undefined' ? 'worker' : 'inline',
-    import: (file) => get().import(file), importStack: (files) => get().importStack(files), run: (request) => get().run(request), analyze: (options) => get().analyze(options), stackStats: (options) => get().stackStats(options), stackProfiles: (options) => get().stackProfiles(options), restructure: (options) => get().restructure(options), combine: (options) => get().combine(options), label: (options) => get().label(options), project3d: (options) => get().project3d(options), remontage: (options) => get().remontage(options), project: (options) => get().project(options), montage: (options) => get().montage(options), montageToStack: (options) => get().montageToStack(options), reslice: (options) => get().reslice(options), orthogonal: (options) => get().orthogonal(options),
+    import: (file, options) => get().import(file, options), importStack: (files, options) => get().importStack(files, options), run: (request) => get().run(request), analyze: (options) => get().analyze(options), stackStats: (options) => get().stackStats(options), stackProfiles: (options) => get().stackProfiles(options), restructure: (options) => get().restructure(options), combine: (options) => get().combine(options), label: (options) => get().label(options), project3d: (options) => get().project3d(options), remontage: (options) => get().remontage(options), project: (options) => get().project(options), montage: (options) => get().montage(options), montageToStack: (options) => get().montageToStack(options), reslice: (options) => get().reslice(options), orthogonal: (options) => get().orthogonal(options),
     cancel: () => client?.cancel(), dispose: (datasetId) => client?.dispose(datasetId), terminate: () => { client?.terminate(); client = undefined },
   }
 }

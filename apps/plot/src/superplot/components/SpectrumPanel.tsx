@@ -266,7 +266,7 @@ export function SpectrumControls({ dataset, copy, locale, model }: ControlsProps
               <input
                 type="text"
                 inputMode="decimal"
-                className={`h-8 min-w-0 flex-1 rounded-[var(--radius-field)] border-0 bg-muted px-2 text-xs text-base-content outline-none transition focus-visible:ring-2 focus-visible:ring-ring/30 ${manualRateInvalid ? 'ring-1 ring-destructive/40' : ''}`}
+                className={`h-8 min-w-0 flex-1 rounded-[var(--radius-field)] border-0 bg-muted px-2 text-xs text-base-content outline-none transition ${manualRateInvalid ? 'ring-1 ring-destructive/40' : ''}`}
                 value={sampleRateText}
                 onChange={(event) => setSampleRateText(event.target.value)}
                 aria-label={copy.spectrum.sampleRate}

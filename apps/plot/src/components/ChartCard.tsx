@@ -563,8 +563,8 @@ export function ChartCard({
   return (
     <article
       className={mobileChrome
-        ? 'relative flex h-full min-h-0 flex-col bg-base-100 px-1 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25'
-        : `relative flex h-full min-h-0 flex-col rounded-[calc(var(--radius-box)+0.25rem)] bg-base-100 p-3 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 ${
+        ? 'relative flex h-full min-h-0 flex-col bg-base-100 px-1 py-2 focus-visible:outline-none'
+        : `relative flex h-full min-h-0 flex-col rounded-[calc(var(--radius-box)+0.25rem)] bg-base-100 p-3 shadow-sm transition focus-visible:outline-none ${
             selected
               ? 'ring-2 ring-ring/40'
               : ''

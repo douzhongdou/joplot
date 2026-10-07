@@ -79,7 +79,7 @@ export function NumberInput({
   return (
     <input
       type="number"
-      className="h-9 min-w-0 rounded-[var(--radius-field)] border-0 bg-muted px-3 text-sm text-base-content outline-none transition focus-visible:ring-2 focus-visible:ring-ring/30"
+      className="h-9 min-w-0 rounded-[var(--radius-field)] border-0 bg-muted px-3 text-sm text-base-content outline-none transition"
       value={Number.isFinite(value) ? value : ''}
       min={min}
       max={max}

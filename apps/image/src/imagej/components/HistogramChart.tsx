@@ -582,7 +582,7 @@ export function HistogramChart({
         role="img"
         aria-label={ariaLabel}
         tabIndex={markers?.some((marker) => marker.onChange) ? 0 : -1}
-        className="block w-full touch-none outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="block w-full touch-none outline-none"
         style={{ height, cursor: dragging !== null ? 'ew-resize' : markers?.some((marker) => marker.onChange) ? 'crosshair' : 'default' }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}

@@ -8,6 +8,7 @@ import { createDataset, type Dataset, type SliceSelection } from '../dataset.ts'
 import { MemoryStorage, type Storage } from '../storage.ts'
 import { PageMapStorage, type PageRef } from '../storage-pages.ts'
 import { importFile, importImageStack, type ImportResult } from '../importer.ts'
+import type { RawSensorOptions } from '../raw/sensor.ts'
 import { analyzeBlock, type ImageAnalysis } from '../analysis.ts'
 import { computeStackStats, type StackStatsCalibration, type StackStatsResult } from '../stackStats.ts'
 import { computeStackProfiles, type StackProfilesResult } from '../stackProfiles.ts'
@@ -46,14 +47,14 @@ export class EngineHost {
   private readonly entries = new Map<string, Entry>()
   private readonly engine = new PureComputeEngine()
 
-  async import(file: File, decoder?: (file: File) => Promise<unknown | null>): Promise<ImportResult> {
-    const result = await importFile(file, decoder as never)
+  async import(file: File, decoder?: (file: File) => Promise<unknown | null>, options?: RawSensorOptions): Promise<ImportResult> {
+    const result = await importFile(file, decoder as never, options)
     this.entries.set(result.dataset.id, { dataset: result.dataset, storage: result.storage, controller: new AbortController() })
     return result
   }
 
-  async importStack(files: File[], decoder?: (file: File) => Promise<unknown | null>): Promise<ImportResult> {
-    const result = await importImageStack(files, decoder as never)
+  async importStack(files: File[], decoder?: (file: File) => Promise<unknown | null>, options?: ReadonlyMap<string, RawSensorOptions>): Promise<ImportResult> {
+    const result = await importImageStack(files, decoder as never, options)
     this.entries.set(result.dataset.id, { dataset: result.dataset, storage: result.storage, controller: new AbortController() })
     return result
   }

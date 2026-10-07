@@ -7,6 +7,7 @@
 import type { Dataset } from '../dataset.ts'
 import type { SliceSelection } from '../dataset.ts'
 import type { Recipe, StepScope } from '../recipe.ts'
+import type { RawSensorOptions } from '../raw/sensor.ts'
 import type { ChannelStats, ParticleRow } from '../../lib/engineTypes.ts'
 import type { Dtype, Axes, Region } from '../types.ts'
 import type { ImageAnalysis } from '../analysis.ts'
@@ -34,13 +35,16 @@ export interface ImportRequest {
   type: 'import'
   id: number
   file: File
+  /** 无头传感器裸数据（没有容器头的 .raw）的解析参数；其它格式不需要。 */
+  options?: RawSensorOptions
 }
 
-/** 把多个文件合成一个 Stack 导入。 */
+/** 把多个文件合成一个 Stack 导入；`options` 按文件名给出无头 RAW 的解析参数。 */
 export interface ImportStackRequest {
   type: 'import-stack'
   id: number
   files: File[]
+  options?: ReadonlyMap<string, RawSensorOptions>
 }
 
 /** 只计算当前切片的整帧分析（不返回图像）；用于把分析移出显示路径。 */

@@ -4,7 +4,7 @@
  * 注册表同时向 UI 暴露参数、数据类型与输出含义，向调度器暴露作用范围与资源要求。
  * 这里只声明「能做什么、需要什么」，不含算法实现；实现由 ComputeEngine 提供。
  */
-import { MAX_RANK_RADIUS, type NumberParamSpec, type OperatorRegistry, type OperatorSpec, type ParamSpec } from '../lib/engineTypes.ts'
+import type { NumberParamSpec, OperatorRegistry, OperatorSpec, ParamSpec } from '../lib/engineTypes.ts'
 import type { Dtype } from './types.ts'
 
 export type OperatorOutput = 'image' | 'table' | 'stats'
@@ -98,8 +98,8 @@ function convolved(halo: number, separable: boolean): OperatorCapability {
 }
 
 const CONVOLVE = convolved(1, false)
-/** Rank 滤波（均值/中值/最小/最大）的 Radius 参数；上限与 `MAX_RANK_RADIUS` 一致。 */
-const RANK_RADIUS = num('radius', 'radius', 1, 1, MAX_RANK_RADIUS, 1)
+/** Rank 滤波的 Radius 参数：不设上限，允许小数（窗口半宽取 ceil）。 */
+const RANK_RADIUS = num('radius', 'radius', 1, 0.1, undefined, 0.1)
 
 /** 内置算子目录。实现见 compute/pureOps.ts 与 compute/itkWasm.ts。 */
 export const OPERATOR_CATALOG: readonly OperatorCapability[] = [
@@ -204,19 +204,19 @@ export const OPERATOR_CATALOG: readonly OperatorCapability[] = [
     resource: { tempBytesFactor: 1, parallel: 'none', cancellable: false },
     algorithmVersion: 'v1',
   },
-  // Rank 滤波族的半径参数（ImageJ 的 Radius）：1 = 3×3。halo 取最大半径以保证分块正确。
-  { ...convolved(MAX_RANK_RADIUS, false), kind: 'mean3x3', labelKey: 'mean3x3', params: [RANK_RADIUS] },
-  { ...convolved(MAX_RANK_RADIUS, false), kind: 'median3x3', labelKey: 'median3x3', params: [RANK_RADIUS] },
-  { ...convolved(MAX_RANK_RADIUS, false), kind: 'minimum3x3', labelKey: 'minimum3x3', params: [RANK_RADIUS] },
-  { ...convolved(MAX_RANK_RADIUS, false), kind: 'maximum3x3', labelKey: 'maximum3x3', params: [RANK_RADIUS] },
-  { ...CONVOLVE, kind: 'sharpen3x3', labelKey: 'sharpen3x3', params: [num('amount', 'amount', 1, 0, 5, 0.1)] },
+  // Rank 滤波族：半径由用户给（可为小数、无上限），因此邻域依赖声明为整图。
+  { ...convolved(0, false), kind: 'mean3x3', labelKey: 'mean3x3', params: [RANK_RADIUS], regionDependency: { kind: 'global' } },
+  { ...convolved(0, false), kind: 'median3x3', labelKey: 'median3x3', params: [RANK_RADIUS], regionDependency: { kind: 'global' } },
+  { ...convolved(0, false), kind: 'minimum3x3', labelKey: 'minimum3x3', params: [RANK_RADIUS], regionDependency: { kind: 'global' } },
+  { ...convolved(0, false), kind: 'maximum3x3', labelKey: 'maximum3x3', params: [RANK_RADIUS], regionDependency: { kind: 'global' } },
+  { ...CONVOLVE, kind: 'sharpen3x3', labelKey: 'sharpen3x3', params: [num('amount', 'amount', 1, 0, undefined, 0.1)] },
   { ...CONVOLVE, kind: 'sobel', labelKey: 'sobel' },
   {
     kind: 'unsharpMask',
     category: 'filter',
     labelKey: 'unsharpMask',
     output: 'image',
-    params: [num('sigma', 'sigma', 2, 0.1, 20, 0.1), num('amount', 'amount', 0.6, 0, 5, 0.1)],
+    params: [num('sigma', 'sigma', 2, 0.1, undefined, 0.1), num('amount', 'amount', 0.6, 0, undefined, 0.1)],
     input: { ...SINGLE3D, channels: 'any' },
     outputImage: { dtype: 'same', sizeChange: 'same' },
     scope: ['image', 'stack', 'roi'],
@@ -230,7 +230,7 @@ export const OPERATOR_CATALOG: readonly OperatorCapability[] = [
     category: 'filter',
     labelKey: 'gaussian',
     output: 'image',
-    params: [num('sigma', 'sigma', 1.5, 0.1, 20, 0.1)],
+    params: [num('sigma', 'sigma', 1.5, 0.1, undefined, 0.1)],
     input: { ...SINGLE3D, channels: 'any' },
     outputImage: { dtype: 'same', sizeChange: 'same' },
     scope: ['image', 'stack', 'roi'],
@@ -434,4 +434,5 @@ export function toUiRegistry(catalog: readonly OperatorCapability[] = OPERATOR_C
   }))
   return { categories, operators }
 }
+
 

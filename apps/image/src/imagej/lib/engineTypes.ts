@@ -1,6 +1,3 @@
-/** Rank 滤波（均值/中值/最小/最大）允许的最大半径；同时用作分块 halo，保证任意半径下分块结果正确。 */
-export const MAX_RANK_RADIUS = 4
-
 /**
  * UI ↔ 计算引擎的接缝（只定义类型，不含任何算法）。
  *
@@ -128,4 +125,5 @@ export interface EngineAdapter {
   /** 中断进行中的执行（可选）。 */
   cancel?(requestId: string): void
 }
+
 

@@ -53,13 +53,13 @@ function toWire(outcomes: Awaited<ReturnType<EngineHost['run']>>['results']): St
 async function handle(request: WorkerRequest): Promise<void> {
   switch (request.type) {
     case 'import': {
-      const result = await host.import(request.file)
+      const result = await host.import(request.file, undefined, request.options)
       const response: ImportedResponse = { type: 'imported', id: request.id, dataset: result.dataset }
       scope.postMessage(response)
       return
     }
     case 'import-stack': {
-      const result = await host.importStack(request.files)
+      const result = await host.importStack(request.files, undefined, request.options)
       const response: ImportedResponse = { type: 'imported', id: request.id, dataset: result.dataset }
       scope.postMessage(response)
       return

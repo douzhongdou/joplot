@@ -36,10 +36,12 @@ import { ImageViewport, type ImageViewportHandle, type PixelProbe } from './Imag
 import { ColorContrastPanel } from './ColorContrastPanel'
 import { StackBuilderDialog, type StackRow } from './StackBuilderDialog'
 import { StackOrderDialog } from './StackOrderDialog'
+import { RawSensorDialog, type RawSensorPrompt } from './RawSensorDialog'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@joplot/ui/dialog'
 import { AnimationCommandPanel, CombineCommandPanel, DebayerCommandPanel, FilterCommandPanel, LabelCommandPanel, LevelsCommandPanel, MontageCommandPanel, MontageToStackCommandPanel, OrthogonalCommandPanel, Project3dCommandPanel, ReduceCommandPanel, RemontageCommandPanel, ResliceCommandPanel, SetLabelCommandPanel, SubstackCommandPanel, ThresholdCommandPanel, ZProjectCommandPanel } from './CommandPanels'
 import { HistogramChart } from './HistogramChart'
 import { applyColorAdjustments, type ColorAdjustment } from '../engine/colorAdjustments'
+import { needsSensorOptions, type RawSensorOptions } from '../engine/raw/sensor'
 
 /** 需要先调参数再执行的操作：面板在对应命令项下方展开，所以这里存命令 label。 */
 type ParamCommand =
@@ -52,15 +54,17 @@ const FILTER_PREVIEW_DEBOUNCE_MS = 120
 const FILTER_OPS: readonly ParamOp[] = ['mean3x3', 'median3x3', 'gaussian', 'minimum3x3', 'maximum3x3', 'sharpen3x3', 'unsharpMask']
 /** 命令目录 FILTERS 组里这两列顺序一致的命令名（都带参数面板）。 */
 const FILTER_COMMANDS: readonly ParamCommand[] = ['Mean', 'Median', 'Gaussian Blur', 'Minimum', 'Maximum', 'Sharpen', 'Unsharp Mask']
-/** 各滤镜的参数默认值/取值范围（顺序即字段顺序）。 */
-const FILTER_FIELDS: Partial<Record<ParamOp, readonly { key: string; fallback: number; min: number; max: number; step: number }[]>> = {
-  mean3x3: [{ key: 'radius', fallback: 1, min: 1, max: 4, step: 1 }],
-  median3x3: [{ key: 'radius', fallback: 2, min: 1, max: 4, step: 1 }],
-  gaussian: [{ key: 'sigma', fallback: 1.5, min: 0.1, max: 20, step: 0.1 }],
-  minimum3x3: [{ key: 'radius', fallback: 1, min: 1, max: 4, step: 1 }],
-  maximum3x3: [{ key: 'radius', fallback: 1, min: 1, max: 4, step: 1 }],
-  sharpen3x3: [{ key: 'amount', fallback: 1, min: 0, max: 5, step: 0.1 }],
-  unsharpMask: [{ key: 'sigma', fallback: 2, min: 0.1, max: 20, step: 0.1 }, { key: 'amount', fallback: 0.6, min: 0, max: 5, step: 0.1 }],
+/** 各滤镜的参数默认值/下限（顺序即字段顺序）；`max` 缺省表示不设上限。 */
+const FILTER_FIELDS: Partial<Record<ParamOp, readonly { key: string; fallback: number; min: number; max?: number; step: number }[]>> = {
+  // 半径允许小数、不设上限（ImageJ 的 RankFilters 半径本来就是 float）。
+  // 大半径会随 r² 变慢，但取多大是用户的选择。
+  mean3x3: [{ key: 'radius', fallback: 1, min: 0, step: 0.1 }],
+  median3x3: [{ key: 'radius', fallback: 2, min: 0, step: 0.1 }],
+  gaussian: [{ key: 'sigma', fallback: 1.5, min: 0.1, step: 0.1 }],
+  minimum3x3: [{ key: 'radius', fallback: 1, min: 0, step: 0.1 }],
+  maximum3x3: [{ key: 'radius', fallback: 1, min: 0, step: 0.1 }],
+  sharpen3x3: [{ key: 'amount', fallback: 1, min: 0, step: 0.1 }],
+  unsharpMask: [{ key: 'sigma', fallback: 2, min: 0.1, step: 0.1 }, { key: 'amount', fallback: 0.6, min: 0, step: 0.1 }],
 }
 /** 命令 label → 算子 kind（命令目录里 label 是唯一键）。 */
 const COMMAND_OPS: Record<ParamCommand, ParamOp> = {
@@ -1924,7 +1928,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,.tif,.tiff,.webp,.fits,.fit,.fts,.dng,.cr2,.nef,.arw,.orf,.rw2,.raf"
+              accept="image/*,.tif,.tiff,.webp,.fits,.fit,.fts,.dng,.cr2,.nef,.arw,.orf,.rw2,.raf,.raw"
               className="hidden"
               onChange={onFileInput}
             />
@@ -2210,13 +2214,25 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
  * 外壳：多文档（tab）管理
  * ------------------------------------------------------------------ */
 
-interface DocumentEntry { id: string; title: string; files: File[]; runtime: ImageRuntime }
+/**
+ * 一个 tab 的文档。
+ *
+ * `rawOptions` 记下无头 RAW 的导入参数（按文件名）：重命名 / 拆分 / 重排都会重建文档并重新导入，
+ * 参数丢了这些操作对裸数据就再也做不成。
+ */
+interface DocumentEntry {
+  id: string
+  title: string
+  files: File[]
+  runtime: ImageRuntime
+  rawOptions?: ReadonlyMap<string, RawSensorOptions>
+}
 
 /** 文件夹导入时按扩展名筛选图片。 */
-const IMAGE_FILE = /\.(png|jpe?g|webp|tiff?|bmp|gif|fits?|fts|dng|cr2|crw|nef|nrw|arw|srf|sr2|orf|rw2|pef|srw|raf|3fr|fff|iiq|mrw|dcr|kdc|rwl|x3f|erf|mef|mos|mfw)$/i
+const IMAGE_FILE = /\.(png|jpe?g|webp|tiff?|bmp|gif|fits?|fts|dng|cr2|crw|nef|nrw|arw|srf|sr2|orf|rw2|pef|srw|raf|3fr|fff|iiq|mrw|dcr|kdc|rwl|x3f|erf|mef|mos|mfw|raw)$/i
 
-/** 相机 RAW 扩展名；用于「打开 RAW 时自动去马赛克」的导入选项。 */
-const RAW_FILE = /\.(dng|cr2|crw|nef|nrw|arw|srf|sr2|orf|rw2|pef|srw|raf|3fr|fff|iiq|mrw|dcr|kdc|rwl|x3f|erf|mef|mos|mfw)$/i
+/** 相机 RAW 扩展名（含无头 `.raw`）；用于「打开 RAW 时自动去马赛克」的导入选项与裸数据探测。 */
+const RAW_FILE = /\.(dng|cr2|crw|nef|nrw|arw|srf|sr2|orf|rw2|pef|srw|raf|3fr|fff|iiq|mrw|dcr|kdc|rwl|x3f|erf|mef|mos|mfw|raw)$/i
 
 const byNameNatural = (a: File, b: File) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
 
@@ -2250,36 +2266,117 @@ export function ScientificImageWorkspace() {
   const [renameId, setRenameId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [reorderId, setReorderId] = useState<string | null>(null)
+  const [rawPrompt, setRawPrompt] = useState<RawSensorPrompt | null>(null)
+  /** 裸数据对话框的等待句柄：undefined 的 promise 结果表示「无需询问」，null 表示用户取消。 */
+  const rawResolver = useRef<((options: RawSensorOptions | null) => void) | null>(null)
 
   /* 卸载时释放全部文档运行时。 */
   useEffect(() => () => { for (const doc of documentsRef.current) doc.runtime.dispose() }, [])
 
-  const openInto = (runtime: ImageRuntime, file: File) => {
-    const opened = runtime.openFile(file)
-    if (autoDebayer && RAW_FILE.test(file.name)) void opened.then(() => runtime.addStep('debayer', { pattern: 'auto', algorithm: 'malvar' }, { kind: 'stack' }))
-    else void opened
+  /**
+   * 打开前的参数询问。
+   *
+   * 带 TIFF 容器的 RAW（DNG / CR2 / ARW …）头部自带宽高位深，返回 undefined 表示不用问；
+   * 只有无头裸数据（工业相机 / 传感器直接落盘）才需要弹对话框，否则解码器连宽高都不知道。
+   */
+  /**
+   * 打开前的参数询问。
+   *
+   * 判据直接用引擎的 `needsSensorOptions`（像 RAW 且没有 TIFF 容器头），
+   * 于是「UI 弹了对话框」和「解码器要参数」永远是同一个判断，不会各写一套正则而漂移。
+   */
+  const askRawOptions = async (file: File, count = 1): Promise<RawSensorOptions | null | undefined> => {
+    if (!await needsSensorOptions(file)) return undefined
+    return new Promise<RawSensorOptions | null>((resolve) => {
+      rawResolver.current = resolve
+      setRawPrompt({ file, count })
+    })
   }
 
-  const openFiles = (files: readonly File[]) => {
+  /** 一批文件里第一个需要参数的裸数据：整批共用的参数就以它为准来问。 */
+  const firstHeadlessRaw = async (files: readonly File[]): Promise<File | undefined> => {
+    for (const file of files) {
+      if (await needsSensorOptions(file)) return file
+    }
+    return undefined
+  }
+
+  const settleRawPrompt = (options: RawSensorOptions | null) => {
+    const resolve = rawResolver.current
+    rawResolver.current = null
+    setRawPrompt(null)
+    resolve?.(options)
+  }
+
+  /**
+   * 导入一个文件，返回最终生效的裸数据参数（可能来自兜底补问）。
+   *
+   * 最后一道保险：万一某条入口没问参数，解码器会明确报「该 RAW 没有容器头」——与其把人堵在
+   * 报错上，不如这时补问一次再重试。正常路径不会走到这里。
+   */
+  const openInto = async (runtime: ImageRuntime, file: File, options?: RawSensorOptions): Promise<RawSensorOptions | undefined> => {
+    await runtime.openFile(file, options)
+    let settled = options
+    if (!options && /没有容器头|无法识别该格式|无法解码该文件/.test(runtime.getState().error ?? '')) {
+      const asked = await askRawOptions(file)
+      if (asked) {
+        settled = asked
+        await runtime.openFile(file, asked)
+      }
+    }
+    if (autoDebayer && RAW_FILE.test(file.name)) void runtime.addStep('debayer', { pattern: 'auto', algorithm: 'malvar' }, { kind: 'stack' })
+    return settled
+  }
+
+  const openFiles = async (files: readonly File[]) => {
     if (!files.length) return
     const created: DocumentEntry[] = []
     for (const file of files) {
+      const options = await askRawOptions(file)
+      if (options === null) continue
       const runtime = createDocumentRuntime(engine)
-      created.push({ id: nextDocumentId(), title: file.name, files: [file], runtime })
-      openInto(runtime, file)
+      const entry: DocumentEntry = {
+        id: nextDocumentId(),
+        title: file.name,
+        files: [file],
+        runtime,
+        rawOptions: options ? new Map([[file.name, options]]) : undefined,
+      }
+      created.push(entry)
+      // 先挂文档再导入：tab 立刻出现；兜底补问拿到的参数回来后再补记，拆分 / 重建才不会丢。
+      void openInto(runtime, file, options ?? undefined).then((settled) => {
+        if (!settled || entry.rawOptions?.has(file.name)) return
+        const rawOptions = new Map([[file.name, settled]])
+        entry.rawOptions = rawOptions
+        setDocuments((docs) => docs.map((doc) => (doc.id === entry.id ? { ...doc, rawOptions } : doc)))
+      })
     }
+    if (!created.length) return
     setDocuments((docs) => [...docs, ...created])
     setActiveId(created[created.length - 1]!.id)
   }
 
-  /** 把多个文件作为一个 Stack 打开（文件夹导入 / 合并 tab）。 */
-  const openStackFiles = (files: readonly File[], title?: string) => {
-    if (files.length < 2) { openFiles(files); return }
+  /**
+   * 把多个文件作为一个 Stack 打开（文件夹导入 / 合并 tab）。
+   *
+   * `rawOptions` 是整批无头 RAW 共用的一组参数：文件夹里的裸数据来自同一台传感器，
+   * 只问一次就够了；参数按文件名记进文档，拆分 / 重排 / 重命名重建时都能复原。
+   */
+  const openStackFiles = async (files: readonly File[], title?: string, rawOptions?: RawSensorOptions) => {
+    if (files.length < 2) { void openFiles(files); return }
     const runtime = createDocumentRuntime(engine)
-    const entry: DocumentEntry = { id: nextDocumentId(), title: title ?? `${files.length} images`, files: [...files], runtime }
+    const entry: DocumentEntry = {
+      id: nextDocumentId(),
+      title: title ?? `${files.length} images`,
+      files: [...files],
+      runtime,
+      rawOptions: rawOptions
+        ? new Map(files.filter((file) => RAW_FILE.test(file.name)).map((file) => [file.name, rawOptions]))
+        : undefined,
+    }
     setDocuments((docs) => [...docs, entry])
     setActiveId(entry.id)
-    const opened = runtime.openStack(files)
+    const opened = runtime.openStack(files, entry.rawOptions)
     if (autoDebayer && files.some((file) => RAW_FILE.test(file.name))) void opened.then(() => runtime.addStep('debayer', { pattern: 'auto', algorithm: 'malvar' }, { kind: 'stack' }))
     else void opened
   }
@@ -2304,21 +2401,37 @@ export function ScientificImageWorkspace() {
     .map((doc) => ({ id: doc.runtime.getState().dataset?.id ?? '', title: doc.title }))
     .filter((entry) => entry.id)
 
+  /**
+   * 文件夹 → 一个 Stack（与 jpg 文件夹完全同样的体验）。
+   *
+   * 无头 RAW 的宽高位深谁都不知道，所以先拿第一个文件问一次参数，整批共用后再进 Stack；
+   * 只有一个文件时退回单图打开（那时由 `openFiles` 自己问）。
+   */
+  const openFolderAsStack = async (images: readonly File[], title: string) => {
+    if (images.length < 2) { void openFiles(images); return }
+    const headless = await firstHeadlessRaw(images)
+    if (!headless) { void openStackFiles(images, title); return }
+    const rawCount = images.filter((file) => RAW_FILE.test(file.name)).length
+    const options = await askRawOptions(headless, rawCount)
+    if (options === null) return
+    void openStackFiles(images, title, options ?? undefined)
+  }
+
   /** 选择文件夹：过滤图片、按文件名自然排序后合成一个 Stack。 */
   const pickFolder = () => {
     const input = document.createElement('input')
     input.type = 'file'
     input.multiple = true
     ;(input as HTMLInputElement & { webkitdirectory: boolean }).webkitdirectory = true
-    input.onchange = () => {
+    input.onchange = () => { void (async () => {
       const all = Array.from(input.files ?? [])
       const images = all
         .filter((file) => IMAGE_FILE.test(file.name))
         .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
       if (!images.length) return
       const folder = images[0]!.webkitRelativePath?.split('/')[0]
-      openStackFiles(images, folder || `${images.length} images`)
-    }
+      await openFolderAsStack(images, folder || `${images.length} images`)
+    })() }
     input.click()
   }
 
@@ -2327,12 +2440,21 @@ export function ScientificImageWorkspace() {
     const selected = documents.filter((doc) => ids.includes(doc.id))
     if (selected.length < 2) return
     const files = selected.flatMap((doc) => doc.files)
+    // 合并前的 tab 可能各自持有裸数据参数（甚至参数不同），按文件名并起来带走。
+    const rawOptions = new Map<string, RawSensorOptions>()
+    for (const doc of selected) for (const [name, options] of doc.rawOptions ?? []) rawOptions.set(name, options)
     for (const doc of selected) doc.runtime.dispose()
     const runtime = createDocumentRuntime(engine)
-    const entry: DocumentEntry = { id: nextDocumentId(), title: `${files.length} images`, files, runtime }
+    const entry: DocumentEntry = {
+      id: nextDocumentId(),
+      title: `${files.length} images`,
+      files,
+      runtime,
+      rawOptions: rawOptions.size ? rawOptions : undefined,
+    }
     setDocuments((docs) => [...docs.filter((doc) => !ids.includes(doc.id)), entry])
     setActiveId(entry.id)
-    void runtime.openStack(files)
+    void runtime.openStack(files, entry.rawOptions)
   }
 
   const mergeDocuments = (leftId: string, rightId: string) => mergeSelected([leftId, rightId])
@@ -2352,8 +2474,8 @@ export function ScientificImageWorkspace() {
   const rebuildDocument = (doc: DocumentEntry, files: File[], title: string): DocumentEntry => {
     doc.runtime.dispose()
     const runtime = createDocumentRuntime(engine)
-    if (files.length > 1) void runtime.openStack(files)
-    else if (files.length === 1) void runtime.openFile(files[0]!)
+    if (files.length > 1) void runtime.openStack(files, doc.rawOptions)
+    else if (files.length === 1) void runtime.openFile(files[0]!, doc.rawOptions?.get(files[0]!.name))
     return { ...doc, runtime, files, title }
   }
 
@@ -2373,8 +2495,15 @@ export function ScientificImageWorkspace() {
     doc.runtime.dispose()
     const created: DocumentEntry[] = doc.files.map((file) => {
       const runtime = createDocumentRuntime(engine)
-      void runtime.openFile(file)
-      return { id: nextDocumentId(), title: file.name, files: [file], runtime }
+      const options = doc.rawOptions?.get(file.name)
+      void runtime.openFile(file, options)
+      return {
+        id: nextDocumentId(),
+        title: file.name,
+        files: [file],
+        runtime,
+        rawOptions: options ? new Map([[file.name, options]]) : undefined,
+      }
     })
     setDocuments((docs) => [...docs.slice(0, index), ...created, ...docs.slice(index + 1)])
     if (activeId === id) setActiveId(created[0]!.id)
@@ -2392,7 +2521,9 @@ export function ScientificImageWorkspace() {
     const updated = remaining.length > 0 ? rebuildDocument(doc, remaining, remaining.length > 1 ? doc.title : remaining[0]!.name) : null
     if (remaining.length === 0) doc.runtime.dispose()
     const ejected: DocumentEntry = { id: nextDocumentId(), title: file.name, files: [file], runtime: createDocumentRuntime(engine) }
-    void ejected.runtime.openFile(file)
+    const ejectedOptions = doc.rawOptions?.get(file.name)
+    if (ejectedOptions) ejected.rawOptions = new Map([[file.name, ejectedOptions]])
+    void ejected.runtime.openFile(file, ejectedOptions)
     setDocuments((docs) => {
       const before = docs.slice(0, index), after = docs.slice(index + 1)
       return [...before, ...(updated ? [updated] : []), ejected, ...after]
@@ -2421,7 +2552,7 @@ export function ScientificImageWorkspace() {
 
   const onFileInput = (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? [])
-    if (files.length) openFiles(files)
+    if (files.length) void openFiles(files)
     event.target.value = ''
   }
 
@@ -2447,9 +2578,9 @@ export function ScientificImageWorkspace() {
     const { files, folders } = await readDroppedContent(data)
     for (const folder of folders) {
       const images = folder.files.filter((file) => IMAGE_FILE.test(file.name)).sort(byNameNatural)
-      if (images.length) openStackFiles(images, folder.name)
+      if (images.length) await openFolderAsStack(images, folder.name)
     }
-    if (files.length) openFiles(files)
+    if (files.length) void openFiles(files)
   }
   const onDragEnter = (event: DragEvent<HTMLDivElement>) => {
     if (!event.dataTransfer?.types?.includes('Files')) return
@@ -2544,7 +2675,7 @@ export function ScientificImageWorkspace() {
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <input ref={fileInputRef} type="file" multiple accept="image/*,.tif,.tiff,.webp,.fits,.fit,.fts,.dng,.cr2,.nef,.arw,.orf,.rw2,.raf" className="hidden" onChange={onFileInput} />
+      <input ref={fileInputRef} type="file" multiple accept="image/*,.tif,.tiff,.webp,.fits,.fit,.fts,.dng,.cr2,.nef,.arw,.orf,.rw2,.raf,.raw" className="hidden" onChange={onFileInput} />
       <div className="relative min-h-0 flex-1">
         {documents.length === 0 ? (
           <div className="grid h-full place-items-center p-8 text-center">
@@ -2561,7 +2692,7 @@ export function ScientificImageWorkspace() {
           </div>
         ) : documents.map((doc) => (
           <TabsContent key={doc.id} value={doc.id} forceMount className="m-0 h-full outline-none data-[state=inactive]:hidden">
-            <ImageDocumentView runtime={doc.runtime} onOpenImage={(file) => openFiles([file])} onOpenDataset={openDerivedDataset} onListDocuments={() => listOtherDatasets(doc.id)} tabsHeader={doc.id === activeId ? tabsHeader : null} onEjectPage={doc.files.length > 1 ? (index) => extractPage(doc.id, index) : undefined} />
+            <ImageDocumentView runtime={doc.runtime} onOpenImage={(file) => { void openFiles([file]) }} onOpenDataset={openDerivedDataset} onListDocuments={() => listOtherDatasets(doc.id)} tabsHeader={doc.id === activeId ? tabsHeader : null} onEjectPage={doc.files.length > 1 ? (index) => extractPage(doc.id, index) : undefined} />
           </TabsContent>
         ))}
       </div>
@@ -2572,6 +2703,14 @@ export function ScientificImageWorkspace() {
       ) : null}
 
       <StackBuilderDialog open={stackDialog} onOpenChange={setStackDialog} rows={stackRows} copy={copy.stackBuilder} onCreate={mergeSelected} />
+
+      {/* 无头裸数据（没有容器头的 .raw）缺少宽高位深，导入前必须问一次参数。 */}
+      <RawSensorDialog
+        prompt={rawPrompt}
+        copy={copy.rawSensor}
+        onConfirm={settleRawPrompt}
+        onCancel={() => settleRawPrompt(null)}
+      />
 
       <Dialog open={Boolean(renameDoc)} onOpenChange={(open) => { if (!open) setRenameId(null) }}>
         <DialogContent className="sm:max-w-sm">
@@ -2603,6 +2742,7 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
 
 
 

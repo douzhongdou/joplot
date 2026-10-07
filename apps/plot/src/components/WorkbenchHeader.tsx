@@ -41,8 +41,8 @@ interface Props {
 }
 
 const shellClass = 'flex h-12 min-w-0 items-center rounded-[var(--radius-box)] bg-muted px-3 text-sm text-base-content'
-const inputClass = 'h-12 w-full rounded-[var(--radius-field)] border-0 bg-muted px-4 text-sm text-base-content outline-none transition placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30'
-const ghostSelectTriggerClass = 'border-0 bg-transparent px-0 py-0 shadow-none hover:bg-transparent focus-visible:ring-0'
+const inputClass = 'h-12 w-full rounded-[var(--radius-field)] border-0 bg-muted px-4 text-sm text-base-content outline-none transition placeholder:text-muted-foreground'
+const ghostSelectTriggerClass = 'border-0 bg-transparent px-0 py-0 shadow-none hover:bg-transparent'
 
 export function WorkbenchHeader({
   datasets,

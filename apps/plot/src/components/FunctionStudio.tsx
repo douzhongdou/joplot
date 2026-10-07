@@ -40,8 +40,8 @@ const WORKBENCH_REDIRECT_MS = 700
 const DEFAULT_PARAM: Omit<FunctionParamState, 'name'> = { value: 1, min: -5, max: 5, step: 0.1 }
 
 const sectionTitleClass = 'text-xs font-medium uppercase tracking-[0.12em] text-base-content/55'
-const inputClass = 'h-10 w-full rounded-[var(--radius-field)] border-0 bg-muted px-3 text-sm text-base-content outline-none transition placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30'
-const compactInputClass = 'h-8 w-full min-w-0 rounded-lg border-0 bg-muted px-2 text-xs text-base-content outline-none transition focus-visible:ring-2 focus-visible:ring-ring/30'
+const inputClass = 'h-10 w-full rounded-[var(--radius-field)] border-0 bg-muted px-3 text-sm text-base-content outline-none transition placeholder:text-muted-foreground'
+const compactInputClass = 'h-8 w-full min-w-0 rounded-lg border-0 bg-muted px-2 text-xs text-base-content outline-none transition'
 
 interface Domain {
   xMin: number

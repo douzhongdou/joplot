@@ -10,7 +10,7 @@ import {
 } from '@joplot/ui/select'
 
 const INPUT_CLASS =
-  'h-8 min-w-0 rounded-[var(--radius-field)] border-0 bg-muted px-2 text-xs text-base-content outline-none transition focus-visible:ring-2 focus-visible:ring-ring/30'
+  'h-8 min-w-0 rounded-[var(--radius-field)] border-0 bg-muted px-2 text-xs text-base-content outline-none transition'
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (

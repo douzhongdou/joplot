@@ -41,7 +41,7 @@
    页面颜色 token 使用 `--color-base-*`、`--color-primary`、`--color-success` 这类命名，不额外引入 `--color-primary-hover` 一类状态变量。
 
 2. **状态通过 Tailwind 表达**
-   悬停、激活、禁用、focus ring 等状态统一通过 Tailwind 状态类表达，如 `hover:bg-primary/10`、`focus-visible:ring-primary/30`，而不是再派生 hover token。
+   悬停、激活、禁用等状态统一通过 Tailwind 状态类表达，如 `hover:bg-primary/10`、`focus-visible:border-ring`，而不是再派生 hover token。焦点提示只用边框色变化，全项目不画 focus ring。
 
 3. **图表颜色和 UI 语义色分离**
    UI 的 `primary / secondary / accent / success` 不直接等于图表系列色。图表保留独立 chart token，保证主题切换时可读性稳定。

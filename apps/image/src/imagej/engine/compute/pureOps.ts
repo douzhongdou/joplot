@@ -24,7 +24,6 @@ import {
   type GrayImage,
   type RoiInput,
 } from '../../lib/processor.ts'
-import { MAX_RANK_RADIUS } from '../../lib/engineTypes.ts'
 import { isRoi, roiBounds } from '../../lib/roi.ts'
 import { analyzeParticles, closeBinary, dilate as libDilate, erode as libErode, fillHoles as libFillHoles, openBinary } from '../../lib/binary.ts'
 import { gaussianBlur as libGaussian } from '../../lib/filters.ts'
@@ -175,20 +174,26 @@ export function otsu(block: ImageBlock): ImageBlock {
 }
 
 /* ------------------------------------------------------------------ *
- * 邻域算子（方形窗口，半径 r；r = 1 即 3×3）
+ * 邻域算子（方形窗口，半径 r；r = 1 即 3×3，r 可以是小数）
  * ------------------------------------------------------------------ */
 
-/** 读 `radius` 参数（ImageJ 的 Radius），夹到 [1, MAX_RANK_RADIUS]。 */
+/**
+ * 读 `radius` 参数（ImageJ 的 Radius）。
+ *
+ * **不设上限**：半径取多大是用户的选择。窗口半宽取 `ceil(radius)`，所以小数半径会
+ * 落到相邻的奇数窗口（1.5 → 5×5）。代价是计算量随 r² 增长，很大的半径会明显变慢——
+ * 那是用户输入时自己承担的，不该由我们替他砍掉。
+ */
 function windowRadius(params?: Record<string, number | string>): number {
   const raw = Number(params?.radius ?? 1)
   if (!Number.isFinite(raw)) return 1
-  return Math.max(1, Math.min(MAX_RANK_RADIUS, Math.round(raw)))
+  return Math.max(0, raw)
 }
 
-/** 读强度参数（锐化/Unsharp Mask 的 amount），夹到 [0, 5]。 */
+/** 读强度参数（锐化/Unsharp Mask 的 amount）；同样不设上限。 */
 function strength(raw: unknown, fallback: number): number {
   const value = Number(raw ?? fallback)
-  return Number.isFinite(value) ? Math.max(0, Math.min(5, value)) : fallback
+  return Number.isFinite(value) ? Math.max(0, value) : fallback
 }
 
 function genericRank(block: ImageBlock, radius: number, reduce: (values: number[]) => number): ImageBlock {
@@ -196,14 +201,15 @@ function genericRank(block: ImageBlock, radius: number, reduce: (values: number[
   const out = newBlockLike(block)
   const src = numbers(block.data)
   const dst = numbers(out.data)
-  const side = 2 * radius + 1
+  const span = Math.max(0, Math.ceil(radius))
+  const side = 2 * span + 1
   const values = new Array<number>(side * side)
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       let k = 0
-      for (let dy = -radius; dy <= radius; dy += 1) {
+      for (let dy = -span; dy <= span; dy += 1) {
         const ny = Math.min(height - 1, Math.max(0, y + dy)) * width
-        for (let dx = -radius; dx <= radius; dx += 1) {
+        for (let dx = -span; dx <= span; dx += 1) {
           const nx = Math.min(width - 1, Math.max(0, x + dx))
           values[k++] = src[ny + nx]!
         }
@@ -250,13 +256,23 @@ export function median3x3(block: ImageBlock, params?: Record<string, number | st
 export function minimum3x3(block: ImageBlock, params?: Record<string, number | string>): ImageBlock {
   const radius = windowRadius(params)
   if (radius === 1 && block.dtype === 'uint8') return fromGray(libMinimum3x3(toGray(block)), block.region, block.axes)
-  return genericRank(block, radius, (values) => Math.min(...values))
+  // 用循环而不是 Math.min(...values)：半径大时展开成几十万个实参会爆栈。
+  return genericRank(block, radius, (values) => {
+    let min = values[0]!
+    for (const value of values) if (value < min) min = value
+    return min
+  })
 }
 
 export function maximum3x3(block: ImageBlock, params?: Record<string, number | string>): ImageBlock {
   const radius = windowRadius(params)
   if (radius === 1 && block.dtype === 'uint8') return fromGray(libMaximum3x3(toGray(block)), block.region, block.axes)
-  return genericRank(block, radius, (values) => Math.max(...values))
+  // 同上：不展开实参，否则大半径直接爆栈。
+  return genericRank(block, radius, (values) => {
+    let max = values[0]!
+    for (const value of values) if (value > max) max = value
+    return max
+  })
 }
 
 const SHARPEN_KERNEL = [-1, -1, -1, -1, 12, -1, -1, -1, -1] as const
@@ -508,4 +524,6 @@ function binarize(block: ImageBlock): GrayImage {
   for (let i = 0; i < src.length; i += 1) data[i] = Number.isFinite(src[i]) && src[i]! !== 0 ? 255 : 0
   return { width, height, data }
 }
+
+
 

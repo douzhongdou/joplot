@@ -192,9 +192,14 @@ test('算子注册表桥接与参数校验', () => {
   const ok = validateOperatorParams(gaussian, { sigma: 3 })
   assert.equal(ok.ok, true)
   assert.equal(ok.values.sigma, 3)
-  const clamped = validateOperatorParams(gaussian, { sigma: 999 })
-  assert.equal(clamped.ok, false)
-  assert.equal(clamped.values.sigma, 20)
+  // 滤镜参数不设上限：取多大是用户的选择（大值只是慢，不该被悄悄砍掉）。
+  const large = validateOperatorParams(gaussian, { sigma: 999 })
+  assert.equal(large.ok, true)
+  assert.equal(large.values.sigma, 999)
+  // 下限仍然兜住：sigma 必须为正。
+  const tooSmall = validateOperatorParams(gaussian, { sigma: -1 })
+  assert.equal(tooSmall.ok, false)
+  assert.equal(tooSmall.values.sigma, 0.1)
 })
 
 /* ---------------- Pure compute engine ---------------- */

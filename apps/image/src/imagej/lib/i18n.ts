@@ -114,6 +114,38 @@ export interface ImagejCopy {
   reorder: { title: string; hint: string; apply: string; cancel: string; up: string; down: string; drag: string }
   ejectPage: string
   stackBuilder: { title: string; hint: string; file: string; modified: string; size: string; pages: string; create: string; cancel: string; selectAll: string }
+  rawSensor: {
+    title: string
+    hint: string
+    width: string
+    height: string
+    type: string
+    offset: string
+    stride: string
+    strideAuto: string
+    frames: string
+    pattern: string
+    patternNone: string
+    inferHeight: string
+    sizeLabel: string
+    match: string
+    mismatch: string
+    framesHint: string
+    confirm: string
+    cancel: string
+    guessLabel: string
+    guessPick: string
+    guessNone: string
+    guessFromName: string
+    guessFromSize: string
+    guessFromTable: string
+    guessApprox: string
+    endianLittle: string
+    endianBig: string
+    packed10: string
+    packed12: string
+    applyToAll: string
+  }
   stack: { page: string; exportCurrent: string; exportAll: string; geometryUnavailable: string; applyAll: string; preloading: string }
   tools: {
     hand: string; zoom: string; dropper: string; rectangle: string; oval: string
@@ -374,6 +406,38 @@ const zhCN: ImagejCopy = {
   reorder: { title: '调整 Stack 顺序', hint: '拖拽行调整页面顺序，应用后重建 Stack', apply: '应用', cancel: '取消', up: '上移', down: '下移', drag: '拖拽排序' },
   ejectPage: '移出当前切片',
   stackBuilder: { title: '创建 Stack', hint: '勾选要合成一个 Stack 的图像（至少 2 个）', file: '文件名', modified: '修改时间', size: '大小', pages: '页数', create: '创建 Stack', cancel: '取消', selectAll: '全选' },
+  rawSensor: {
+    title: '导入传感器裸数据',
+    hint: '无头 RAW 不包含宽高与位深，请按采集时的参数填写。导入得到的是未去马赛克的 CFA 数据，可用 debayer 还原彩色。',
+    width: '宽度',
+    height: '高度',
+    type: '像素类型',
+    offset: '数据偏移（字节）',
+    stride: '每行字节数',
+    strideAuto: '0 表示紧凑排列',
+    frames: '帧数',
+    pattern: '滤镜序列',
+    patternNone: '无（单色）',
+    inferHeight: '按文件大小填高度',
+    sizeLabel: '文件大小',
+    match: '参数需要 {needed} 字节，与文件大小相符',
+    mismatch: '参数需要 {needed} 字节，文件为 {size} 字节',
+    framesHint: '该尺寸最多可容纳 {n} 帧',
+    confirm: '导入',
+    cancel: '取消',
+    guessLabel: '自动推测',
+    guessPick: '选择推测结果…',
+    guessNone: '无法从文件名或文件大小推测，请手动填写宽高',
+    guessFromName: '来自文件名里的宽高',
+    guessFromSize: '与文件大小精确匹配',
+    guessFromTable: '常见传感器尺寸',
+    guessApprox: '近似推测，请核对后导入',
+    endianLittle: '小端',
+    endianBig: '大端',
+    packed10: 'MIPI 位打包（5 字节 4 像素）',
+    packed12: 'MIPI 位打包（3 字节 2 像素）',
+    applyToAll: '该参数将应用到文件夹内的 {n} 个文件，合成为一个 Stack',
+  },
   stack: { page: '切片', exportCurrent: '导出当前 TIFF', exportAll: '导出整个 TIFF 栈', geometryUnavailable: '多页栈暂不支持改变切片尺寸的操作', applyAll: '应用到整个 Stack（关闭时仅当前切片）', preloading: '正在载入 Stack' },
   tools: {
     hand: '平移', zoom: '放大镜', dropper: '取色器', rectangle: '矩形', oval: '椭圆',
@@ -631,6 +695,38 @@ const en: ImagejCopy = {
   reorder: { title: 'Reorder stack', hint: 'Drag rows to change page order; the stack is rebuilt on apply', apply: 'Apply', cancel: 'Cancel', up: 'Move up', down: 'Move down', drag: 'Drag to reorder' },
   ejectPage: 'Eject current slice',
   stackBuilder: { title: 'Set up stack', hint: 'Select the images to combine into one stack (at least 2)', file: 'File name', modified: 'Modified', size: 'Size', pages: 'Pages', create: 'Create stack', cancel: 'Cancel', selectAll: 'Select all' },
+  rawSensor: {
+    title: 'Import sensor raw data',
+    hint: 'A headerless RAW carries no width, height or bit depth — enter the parameters used at capture. The result is untouched CFA data; run debayer to get colour.',
+    width: 'Width',
+    height: 'Height',
+    type: 'Pixel type',
+    offset: 'Data offset (bytes)',
+    stride: 'Row bytes',
+    strideAuto: '0 means tightly packed',
+    frames: 'Frames',
+    pattern: 'CFA pattern',
+    patternNone: 'None (mono)',
+    inferHeight: 'Fill height from file size',
+    sizeLabel: 'File size',
+    match: 'Parameters need {needed} bytes, matching the file size',
+    mismatch: 'Parameters need {needed} bytes but the file is {size} bytes',
+    framesHint: 'This geometry fits up to {n} frames',
+    confirm: 'Import',
+    cancel: 'Cancel',
+    guessLabel: 'Detected',
+    guessPick: 'Pick a detected geometry…',
+    guessNone: 'Cannot infer from the file name or size — enter width and height manually',
+    guessFromName: 'width × height found in the file name',
+    guessFromSize: 'exact match for the file size',
+    guessFromTable: 'common sensor geometry',
+    guessApprox: 'approximate guess — please verify before importing',
+    endianLittle: 'little-endian',
+    endianBig: 'big-endian',
+    packed10: 'MIPI packed (4 px in 5 bytes)',
+    packed12: 'MIPI packed (2 px in 3 bytes)',
+    applyToAll: 'These parameters apply to all {n} files in the folder, combined into one stack',
+  },
   stack: { page: 'Slice', exportCurrent: 'Export current TIFF', exportAll: 'Export TIFF stack', geometryUnavailable: 'Size-changing operations are unavailable for multi-page stacks', applyAll: 'Apply to the whole Stack (off: current slice only)', preloading: 'Loading Stack' },
   tools: {
     hand: 'Pan', zoom: 'Zoom', dropper: 'Color picker', rectangle: 'Rectangle', oval: 'Oval',
@@ -888,6 +984,38 @@ const jaJP: ImagejCopy = {
   reorder: { title: 'スタックの順序', hint: '行をドラッグしてページ順を変更し、適用すると再構築します', apply: '適用', cancel: 'キャンセル', up: '上へ', down: '下へ', drag: 'ドラッグで並べ替え' },
   ejectPage: '現在のスライスを出す',
   stackBuilder: { title: 'スタックを作成', hint: '1 つのスタックにまとめる画像を選択してください（2 つ以上）', file: 'ファイル名', modified: '更新日時', size: 'サイズ', pages: 'ページ数', create: 'スタックを作成', cancel: 'キャンセル', selectAll: 'すべて選択' },
+  rawSensor: {
+    title: 'センサー RAW データを読み込む',
+    hint: 'ヘッダーのない RAW には幅・高さ・ビット深度が含まれません。撮影時のパラメーターを入力してください。読み込み後はデベイヤ前の CFA データで、debayer によりカラー化できます。',
+    width: '幅',
+    height: '高さ',
+    type: 'ピクセル型',
+    offset: 'データオフセット（バイト）',
+    stride: '1 行のバイト数',
+    strideAuto: '0 は詰め込み',
+    frames: 'フレーム数',
+    pattern: 'CFA パターン',
+    patternNone: 'なし（モノ）',
+    inferHeight: 'ファイルサイズから高さを算出',
+    sizeLabel: 'ファイルサイズ',
+    match: 'パラメーターは {needed} バイトで、ファイルサイズと一致します',
+    mismatch: 'パラメーターは {needed} バイト必要ですが、ファイルは {size} バイトです',
+    framesHint: 'このサイズでは最大 {n} フレーム',
+    confirm: '読み込む',
+    cancel: 'キャンセル',
+    guessLabel: '自動推定',
+    guessPick: '推定結果を選択…',
+    guessNone: 'ファイル名やサイズから推定できません。幅と高さを入力してください',
+    guessFromName: 'ファイル名の幅 × 高さ',
+    guessFromSize: 'ファイルサイズと完全一致',
+    guessFromTable: '一般的なセンサーサイズ',
+    guessApprox: 'おおよその推定です。確認してから読み込んでください',
+    endianLittle: 'リトルエンディアン',
+    endianBig: 'ビッグエンディアン',
+    packed10: 'MIPI パック（5 バイトに 4 画素）',
+    packed12: 'MIPI パック（3 バイトに 2 画素）',
+    applyToAll: 'この設定はフォルダー内の {n} ファイルに適用され、1 つのスタックになります',
+  },
   stack: { page: 'スライス', exportCurrent: '現在の TIFF を出力', exportAll: 'TIFF スタックを出力', geometryUnavailable: '複数ページのスタックではサイズを変える操作はできません', applyAll: 'スタック全体に適用（オフ：現在のスライス）', preloading: 'スタックを読み込み中' },
   tools: {
     hand: '移動', zoom: 'ズーム', dropper: 'スポイト', rectangle: '矩形', oval: '楕円',

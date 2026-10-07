@@ -43,7 +43,7 @@ interface Props {
 type InspectorTab = 'base' | 'display'
 
 const fieldLabelClass = 'text-xs font-medium uppercase tracking-[0.12em] text-base-content/55'
-const inputClass = 'h-12 w-full rounded-[var(--radius-field)] border-0 bg-muted px-4 text-sm text-base-content outline-none transition placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30'
+const inputClass = 'h-12 w-full rounded-[var(--radius-field)] border-0 bg-muted px-4 text-sm text-base-content outline-none transition placeholder:text-muted-foreground'
 
 const aggregationOptions: AggregationKind[] = [
   'sum',
@@ -499,7 +499,7 @@ export function CardInspector({
                 {card.kind !== 'stats' && (
                   <button
                     type="button"
-                    className="inline-grid size-11 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-primary transition hover:bg-transparent hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
+                    className="inline-grid size-11 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-primary transition hover:bg-transparent hover:text-primary/80 focus-visible:outline-none"
                     onClick={() => onAddSeries(activeDatasetId ?? undefined)}
                     aria-label={t('inspector.addSeries')}
                     title={t('inspector.addSeries')}

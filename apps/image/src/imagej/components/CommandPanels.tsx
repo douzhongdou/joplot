@@ -48,7 +48,7 @@ function CommandPanelShell({ children }: {
  */
 export function FilterCommandPanel({ copy, fields, values, preview, disabled, onValue, onPreview, onApply, onClose }: {
   copy: ImagejCopy
-  fields: readonly { key: string; fallback: number; min: number; max: number; step: number }[]
+  fields: readonly { key: string; fallback: number; min: number; max?: number; step: number }[]
   values: Record<string, number>
   preview: boolean
   disabled: boolean
@@ -69,7 +69,9 @@ export function FilterCommandPanel({ copy, fields, values, preview, disabled, on
             <div key={field.key} className="grid gap-1">
               <Label htmlFor={id} className="text-xs">
                 {ops.filterParams[field.key] ?? field.key}
-                <span className="ml-1.5 font-mono text-[10px] font-normal text-base-content/40">{field.min}–{field.max}</span>
+                <span className="ml-1.5 font-mono text-[10px] font-normal text-base-content/40">
+                  {field.max === undefined ? `≥ ${field.min}` : `${field.min}–${field.max}`}
+                </span>
               </Label>
               <Input
                 id={id}
@@ -84,7 +86,8 @@ export function FilterCommandPanel({ copy, fields, values, preview, disabled, on
                   setDraft((current) => ({ ...current, [field.key]: raw }))
                   const parsed = Number(raw)
                   if (raw === '' || !Number.isFinite(parsed)) return
-                  onValue(field.key, Math.max(field.min, Math.min(field.max, parsed)))
+                  // 只兜住下限；上限缺省表示不限制，用户想输多大都行。
+                  onValue(field.key, field.max === undefined ? Math.max(field.min, parsed) : Math.max(field.min, Math.min(field.max, parsed)))
                 }}
                 onBlur={() => setDraft((current) => {
                   const next = { ...current }
@@ -1157,6 +1160,7 @@ export function RemontageCommandPanel({ copy, sourceColumns, sourceRows, columns
     </CommandPanelShell>
   )
 }
+
 
 
 

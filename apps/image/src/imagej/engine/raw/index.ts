@@ -15,10 +15,8 @@
 import { dtypeOf, TiffPageSource } from '../tiff/source.ts'
 import { PHOTOMETRIC_CFA, PHOTOMETRIC_LINEAR_RAW, type TiffPage } from '../tiff/index.ts'
 import { patternName } from '../debayer.ts'
+import { MAX_IMPORT_PIXELS } from './sensor.ts'
 import type { DecodedImage } from '../importer.ts'
-
-/** 常见相机 RAW 扩展名；非 TIFF 容器（CR3/X3F/RAF）会在解析时给出明确错误。 */
-export const RAW_SUFFIX = /\.(dng|cr2|crw|nef|nrw|arw|srf|sr2|orf|rw2|pef|srw|raf|3fr|fff|iiq|mrw|dcr|kdc|rwl|x3f|erf|mef|mos|mfw)$/i
 
 export interface RawDecode {
   decoded: DecodedImage
@@ -37,6 +35,11 @@ export async function decodeRawFile(blob: Blob): Promise<RawDecode> {
   if (meta.components !== 1) throw new Error(`RAW 数据页为 ${meta.components} 通道，不是单通道 CFA`)
   if (meta.layout !== 'strip') throw new Error('RAW 暂只支持 strip 布局的 CFA 数据（tile 布局后续支持）')
   if (dtypeOf(meta) === undefined) throw new Error(`RAW 位深 ${meta.bitsPerSample} 位 SampleFormat=${meta.sampleFormat} 暂不支持`)
+  // 畸形头部能声明出任意尺寸，分配前先按像素上限挡掉，避免把 Worker 拖死。
+  const pixels = meta.width * meta.height
+  if (pixels > MAX_IMPORT_PIXELS) {
+    throw new Error(`RAW 数据页尺寸 ${meta.width}×${meta.height} 超过单次导入上限 ${MAX_IMPORT_PIXELS} 像素`)
+  }
 
   const frame = await source.readPage(pageNumber)
   const isCfa = meta.photometric === PHOTOMETRIC_CFA || meta.photometric === PHOTOMETRIC_LINEAR_RAW

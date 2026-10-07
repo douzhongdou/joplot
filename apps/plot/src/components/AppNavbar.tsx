@@ -240,7 +240,7 @@ export function AppNavbar({
             triggerAriaLabel={t('language.label')}
             align="right"
             triggerSize="sm"
-            buttonClassName="size-8 border-0 bg-transparent px-0 shadow-none hover:bg-transparent focus-visible:ring-0"
+            buttonClassName="size-8 border-0 bg-transparent px-0 shadow-none hover:bg-transparent"
             menuClassName="min-w-[9rem]"
             renderTrigger={(_, open) => (
               <Languages

@@ -13,6 +13,7 @@ import { TiffPageSource, dtypeOf } from './tiff/source.ts'
 import { type Dtype, type ChannelInfo, type ImageBlock, uncalibratedSpatialTransform, allocateBuffer, type PixelArray } from './types.ts'
 import { decodeTiff } from '../lib/tiff.ts'
 import type { GrayImage } from '../lib/processor.ts'
+import { RAW_SUFFIX, type RawSensorOptions } from './raw/sensor.ts'
 
 export interface ImportResult {
   dataset: Dataset
@@ -39,8 +40,14 @@ function makeSource(file: File, format: StorageMetadata['source']['format']) {
 /** FITS 常见扩展名：.fits / .fit / .fts。 */
 const FITS_SUFFIX = /\.(fits|fit|fts)$/
 
-/** 相机 RAW 扩展名；非 TIFF 容器会在解码时给出明确错误。 */
-const RAW_SUFFIX = /\.(dng|cr2|crw|nef|nrw|arw|srf|sr2|orf|rw2|pef|srw|raf|3fr|fff|iiq|mrw|dcr|kdc|rwl|x3f|erf|mef|mos|mfw)$/i
+/**
+ * 交给 ITK-Wasm 兜底解码的体积上限。
+ *
+ * 未知格式到了这一层就已经没有可信的头部信息，ITK 会按候选 IO 逐个试探，
+ * 对几百 MB 的裸数据很容易一路分配下去把 Worker 拖死（表现为整个页面卡住）。
+ * 超过上限宁可拒绝，也不要让浏览器去赌。
+ */
+const MAX_ITK_BYTES = 256 * 1024 * 1024
 
 /** JPEG：8 位、无 alpha，浏览器原生解码与 ITK 结果一致但快得多。 */
 const JPEG_SUFFIX = /\.(jpe?g)$/i
@@ -297,19 +304,24 @@ async function tryTiffStack(file: File): Promise<ImportResult | null> {
 /**
  * 导入文件。
  *
- * 先按扩展名分派自研解码器：FITS 走 `fits/`，WebP 走浏览器原生位图。
+ * 先按扩展名分派自研解码器：FITS 走 `fits/`，WebP 走浏览器原生位图，RAW 走 `raw/`。
  * 其余文件 TIFF 优先走惰性页栈（整卷像素不驻留内存，翻页时按页读取）；
  * 再尝试 ITK-Wasm；失败后回退内置 8 位 TIFF 解码器。
- * 可用 `decoder` 覆盖 ITK 解码器（测试注入），不影响 TIFF / FITS / WebP 路径。
+ * 可用 `decoder` 覆盖 ITK 解码器（测试注入），不影响 TIFF / FITS / WebP / RAW 路径。
+ *
+ * `rawOptions` 只在无头裸数据（没有容器头的 .raw）时才需要：宽高与像素类型无法从文件推断。
  */
 export async function importFile(
   file: File,
   decoder?: (file: File) => Promise<ItkImage | null>,
+  rawOptions?: RawSensorOptions,
 ): Promise<ImportResult> {
   const format = formatFor(file)
   if (format === 'fits') return importFits(file)
   if (format === 'webp') return importWebp(file)
-  if (format === 'raw') return importRaw(file)
+  // 后缀不在名单里、但调用方已经拿到参数（用户在「导入传感器裸数据」里确认过）时，
+  // 照样按裸数据解码：传感器导出的文件名常常没有 .raw 这类标准后缀。
+  if (format === 'raw' || (rawOptions && format === 'unknown')) return importRaw(file, rawOptions)
   // JPEG 走浏览器原生解码：比 ITK-Wasm 快得多，且 8 位结果一致；环境不支持时回退 ITK。
   if (JPEG_SUFFIX.test(file.name.toLowerCase()) || file.type === 'image/jpeg') {
     const native = await importNativeRaster(file)
@@ -318,6 +330,11 @@ export async function importFile(
 
   const stack = await tryTiffStack(file)
   if (stack) return stack
+
+  // 未识别的格式交给 ITK 逐个 IO 试探，大文件极易把 Worker 拖死；超过上限直接拒绝。
+  if (format === 'unknown' && file.size > MAX_ITK_BYTES) {
+    throw new Error(`无法识别该格式，且文件 ${file.size} 字节超出兜底解码上限 ${MAX_ITK_BYTES} 字节；若这是传感器裸数据，请提供宽高与像素类型后导入`)
+  }
 
   const decode = decoder ?? defaultItkDecoder()
   if (decode) {
@@ -362,8 +379,24 @@ async function importNativeRaster(file: File): Promise<ImportResult | null> {
   return datasetFromDecoded(file, decoded, 'native-bitmap')
 }
 
-/** RAW：自研解码，输出单通道 CFA 马赛克灰度 + CFA 元数据，彩色由 debayer 算子还原。 */
-async function importRaw(file: File): Promise<ImportResult> {
+/**
+ * RAW 导入，两条路：
+ *
+ * 1. 带 TIFF 容器（DNG / CR2 / NEF / ARW …）→ `raw/index.ts` 挑 CFA 数据页，头里就有宽高位深；
+ * 2. 无头裸数据（工业相机 / 传感器直接落盘）→ 必须由用户给出宽高与像素类型，走 `raw/sensor.ts`。
+ *
+ * 两条路都输出单通道 CFA 马赛克灰度 + CFA 元数据，彩色由 debayer 算子还原。
+ */
+async function importRaw(file: File, options?: RawSensorOptions): Promise<ImportResult> {
+  if (options) {
+    const { decodeRawSensor } = await import('./raw/sensor.ts')
+    const { decoded, metadata } = await decodeRawSensor(file, options)
+    return datasetFromDecoded(file, decoded, 'raw-sensor', metadata)
+  }
+  const { probeRawContainer } = await import('./raw/sensor.ts')
+  if (await probeRawContainer(file) === 'headless') {
+    throw new Error('该 RAW 没有容器头（无头传感器裸数据），无法从文件推断宽高与像素类型：请用「导入传感器裸数据」指定参数')
+  }
   const { decodeRawFile } = await import('./raw/index.ts')
   const { decoded, metadata } = await decodeRawFile(file)
   return datasetFromDecoded(file, decoded, 'raw-tiff', metadata)
@@ -396,12 +429,21 @@ async function fallbackTiff(file: File): Promise<ImportResult | null> {
 export async function importImageStack(
   files: readonly File[],
   decoder?: (file: File) => Promise<ItkImage | null>,
+  rawOptions?: ReadonlyMap<string, RawSensorOptions>,
 ): Promise<ImportResult> {
   if (files.length < 2) throw new Error('合成 Stack 至少需要两张图像')
 
+  /**
+   * 整栈是否含无头 RAW：文件夹里一批同型号传感器的裸数据共用同一组参数
+   * （对话框只问一次），图案写进 dataset 元数据，debayer 的「自动」才取得到。
+   */
+  const cfaPattern = rawOptions
+    ? [...rawOptions.values()].find((option) => option.pattern !== 'none')?.pattern
+    : undefined
+
   /** 解码某一页为原生块（读完整帧后释放临时存储）。 */
   const decodePage = async (file: File): Promise<ImageBlock> => {
-    const result = await importFile(file, decoder)
+    const result = await importFile(file, decoder, rawOptions?.get(file.name))
     const meta = result.storage.metadata()
     const region = { start: meta.axes.map(() => 0), shape: [...meta.shape] }
     try {
@@ -426,7 +468,7 @@ export async function importImageStack(
       { index: 1, name: 'Green', kind: 'rgb', displayColor: [0, 255, 0] },
       { index: 2, name: 'Blue', kind: 'rgb', displayColor: [0, 0, 255] },
     ]
-    : [{ index: 0, name: 'Channel 1', kind: 'other' }]
+    : [{ index: 0, name: cfaPattern ? 'CFA' : 'Channel 1', kind: 'other' }]
   const dataset = createDataset({
     dtype: signature.dtype,
     axes,
@@ -437,10 +479,10 @@ export async function importImageStack(
     source: {
       kind: 'memory',
       name: stackName(files),
-      format: 'unknown',
+      format: rawOptions ? 'raw' : 'unknown',
       fingerprint: `stack:${files.map(fileFingerprint).join('|')}`,
     },
-    metadata: { decodedWith: 'multi-file', pages: files.length, lazy: true },
+    metadata: { decodedWith: 'multi-file', pages: files.length, lazy: true, ...(cfaPattern ? { cfaPattern } : {}) },
   })
   const storageMeta: StorageMetadata = {
     dtype: dataset.dtype,
