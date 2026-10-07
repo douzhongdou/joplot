@@ -159,16 +159,17 @@ export function ImageJSidebar({ language, registry, onRun, onCommand, disabled =
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-4">
         {groups.length ? (
-          <Accordion type="multiple" value={openGroups} onValueChange={onOpenGroupsChange} className="grid gap-0.5">
+          <Accordion type="multiple" value={openGroups} onValueChange={onOpenGroupsChange}>
             {groups.map((group) => (
-              <AccordionItem key={group.label} value={group.label} className="border-b-0">
-                {/* shadcn sidebar 风格的分组头：小号大写弱化文本，hover 才出底色。
-                    不用色块也不用分隔线 —— 全部折叠时一排水印文本比一排黑块干净得多。 */}
-                <AccordionTrigger className="h-auto w-full items-center justify-start gap-1 rounded-[var(--radius-field)] px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-base-content/50 hover:bg-base-200/60 hover:text-base-content hover:no-underline [&>svg]:size-3 [&>svg]:text-base-content/40">
+              /* 分隔线交给 shadcn 原生的 AccordionItem（border-b / last:border-b-0），不再自己拼条件类。 */
+              <AccordionItem key={group.label} value={group.label}>
+                {/* shadcn sidebar 风格的分组头：小号大写弱化文本，hover 才出底色。 */}
+                <AccordionTrigger>
                   <span>{labels.groups[group.label] ?? group.label}</span>
-                  <span className="ml-auto mr-1 font-mono text-xs font-normal tabular-nums text-base-content/35">{group.items.length}</span>
+                  {/* 数量徽标是内容、不是 accordion 的样式；ml-auto 让它贴住原生的折叠箭头。 */}
+                  <span className="ml-auto font-mono text-xs font-normal tabular-nums text-muted-foreground">{group.items.length}</span>
                 </AccordionTrigger>
-                <AccordionContent className="pb-1.5">
+                <AccordionContent>
                   <div className="grid gap-1">
                 {group.items.map((item) => {
                   const operator = item.op ? operators.get(item.op) : undefined
