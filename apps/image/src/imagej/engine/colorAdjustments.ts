@@ -44,10 +44,16 @@ export function adjustedColorValue(value: number, channel: number, x: number, y:
 }
 
 export function applyColorAdjustments(block: ImageBlock, adjustments: readonly ColorAdjustment[]): ImageBlock {
-  if (block.shape[block.axes.indexOf('c')] !== 3) throw new RangeError('RGB range adjustment requires three channels')
+  const channels = block.shape[block.axes.indexOf('c')] ?? 1
+  if (channels !== 3 && channels !== 1) throw new RangeError('Display range adjustment supports grayscale or RGB')
   if (adjustments.some((setting) => !Number.isFinite(setting.min) || !Number.isFinite(setting.max) || setting.max < setting.min || !['all', 'red', 'green', 'blue'].includes(setting.channel))) throw new RangeError('Invalid RGB display range or channel')
   const width = block.shape[block.axes.indexOf('x')]!, height = block.shape[block.axes.indexOf('y')]!, pixels = width * height
   const data = allocateBuffer(block.dtype, block.data.length), ceiling = block.dtype === 'uint16' ? 65535 : 255
+  if (channels === 1) {
+    // 灰度：`all` 的显示范围直接作用在这一个通道上（ImageJ 的 B&C 对灰度就是这样）。
+    for (let i = 0; i < pixels; i++) data[i] = adjustedColorValue(block.data[i]!, 0, i % width, Math.floor(i / width), adjustments, ceiling)
+    return { ...block, data }
+  }
   for (let channel = 0; channel < 3; channel++) for (let i = 0; i < pixels; i++) data[channel * pixels + i] = adjustedColorValue(block.data[channel * pixels + i]!, channel, i % width, Math.floor(i / width), adjustments, ceiling)
   return { ...block, data }
 }

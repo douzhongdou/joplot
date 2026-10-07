@@ -17,7 +17,7 @@ import { ToggleGroup, ToggleGroupItem } from '@joplot/ui/toggle-group'
 import { Label } from '@joplot/ui/label'
 import { createImagejCopy } from '../lib/i18n'
 import { readDroppedContent } from '../lib/dropFiles'
-import { levelsRange, toRoi, type RoiInput } from '../lib/processor'
+import { toRoi, type RoiInput } from '../lib/processor'
 import { animationInterval, nextAnimationStep } from '../lib/animation'
 import { clampRoi, isRoi, roiBounds, roiPoints, type Roi } from '../lib/roi'
 import { TOOLS, VARIANT_ICONS, toolByShortcut, type ToolDefinition, type ToolId } from '../lib/tools'
@@ -38,9 +38,9 @@ import { StackBuilderDialog, type StackRow } from './StackBuilderDialog'
 import { StackOrderDialog } from './StackOrderDialog'
 import { RawSensorDialog, type RawSensorPrompt } from './RawSensorDialog'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@joplot/ui/dialog'
-import { AnimationCommandPanel, CombineCommandPanel, DebayerCommandPanel, FilterCommandPanel, LabelCommandPanel, LevelsCommandPanel, MontageCommandPanel, MontageToStackCommandPanel, OrthogonalCommandPanel, Project3dCommandPanel, ReduceCommandPanel, RemontageCommandPanel, ResliceCommandPanel, SetLabelCommandPanel, SubstackCommandPanel, ThresholdCommandPanel, ZProjectCommandPanel } from './CommandPanels'
+import { AnimationCommandPanel, CombineCommandPanel, DebayerCommandPanel, FilterCommandPanel, LabelCommandPanel, MontageCommandPanel, MontageToStackCommandPanel, OrthogonalCommandPanel, Project3dCommandPanel, ReduceCommandPanel, RemontageCommandPanel, ResliceCommandPanel, SetLabelCommandPanel, SubstackCommandPanel, ThresholdCommandPanel, ZProjectCommandPanel } from './CommandPanels'
 import { HistogramChart } from './HistogramChart'
-import { applyColorAdjustments, imagejAutoRange, type ColorAdjustment } from '../engine/colorAdjustments'
+import { applyColorAdjustments, type ColorAdjustment } from '../engine/colorAdjustments'
 import { needsSensorOptions, type RawSensorOptions } from '../engine/raw/sensor'
 
 /** 需要先调参数再执行的操作：面板在对应命令项下方展开，所以这里存命令 label。 */
@@ -243,7 +243,6 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   /** 各工具的子类型：双击工具图标切换（ImageJ 的 Toolbar.getName 子类型机制）。 */
   const [toolVariants, setToolVariants] = useState<Record<string, string>>({ line: 'line', point: 'point' })
   const [probe, setProbe] = useState<PixelProbe | null>(null)
-  const [brightness, setBrightness] = useState(0), [contrast, setContrast] = useState(50)
   const [thresholdLevel, setThresholdLevel] = useState(128)
   const [debayerPattern, setDebayerPattern] = useState('auto'), [debayerAlgorithm, setDebayerAlgorithm] = useState('malvar')
   const [scope, setScope] = useState<'image' | 'roi'>('image')
@@ -256,8 +255,6 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const filterPreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** 视口变化后更新预览作用域的防抖定时器。 */
   const filterScopeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  /** ImageJ 的 Auto 重复点击会逐次更激进，这里记住上一次的 autoThreshold。 */
-  const levelsAutoThreshold = useRef(0)
   const [views, setViews] = useState<ViewCard[]>([])
   const viewsIdRef = useRef(1)
   const [minParticleArea, setMinParticleArea] = useState(1)
@@ -383,7 +380,6 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
         .join(' '),
     }))
   }, [state.stackProfiles])
-  const levelsActive = brightness !== 0 || contrast !== 50
   const paramOp = paramCommand ? COMMAND_OPS[paramCommand] : null
   const particlesRequested = views.some((view) => view.type === 'particles')
   const analysisChannel = isRgb && colorPreview.length ? 'all' as const : undefined
@@ -402,10 +398,6 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     if (!displayBlock) return { window: 255, level: 127.5 }
     return displayBlock.dtype === 'uint8' ? { window: 255, level: 127.5 } : computeWindowLevel(displayBlock)
   }, [displayBlock])
-  const displayWindow = useMemo(() => {
-    const range = levelsRange(brightness, contrast), lo = baselineWindow.level - baselineWindow.window / 2
-    return { window: baselineWindow.window * (range.max - range.min) / 255, level: lo + baselineWindow.window * (range.max + range.min) / 510 }
-  }, [baselineWindow, brightness, contrast])
   const rasterOptions = useMemo(() => ({ gray: !showColor, threshold: paramOp === 'threshold' ? thresholdLevel : undefined, colorAdjustments: showOriginal ? [] : colorPreview }), [showColor, paramOp, thresholdLevel, colorPreview, showOriginal])
   const selectPage = (index: number) => {
     if (!slice) return
@@ -522,7 +514,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   useEffect(() => {
     // 翻页作废在途的 Original 读取：Original 改为按需读，见 toggleOriginal。
     originalRequest.current += 1
-    setRoi(null); setScope('image'); setProbe(null); setOriginal(null); setShowOriginal(false); setBrightness(0); setContrast(50); setColorPreview([])
+    setRoi(null); setScope('image'); setProbe(null); setOriginal(null); setShowOriginal(false); setColorPreview([])
   }, [runtime, state.dataset?.id, state.selection.t, state.selection.c, state.selection.z])
   useEffect(() => {
     if (current) setRoi((target) => target ? clampRoi(target, current.width, current.height) : null)
@@ -549,22 +541,6 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     const next = entry.variants[(index + 1) % entry.variants.length]!.id
     setToolVariants((prev) => ({ ...prev, [entry.id]: next }))
     setTool(entry.id)
-  }
-
-  /**
-   * 自动亮度/对比度（ImageJ 的 B&C ▸ Auto）。
-   *
-   * 按 ContrastAdjuster.autoAdjust 的规则从直方图求显示范围：忽略占比超过 10% 的桶，
-   * 再从两端各切掉约 1/5000 的像素。`autoThreshold` 每次点击减半，所以连点会越来越激进，
-   * 与 ImageJ 一致。
-   */
-  const applyLevelsAuto = () => {
-    if (!image || busy || !stats) return
-    const next = imagejAutoRange(stats.histogram, stats.count, stats.min, stats.max, levelsAutoThreshold.current, stats.histogramMin, stats.histogramMax)
-    levelsAutoThreshold.current = next.autoThreshold
-    setError(''); setShowOriginal(false)
-    if (colorPreview.length) commitColorPreview(colorPreview, false)
-    runtime.addStep('levels', { mode: 'rgb-range', minimum: next.min, maximum: next.max, channel: 'all' }, stepScope(null))
   }
 
   /** 某个滤镜面板当前的参数值（缺省用声明的默认值补）。 */
@@ -1287,7 +1263,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     if (colorPreview.length) commitColorPreview(colorPreview, false)
     // 关面板时把预览步骤一并撤销，避免留下一步"没人认领"的处理。
     if (filterPreviewStepId) { runtime.removeStep(filterPreviewStepId); setFilterPreviewStepId(null) }
-    setBrightness(0); setContrast(50); setParamCommand(null)
+    setParamCommand(null)
   }
   /**
    * Original 对比按需取帧。
@@ -1306,7 +1282,6 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
       .then((block) => { if (originalRequest.current === request) setOriginal(block) })
       .catch((error: unknown) => { if (originalRequest.current === request) setError(String(error)) })
   }
-  const applyCurrentLevels = () => { submit('levels', { brightness, contrast }, null); setBrightness(0); setContrast(50) }
   const applyCurrentThreshold = () => submit('threshold', { level: thresholdLevel })
   const applyOtsu = () => submit('otsu')
   const undo = () => { setError(''); setShowOriginal(false); setShowColor(true); setColorPreview([]); setColorSession((value) => value + 1); if (!colorPreview.length) runtime.undo() }
@@ -1328,7 +1303,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     setError(''); setExporting(true)
     try {
       const { encodeImageBlock } = await import('../engine/compute/itk')
-      const bytes = await encodeImageBlock(toDisplayBlock(displayBlock, displayWindow, rasterOptions), 'image/png')
+      const bytes = await encodeImageBlock(toDisplayBlock(displayBlock, baselineWindow, rasterOptions), 'image/png')
       const blob = new Blob([bytes as unknown as BlobPart], { type: 'image/png' })
       download(blob, `${sourceName.replace(/\.[^.]+$/, '')}-result.png`)
     } catch (error) { setError(error instanceof Error ? error.message : String(error)) }
@@ -1686,9 +1661,9 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
         onClose={() => setProjectCommand(null)}
       />
     : paramOp === 'levels'
-    ? isRgb && image
-      ? <ColorContrastPanel embedded session={colorSession} block={image} roi={roi ? roiBounds(roi) : null} language={language} busy={busy} hasStack={Boolean(stack)} onPreview={setColorPreview} onApply={commitColorPreview} onClose={closeParamCommand} />
-      : <LevelsCommandPanel copy={copy} brightness={brightness} contrast={contrast} active={levelsActive} disabled={!hasImage || busy} onBrightness={setBrightness} onContrast={setContrast} onAuto={applyLevelsAuto} onApply={applyCurrentLevels} onClose={closeParamCommand} />
+    ? image
+      ? <ColorContrastPanel embedded session={colorSession} block={image} roi={roi ? roiBounds(roi) : null} language={language} busy={busy} hasStack={Boolean(stack)} singleChannel={!isRgb} onPreview={setColorPreview} onApply={commitColorPreview} onClose={closeParamCommand} />
+      : null
     : paramOp === 'threshold'
       ? <ThresholdCommandPanel copy={copy} level={thresholdLevel} minimum={stats?.histogramMin ?? 0} maximum={stats?.histogramMax ?? 255} step={image?.dtype === 'float32' ? 'any' : 1} disabled={!hasImage || busy} onLevel={setThresholdLevel} onApply={applyCurrentThreshold} onOtsu={applyOtsu} onClose={closeParamCommand} />
       : paramOp && FILTER_OPS.includes(paramOp) && FILTER_FIELDS[paramOp]
@@ -1712,8 +1687,8 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const viewCards = views.length ? (
     <div className="grid gap-2">
       {views.map((card) => (
-        <Card key={card.id} className="gap-1.5 border-base-300 py-2 shadow-none">
-          <CardHeader className="flex flex-row items-center justify-between gap-1 px-2 py-0">
+        <Card key={card.id} className="gap-1.5 rounded-sm border-base-300 p-1 shadow-none">
+          <CardHeader className="flex flex-row items-center justify-between gap-1 p-0">
             <CardTitle className="text-[10px] font-semibold uppercase tracking-[0.14em] text-base-content/50">{viewTitle(card.type)}</CardTitle>
             <CardAction className="row-span-1">
               <Button
@@ -1722,13 +1697,13 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                 size="icon-sm"
                 aria-label={copy.close}
                 onClick={() => removeView(card.id)}
-                className="size-5 text-base-content/45 hover:bg-base-200 hover:text-base-content"
+                className="size-5 rounded-sm text-base-content/45 hover:bg-base-200 hover:text-base-content"
               >
                 <X size={13} />
               </Button>
             </CardAction>
           </CardHeader>
-          <CardContent className="grid gap-1.5 px-2">
+          <CardContent className="grid gap-1.5 p-0">
 
           {card.type === 'measurement' ? (
             !hasImage ? (
@@ -2139,7 +2114,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                 onViewChange={handleViewChange}
                 ref={viewportRef}
                 block={displayBlock}
-                windowLevel={displayWindow}
+                windowLevel={baselineWindow}
                 options={rasterOptions}
                 tool={tool}
                 roi={roi}
@@ -2754,6 +2729,9 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
+
+
 
 
 

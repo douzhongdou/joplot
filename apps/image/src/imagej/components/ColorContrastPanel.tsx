@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { X } from 'lucide-react'
 import { Button } from '@joplot/ui/button'
 import { Checkbox } from '@joplot/ui/checkbox'
 import { Label } from '@joplot/ui/label'
@@ -21,15 +20,18 @@ const COPY = {
   'ja-JP': { title: '明るさ/コントラスト', minimum: '最小値', maximum: '最大値', brightness: '明るさ', contrast: 'コントラスト', channel: 'チャンネル', auto: '自動', reset: 'リセット', set: '設定', apply: '適用', close: '閉じる', range: '表示範囲を設定', minValue: '表示の最小値', maxValue: '表示の最大値', ok: 'OK', cancel: 'キャンセル', invalid: '有限値を入力し、最大値を最小値以上にしてください。', pixels: 'ピクセル', cumulative: '累積', level: '階調', frequency: '頻度', log: '対数目盛', stack: 'スタック全体に適用？', stackHint: '現在の設定をすべてのスライスに適用しますか？', current: '現在のスライス', all: 'スタック全体' },
 }
 
-export function ColorContrastPanel({ block, roi, language, busy, hasStack, embedded = false, session = 0, onPreview, onApply, onClose }: {
+export function ColorContrastPanel({ block, roi, language, busy, hasStack, embedded = false, singleChannel = false, session = 0, onPreview, onApply }: {
   block: ImageBlock; roi: Rect | null; language: keyof typeof COPY; busy: boolean; hasStack: boolean
   /** 内联模式：在命令目录里紧跟所属命令项展开（去掉整块分隔线与外边距）。 */
   embedded?: boolean
+  /** 灰度图：只有一个通道，隐藏通道选择。 */
+  singleChannel?: boolean
   /** 变化时复位面板内部状态（撤销 / 重做、换图后重新展开用）。 */
   session?: number
   onPreview(settings: readonly ColorAdjustment[]): void
   onApply(settings: readonly ColorAdjustment[], allPages: boolean): void
-  onClose(): void
+  /** 面板不再自带关闭按钮：再点一次命令项即可收起，此处仅为调用方签名兼容。 */
+  onClose?(): void
 }) {
   const copy = COPY[language], defaultMax = block.dtype === 'uint16' ? 65535 : 255
   const [channel, setChannel] = useState<ColorChannel>('all')
@@ -58,10 +60,7 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, embed
   const domain = { min: analysis?.histogramMin ?? 0, max: analysis?.histogramMax ?? defaultMax }
   const color = channel === 'red' ? '#dc2626' : channel === 'green' ? '#16a34a' : channel === 'blue' ? '#2563eb' : 'var(--primary)'
   return <section className={embedded ? '' : 'shrink-0 border-b border-base-300 px-3 py-3'}>
-    <div className={embedded ? 'mb-1 flex justify-end' : 'mb-2 flex items-center justify-between'}>
-      {embedded ? null : <h3 className="text-xs font-semibold">{copy.title}</h3>}
-      <Button variant="ghost" size="icon-sm" aria-label={copy.close} onClick={onClose} disabled={busy}><X size={14} /></Button>
-    </div>
+    {embedded ? null : <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-semibold">{copy.title}</h3></div>}
     <div className="rounded-[var(--radius-field)] border border-base-300 bg-muted/40">
       <HistogramChart
         data={bins ? { counts: bins, min: domain.min, max: domain.max } : null}
@@ -80,11 +79,13 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, embed
         <Label htmlFor={`imagej-color-${control}`} className="text-xs">{copy[control]}</Label>
         <Slider id={`imagej-color-${control}`} aria-label={copy[control]} min={0} max={255} step={1} value={[values[control]]} disabled={busy} onValueChange={(next) => { setAutoWholeImage(false); setRange((previous) => adjustContrastRange(previous, control, next[0] ?? values[control], 0, defaultMax)) }} />
       </div>)}
-      <Label htmlFor="imagej-color-channel" className="text-xs">{copy.channel}</Label>
-      <Select value={channel} onValueChange={(value) => { setSnapshots(settings); setChannel(value as ColorChannel); reset() }} disabled={busy}>
-        <SelectTrigger id="imagej-color-channel" className="w-full" size="sm" aria-label={copy.channel}><SelectValue /></SelectTrigger>
-        <SelectContent>{(['all', 'red', 'green', 'blue'] as const).map((value) => <SelectItem key={value} value={value}>{value[0]!.toUpperCase() + value.slice(1)}</SelectItem>)}</SelectContent>
-      </Select>
+      {singleChannel ? null : <>
+        <Label htmlFor="imagej-color-channel" className="text-xs">{copy.channel}</Label>
+        <Select value={channel} onValueChange={(value) => { setSnapshots(settings); setChannel(value as ColorChannel); reset() }} disabled={busy}>
+          <SelectTrigger id="imagej-color-channel" className="w-full" size="sm" aria-label={copy.channel}><SelectValue /></SelectTrigger>
+          <SelectContent>{(['all', 'red', 'green', 'blue'] as const).map((value) => <SelectItem key={value} value={value}>{value[0]!.toUpperCase() + value.slice(1)}</SelectItem>)}</SelectContent>
+        </Select>
+      </>}
       <div className="grid grid-cols-2 gap-1.5">
         <Button size="sm" variant="outline" disabled={busy || !histogram.autoAnalysis} onClick={auto}>{copy.auto}</Button>
         <Button size="sm" variant="outline" disabled={busy} onClick={reset}>{copy.reset}</Button>
@@ -101,4 +102,5 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, embed
     <Dialog open={stackDialog} onOpenChange={setStackDialog}><DialogContent><DialogHeader><DialogTitle>{copy.stack}</DialogTitle><DialogDescription>{copy.stackHint}</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setStackDialog(false)}>{copy.cancel}</Button><Button variant="outline" onClick={() => apply(false)}>{copy.current}</Button><Button onClick={() => apply(true)}>{copy.all}</Button></DialogFooter></DialogContent></Dialog>
   </section>
 }
+
 
