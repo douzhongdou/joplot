@@ -21,6 +21,12 @@ export function vectorParentId(id: string): string {
   return boundary < 0 ? id : id.slice(0, boundary)
 }
 
+/** 取出 `value::field` 里的 field；本身就是普通值时返回 null。 */
+export function vectorField(id: string): VectorField | null {
+  const boundary = id.lastIndexOf(separator)
+  return boundary < 0 ? null : (id.slice(boundary + separator.length) as VectorField)
+}
+
 export function vectorData(value: ScienceValue, field: VectorField): DenseArray | undefined {
   if (value.kind === 'series') return field === 'x' ? value.x : field === 'y' ? value.y : undefined
   if (value.kind === 'spectrum') return field === 'frequency' ? value.frequency : field === 'magnitude' ? value.magnitude : field === 'phase' ? value.phase ?? undefined : undefined

@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode, useSyncExternalStore } from 'react'
-import { ChevronLeft, ChevronRight, Download, Ellipsis, File as FileIcon, Image as ImageIcon, Maximize, Plus, Redo2, RefreshCw, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, Ellipsis, File as FileIcon, Image as ImageIcon, SquarePen as EditIcon, Maximize, Plus, Redo2, RefreshCw, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { AppNavbar } from '../../components/AppNavbar'
 import { useI18n } from '../../i18n'
 import { Button } from '@joplot/ui/button'
@@ -2181,6 +2181,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="ghost" size="sm" className="shrink-0 font-medium">
+                  <EditIcon size={14} strokeWidth={2.2} />
                   {copy.editMenu}
                 </Button>
               </DropdownMenuTrigger>
@@ -3017,6 +3018,7 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
 
 
 

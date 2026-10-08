@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CircleHelp, Download, Play, Table2, UploadCloud, X } from 'lucide-react'
-import type { DatasetMapping, DatasetSummary, ScienceValue, WorkspaceSource } from '../types.ts'
+import type { DatasetMapping, DatasetSummary, ScienceValue, SpectrumValue, WorkspaceSource } from '../types.ts'
 import { values1d } from '../lib/dense.ts'
-import { resolveValue, vectorParentId } from '../lib/vectors.ts'
+import { resolveValue, vectorField, vectorParentId, type VectorField } from '../lib/vectors.ts'
 import { reconcileSteps, sanitizeMapping } from '../lib/base.ts'
 import { datasetKey, loadScienceWorkspace, saveScienceRecipe, type ScienceRecipe } from '../lib/persistence.ts'
 import { SCIENCE_COLORS } from '../lib/colors.ts'
@@ -138,25 +138,64 @@ function buildWaveTraces(values: ScienceValue[], selected: ScienceValue, copy: R
   return { traces, sources, hasResidual }
 }
 
-function buildSpectrumTraces(values: ScienceValue[], selected: ScienceValue, copy: ReturnType<typeof createScienceCopy>, scale: SpectrumScale): ScienceTrace[] {
-  const spectrum = selected.kind === 'spectrum'
-    ? selected
-    : [...values].reverse().find((value) => value.kind === 'spectrum')
+/** 频谱区要画哪个频谱、以及是否只画它的某一个字段。 */
+interface SpectrumTarget {
+  spectrum: SpectrumValue
+  /** null 表示选中的是频谱本身（幅度挂主轴、相位挂副轴）；否则只画该字段。 */
+  field: VectorField | null
+}
 
-  if (!spectrum || spectrum.kind !== 'spectrum') {
-    return []
+/**
+ * 变量树里的 `fft1::phase` 是投影出来的 series，直接当普通 series 处理会把频域数据
+ * 画到时域图上。这里把它还原成所属频谱 + 字段，交给频谱图去响应。
+ */
+function resolveSpectrumTarget(values: ScienceValue[], selected: ScienceValue | undefined): SpectrumTarget | null {
+  if (!selected) {
+    return null
+  }
+
+  if (selected.kind === 'spectrum') {
+    return { spectrum: selected, field: null }
+  }
+
+  const parentId = vectorParentId(selected.id)
+  if (parentId === selected.id) {
+    return null
+  }
+
+  const parent = values.find((value) => value.id === parentId)
+  return parent && parent.kind === 'spectrum'
+    ? { spectrum: parent, field: vectorField(selected.id) }
+    : null
+}
+
+function buildSpectrumTraces(target: SpectrumTarget, copy: ReturnType<typeof createScienceCopy>, scale: SpectrumScale): ScienceTrace[] {
+  const { spectrum, field } = target
+  const frequency = values1d(spectrum.frequency)
+
+  // 单独看相位时把它升到主轴，否则相位会被幅度的量纲压成一条贴底的直线。
+  if (field === 'phase') {
+    return spectrum.phase
+      ? [seriesTrace(copy.plot.phase, frequency, values1d(spectrum.phase), SCIENCE_COLORS.residual, 1.6)]
+      : []
   }
 
   const magnitude = values1d(spectrum.magnitude)
   const reference = spectrumReference(magnitude)
   const displayMagnitude = scale === 'db' ? toRelativeDb(magnitude, reference) : magnitude
-  return [
-    seriesTrace(scale === 'db' ? copy.plot.magnitudeDb : copy.plot.magnitude, values1d(spectrum.frequency), displayMagnitude, SCIENCE_COLORS.spectrum, 1.6),
-    ...(spectrum.phase ? [{
-      ...seriesTrace(copy.plot.phase, values1d(spectrum.frequency), values1d(spectrum.phase), SCIENCE_COLORS.residual, 1.2),
-      yAxis: 'y2' as const,
-    }] : []),
+  const traces: ScienceTrace[] = [
+    seriesTrace(scale === 'db' ? copy.plot.magnitudeDb : copy.plot.magnitude, frequency, displayMagnitude, SCIENCE_COLORS.spectrum, 1.6),
   ]
+
+  // 选中频谱本身时相位仍挂在副轴；显式选中 magnitude 字段则只留幅度。
+  if (!field && spectrum.phase) {
+    traces.push({
+      ...seriesTrace(copy.plot.phase, frequency, values1d(spectrum.phase), SCIENCE_COLORS.residual, 1.2),
+      yAxis: 'y2' as const,
+    })
+  }
+
+  return traces
 }
 
 export function ScienceApp({ language }: { language: ScienceLanguage }) {
@@ -697,35 +736,53 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
     }
   }
 
+  /** 变量树里选中的可能是频谱字段（fft1::phase），先还原成它所属的频谱。 */
+  const spectrumTarget = useMemo(() => resolveSpectrumTarget(values, selected), [values, selected])
+
+  /**
+   * 波形区一律按「选中该频谱」处理：点 `fft1::phase` 时上面显示 FFT 的输入时域信号，
+   * 而不是把频域数据画到时域图上。
+   */
+  const waveSelected = useMemo(
+    () => (spectrumTarget ? spectrumTarget.spectrum : selected),
+    [spectrumTarget, selected],
+  )
+
   /** 选中频谱/统计等派生值时，波形区回退到该步骤的输入曲线。 */
   const selectedInput = useMemo(() => {
-    if (!selected || (selected.kind !== 'spectrum' && selected.kind !== 'stats')) {
+    if (!waveSelected || (waveSelected.kind !== 'spectrum' && waveSelected.kind !== 'stats')) {
       return undefined
     }
-    const step = steps.find((candidate) => candidate.outputId === selected.id)
+    const step = steps.find((candidate) => candidate.outputId === waveSelected.id)
     if (!step) {
       return undefined
     }
     const input = resolveValue(values, step.inputId)
     return input?.kind === 'series' ? input : undefined
-  }, [selected, steps, values])
+  }, [waveSelected, steps, values])
 
   /** 波形区实际展示的 series：派生值回退到输入曲线，轴标题跟随它。 */
-  const waveSource = selectedInput ?? (selected?.kind === 'series' ? selected : undefined)
+  const waveSource = selectedInput ?? (waveSelected?.kind === 'series' ? waveSelected : undefined)
   const selectedDatasetId = waveSource?.id.startsWith('ds:')
     ? datasetPrefix(waveSource.id).slice(3, -1)
     : null
   const selectedMapping = selectedDatasetId ? mappings[selectedDatasetId] : undefined
 
   const wave = useMemo(
-    () => (selected ? buildWaveTraces(values, selected, copy, waveMode, selectedInput) : { traces: [], sources: [], hasResidual: false }),
-    [values, selected, copy, waveMode, selectedInput],
+    () => (waveSelected ? buildWaveTraces(values, waveSelected, copy, waveMode, selectedInput) : { traces: [], sources: [], hasResidual: false }),
+    [values, waveSelected, copy, waveMode, selectedInput],
   )
   waveRef.current = wave
   statusRef.current = status
+
+  /** 频谱区展示的频谱：选中的就是它，否则回退到最后一个频谱产出。 */
+  const spectrumValue = spectrumTarget?.spectrum ?? [...values].reverse().find((value) => value.kind === 'spectrum')
+  const spectrumField = spectrumTarget?.field ?? null
   const spectrum = useMemo(
-    () => (selected ? buildSpectrumTraces(values, selected, copy, spectrumScale) : []),
-    [values, selected, copy, spectrumScale],
+    () => (spectrumValue?.kind === 'spectrum'
+      ? buildSpectrumTraces({ spectrum: spectrumValue, field: spectrumField }, copy, spectrumScale)
+      : []),
+    [spectrumValue, spectrumField, copy, spectrumScale],
   )
 
   // 视野联动：缩放后按可见范围向 Worker 要更密的降采样，restyle 就地刷新（不打断缩放）。
@@ -779,9 +836,6 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
       void refineWave(wavePlotRef.current?.getAxisRange() ?? null)
     }, 140)
   }, [refineWave])
-  const spectrumValue = selected?.kind === 'spectrum'
-    ? selected
-    : [...values].reverse().find((value) => value.kind === 'spectrum')
   const spectrumReferenceValue = spectrumValue?.kind === 'spectrum'
     ? spectrumReference(values1d(spectrumValue.magnitude))
     : 1
@@ -790,11 +844,11 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
     spectrumPreviewSeqRef.current += 1
     lastSpectrumRangeKeyRef.current = ''
     if (spectrumRefineTimerRef.current) clearTimeout(spectrumRefineTimerRef.current)
-  }, [spectrumValue, spectrumScale, frequencyScale])
+  }, [spectrumValue, spectrumField, spectrumScale, frequencyScale])
 
   const refineSpectrum = useCallback(async (range: AxisRange | null) => {
     if (!range || statusRef.current !== 'ready' || spectrumValue?.kind !== 'spectrum') return
-    const key = `${spectrumValue.id}|${spectrumScale}|${frequencyScale}|${spectrumReferenceValue}|${range.min.toPrecision(12)}|${range.max.toPrecision(12)}`
+    const key = `${spectrumValue.id}|${spectrumField}|${spectrumScale}|${frequencyScale}|${spectrumReferenceValue}|${range.min.toPrecision(12)}|${range.max.toPrecision(12)}`
     if (key === lastSpectrumRangeKeyRef.current) return
     lastSpectrumRangeKeyRef.current = key
     const seq = ++spectrumPreviewSeqRef.current
@@ -802,18 +856,27 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
       const [preview] = await host.preview([spectrumValue.id], range)
       if (seq !== spectrumPreviewSeqRef.current || preview?.kind !== 'spectrum') return
       const x = values1d(preview.frequency)
-      const magnitude = values1d(preview.magnitude)
-      const updates: TraceUpdate[] = [{
-        index: 0,
-        x,
-        y: spectrumScale === 'db' ? toRelativeDb(magnitude, spectrumReferenceValue) : magnitude,
-      }]
-      if (preview.phase) updates.push({ index: 2, x, y: values1d(preview.phase) })
+      const updates: TraceUpdate[] = []
+
+      if (spectrumField === 'phase') {
+        // 单独看相位时它是主轴上的唯一一条 trace。
+        if (preview.phase) updates.push({ index: 0, x, y: values1d(preview.phase) })
+      } else {
+        const magnitude = values1d(preview.magnitude)
+        updates.push({
+          index: 0,
+          x,
+          y: spectrumScale === 'db' ? toRelativeDb(magnitude, spectrumReferenceValue) : magnitude,
+        })
+        // 副轴相位只在「选中频谱本身」时才画，索引必须紧跟在幅度之后。
+        if (!spectrumField && preview.phase) updates.push({ index: 1, x, y: values1d(preview.phase) })
+      }
+
       spectrumPlotRef.current?.restyleTraces(updates)
     } catch {
       lastSpectrumRangeKeyRef.current = ''
     }
-  }, [host, spectrumValue, spectrumScale, frequencyScale, spectrumReferenceValue])
+  }, [host, spectrumValue, spectrumField, spectrumScale, frequencyScale, spectrumReferenceValue])
 
   const handleSpectrumRangeChange = useCallback(() => {
     if (spectrumRefineTimerRef.current) clearTimeout(spectrumRefineTimerRef.current)
@@ -1148,10 +1211,13 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
             <h2 className="sr-only">{copy.plot.frequencyDomain}</h2>
             {spectrum.length > 0 ? (
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <div className="flex items-center gap-0.5 rounded-md border border-base-300 p-0.5" role="group" aria-label={copy.plot.spectrumScale}>
-                  <Button type="button" size="sm" variant={spectrumScale === 'db' ? 'secondary' : 'ghost'} className="h-6 px-2 text-[11px]" aria-pressed={spectrumScale === 'db'} onClick={() => setSpectrumScale('db')}>{copy.plot.dbScale}</Button>
-                  <Button type="button" size="sm" variant={spectrumScale === 'linear' ? 'secondary' : 'ghost'} className="h-6 px-2 text-[11px]" aria-pressed={spectrumScale === 'linear'} onClick={() => setSpectrumScale('linear')}>{copy.plot.linearScale}</Button>
-                </div>
+                {/* dB / 线性只对幅度有意义，单独看相位时这组按钮不适用。 */}
+                {spectrumField !== 'phase' ? (
+                  <div className="flex items-center gap-0.5 rounded-md border border-base-300 p-0.5" role="group" aria-label={copy.plot.spectrumScale}>
+                    <Button type="button" size="sm" variant={spectrumScale === 'db' ? 'secondary' : 'ghost'} className="h-6 px-2 text-[11px]" aria-pressed={spectrumScale === 'db'} onClick={() => setSpectrumScale('db')}>{copy.plot.dbScale}</Button>
+                    <Button type="button" size="sm" variant={spectrumScale === 'linear' ? 'secondary' : 'ghost'} className="h-6 px-2 text-[11px]" aria-pressed={spectrumScale === 'linear'} onClick={() => setSpectrumScale('linear')}>{copy.plot.linearScale}</Button>
+                  </div>
+                ) : null}
                 <div className="flex items-center gap-0.5 rounded-md border border-base-300 p-0.5" role="group" aria-label={copy.plot.frequencyScale}>
                   {frequencyScale === 'log' ? (
                     <Tooltip>
@@ -1182,8 +1248,10 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
                 traces={spectrum}
                 exportTitle="spectrum"
                 xTitle={`frequency (${spectrumValue?.kind === 'spectrum' ? spectrumValue.frequencyUnit ?? 'Hz' : 'Hz'})`}
-                yTitle={spectrumScale === 'db' ? copy.plot.magnitudeDb : copy.plot.magnitude}
-                y2Title={spectrumValue?.kind === 'spectrum' && spectrumValue.phase ? copy.plot.phase : undefined}
+                yTitle={spectrumField === 'phase'
+                  ? copy.plot.phase
+                  : spectrumScale === 'db' ? copy.plot.magnitudeDb : copy.plot.magnitude}
+                y2Title={!spectrumField && spectrumValue?.kind === 'spectrum' && spectrumValue.phase ? copy.plot.phase : undefined}
                 logX={frequencyScale === 'log'}
                 height={300}
                 onRangeChange={handleSpectrumRangeChange}
