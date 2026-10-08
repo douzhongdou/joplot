@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { Image as ImageIcon } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@joplot/ui/select'
 import {
   IMAGEJ_PATH,
@@ -35,7 +34,10 @@ export function AppNavbar({
         aria-current={section === 'imagej' ? 'page' : undefined}
         className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-field)] px-1 text-sm font-semibold text-base-content"
       >
-        <ImageIcon size={16} strokeWidth={2.1} aria-hidden="true" />
+        {/* 品牌标识与 plot 用同一份 `public/navbar-icon.webp`：这里只放方标，文字由隔壁 span 给。 */}
+        <span className="block size-6 shrink-0 overflow-hidden rounded-md sm:size-7 sm:rounded-lg">
+          <img src="/navbar-icon.webp" alt="" className="block size-full object-contain" />
+        </span>
         <span className="hidden sm:inline">{t('chrome.brand')}</span>
       </Link>
 

@@ -20,6 +20,7 @@ import * as ops from './pureOps.ts'
 import { demosaicToDtype, type CfaPatternName } from '../debayer.ts'
 import { computeWindowLevel } from '../render/rgba.ts'
 import { applyColorAdjustments, type ColorChannel } from '../colorAdjustments.ts'
+import { gradeColors, type ColorGradingMethod } from '../colorGrading.ts'
 import type { ImageAnalysis } from '../analysis.ts'
 
 export interface ExecuteContext {
@@ -266,6 +267,7 @@ export class PureComputeEngine implements ComputeEngine {
       case 'debayer': return { image: this.debayer(block, context.dataset.metadata, step.params) }
       case 'invert': return { image: ops.invert(block) }
       case 'levels': return { image: step.params.mode === 'rgb-range' ? applyColorAdjustments(block, [{ min: Number(step.params.minimum), max: Number(step.params.maximum), channel: step.params.channel as ColorChannel }]) : ops.levels(block, params.brightness ?? 0, params.contrast ?? 50) }
+      case 'colorGrading': return { image: gradeColors(block, { method: step.params.method as ColorGradingMethod, clipPercent: Number(step.params.clipPercent ?? 0.5), strength: Number(step.params.strength ?? 100), gains: step.params.gainR === undefined ? undefined : [Number(step.params.gainR), Number(step.params.gainG ?? 1), Number(step.params.gainB ?? 1)] }) }
       case 'threshold': return { image: ops.threshold(block, params.level ?? 128) }
       case 'otsu': return { image: ops.otsu(block) }
       case 'mean3x3': return { image: ops.mean3x3(block, step.params) }
@@ -402,4 +404,3 @@ function resolveCfaPattern(
 export function emptyBlock(dtype: ImageBlock['dtype'], axes: ImageBlock['axes'], shape: readonly number[]): ImageBlock {
   return { dtype, axes, shape, region: fullRegion(shape), data: allocateBuffer(dtype, elementCount(shape)) }
 }
-

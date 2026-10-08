@@ -58,7 +58,7 @@ export function applyColorAdjustments(block: ImageBlock, adjustments: readonly C
   return { ...block, data }
 }
 
-/** Color Balance histograms show the selected component; All shows equal-weight intensity. */
+/** 直方图取所选分量；All 用等权平均亮度。 */
 export function colorHistogramBlock(block: ImageBlock, channel: ColorChannel, adjustments: readonly ColorAdjustment[]): ImageBlock {
   const width = block.shape[block.axes.indexOf('x')]!, height = block.shape[block.axes.indexOf('y')]!, pixels = width * height
   const data = allocateBuffer(block.dtype, pixels), selected = CHANNEL_INDEX[channel], ceiling = block.dtype === 'uint16' ? 65535 : 255

@@ -177,6 +177,28 @@ export const OPERATOR_CATALOG: readonly OperatorCapability[] = [
     algorithmVersion: 'v1',
   },
   {
+    kind: 'colorGrading',
+    category: 'adjust',
+    labelKey: 'colorGrading',
+    output: 'image',
+    params: [
+      { key: 'method', type: 'select', labelKey: 'method', default: 'grayWorld', options: ['grayWorld', 'whitePatch', 'autoLevels', 'equalize', 'manual'].map((value) => ({ value, labelKey: value })) },
+      num('clipPercent', 'clipPercent', 0.5, 0, 10),
+      num('strength', 'strength', 100, 0, 100),
+      num('gainR', 'gainR', 1, 0, 4),
+      num('gainG', 'gainG', 1, 0, 4),
+      num('gainB', 'gainB', 1, 0, 4),
+    ],
+    input: { ...SINGLE, channels: 'any' },
+    outputImage: { dtype: 'same', sizeChange: 'same' },
+    scope: ['image', 'frame', 'stack', 'roi'],
+    // 白平衡的增益/边界来自整幅图的统计量，因此是全局依赖（不能按块预测）。
+    regionDependency: { kind: 'global' },
+    numeric: { internalPrecision: 'float32', rounding: 'clamp', boundary: 'replicate' },
+    resource: { tempBytesFactor: 1, parallel: 'none', cancellable: false },
+    algorithmVersion: 'v1',
+  },
+  {
     kind: 'threshold',
     category: 'threshold',
     labelKey: 'threshold',

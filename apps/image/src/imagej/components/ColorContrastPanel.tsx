@@ -20,12 +20,20 @@ const COPY = {
   'ja-JP': { title: '明るさ/コントラスト', minimum: '最小値', maximum: '最大値', brightness: '明るさ', contrast: 'コントラスト', channel: 'チャンネル', auto: '自動', reset: 'リセット', set: '設定', apply: '適用', close: '閉じる', range: '表示範囲を設定', minValue: '表示の最小値', maxValue: '表示の最大値', ok: 'OK', cancel: 'キャンセル', invalid: '有限値を入力し、最大値を最小値以上にしてください。', pixels: 'ピクセル', cumulative: '累積', level: '階調', frequency: '頻度', log: '対数目盛', stack: 'スタック全体に適用？', stackHint: '現在の設定をすべてのスライスに適用しますか？', current: '現在のスライス', all: 'スタック全体' },
 }
 
-export function ColorContrastPanel({ block, roi, language, busy, hasStack, embedded = false, singleChannel = false, session = 0, onPreview, onApply }: {
+export function ColorContrastPanel({ block, roi, language, busy, hasStack, embedded = false, singleChannel = false, mode = 'brightness', session = 0, onPreview, onApply }: {
   block: ImageBlock; roi: Rect | null; language: keyof typeof COPY; busy: boolean; hasStack: boolean
   /** 内联模式：在命令目录里紧跟所属命令项展开（去掉整块分隔线与外边距）。 */
   embedded?: boolean
   /** 灰度图：只有一个通道，隐藏通道选择。 */
   singleChannel?: boolean
+  /**
+   * 面板服务于哪条命令。
+   *
+   * `brightness`（Brightness/Contrast）没有通道概念，永远不显示通道选择器；
+   * `colorBalance` 是保留给「按通道的亮度/对比度」的语义；当前调用方恒传 `brightness`，
+   * 两者共用这一套控件，若不区分就会长得一模一样。
+   */
+  mode?: 'brightness' | 'colorBalance'
   /** 变化时复位面板内部状态（撤销 / 重做、换图后重新展开用）。 */
   session?: number
   onPreview(settings: readonly ColorAdjustment[]): void
@@ -80,7 +88,7 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, embed
         <Label htmlFor={`imagej-color-${control}`} className="text-xs">{copy[control]}</Label>
         <Slider id={`imagej-color-${control}`} aria-label={copy[control]} min={0} max={255} step={1} value={[values[control]]} disabled={busy} onValueChange={(next) => { setAutoWholeImage(false); setRange((previous) => adjustContrastRange(previous, control, next[0] ?? values[control], 0, defaultMax)) }} />
       </div>)}
-      {singleChannel ? null : <>
+      {singleChannel || mode === 'brightness' ? null : <>
         <Label htmlFor="imagej-color-channel" className="text-xs">{copy.channel}</Label>
         <Select value={channel} onValueChange={(value) => { setSnapshots(settings); setChannel(value as ColorChannel); reset() }} disabled={busy}>
           <SelectTrigger id="imagej-color-channel" className="w-full" size="sm" aria-label={copy.channel}><SelectValue /></SelectTrigger>

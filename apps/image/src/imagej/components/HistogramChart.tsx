@@ -277,16 +277,48 @@ export function HistogramChart({
     return { plotWidth, plotHeight, baseY: PAD_TOP + plotHeight, columnCount, columns, total, peak }
   }, [counts, height, width])
 
-  const span = (dataMax - dataMin) || 1
+  /**
+   * 显示视窗（x = 灰度级，y = 计数）。
+   *
+   * `null` 表示自动铺满；一旦用户 zoom/平移过就固定下来。两轴独立，
+   * 因为看直方图时常见的诉求是"只看 100–200 这一段的分布"或者"压掉背景峰看细节"。
+   */
+  const [viewX, setViewX] = useState<{ min: number; max: number } | null>(null)
+  const [viewY, setViewY] = useState<{ min: number; max: number } | null>(null)
+  const panRef = useRef<{ x: number; y: number; viewX: { min: number; max: number }; viewY: { min: number; max: number } } | null>(null)
+
+  const autoY = useMemo(() => ({ min: 0, max: Math.max(1, layout.peak) }), [layout.peak])
+  const xRange = viewX ?? { min: dataMin, max: dataMax }
+  const yRange = viewY ?? autoY
+  const xSpan = (xRange.max - xRange.min) || 1
+  /** 数据自身的值域宽度：读数与键盘步进按它算，不受显示视窗影响。 */
+  const dataSpan = (dataMax - dataMin) || 1
+  const ySpan = (yRange.max - yRange.min) || 1
+
+  /* 数据换了（或点复位）就回到自动铺满。 */
+  useEffect(() => { setViewX(null); setViewY(null) }, [counts, dataMin, dataMax])
 
   const valueToX = useMemo(
-    () => (value: number) => PAD_LEFT + ((value - dataMin) / span) * layout.plotWidth,
-    [dataMin, layout.plotWidth, span],
+    () => (value: number) => PAD_LEFT + ((value - xRange.min) / xSpan) * layout.plotWidth,
+    [xRange.min, layout.plotWidth, xSpan],
   )
 
   const xToValue = useMemo(
-    () => (x: number) => dataMin + ((x - PAD_LEFT) / layout.plotWidth) * span,
-    [dataMin, layout.plotWidth, span],
+    () => (x: number) => xRange.min + ((x - PAD_LEFT) / layout.plotWidth) * xSpan,
+    [xRange.min, layout.plotWidth, xSpan],
+  )
+
+  /** 按 y 视窗求高度：低于窗口底部为 0，高于顶部截到顶；对数刻度按 log1p 映射到当前上界。 */
+  const countToY = useMemo(
+    () => (count: number) => {
+      if (logScale) {
+        const ceiling = Math.max(1, yRange.max)
+        return (Math.log1p(Math.max(0, count)) / Math.log1p(ceiling)) * layout.plotHeight
+      }
+      const fraction = (count - yRange.min) / ySpan
+      return Math.max(0, Math.min(1, fraction)) * layout.plotHeight
+    },
+    [logScale, yRange.max, yRange.min, ySpan, layout.plotHeight],
   )
 
   /* ---------------- 绘制 ---------------- */
@@ -303,7 +335,7 @@ export function HistogramChart({
     context.setTransform(dpr, 0, 0, dpr, 0, 0)
     context.clearRect(0, 0, width, height)
 
-    const { plotWidth, plotHeight, baseY, columnCount, columns, peak } = layout
+    const { plotWidth, plotHeight, baseY, columnCount, columns } = layout
     const plotLeft = PAD_LEFT
     const plotRight = PAD_LEFT + plotWidth
     const plotTop = PAD_TOP
@@ -329,19 +361,17 @@ export function HistogramChart({
     context.stroke()
     context.globalAlpha = 1
 
-    /* x 轴刻度：min / mid / max */
+    /* x 轴刻度：当前视窗的 min / mid / max（zoom 后跟着变） */
     context.font = FONT
     context.fillStyle = palette.text
-    const min = dataMin
-    const max = dataMax
     context.textAlign = 'left'
-    context.fillText(formatValue(min), plotLeft, height - 4)
+    context.fillText(formatValue(xRange.min), plotLeft, height - 4)
     context.textAlign = 'center'
-    context.fillText(formatValue((min + max) / 2), plotLeft + plotWidth / 2, height - 4)
+    context.fillText(formatValue((xRange.min + xRange.max) / 2), plotLeft + plotWidth / 2, height - 4)
     context.textAlign = 'right'
-    context.fillText(formatValue(max), plotRight, height - 4)
+    context.fillText(formatValue(xRange.max), plotRight, height - 4)
 
-    if (!counts || peak <= 0) {
+    if (!counts || layout.peak <= 0) {
       if (copy.empty) {
         context.textAlign = 'center'
         context.fillText(copy.empty, plotLeft + plotWidth / 2, plotTop + plotHeight / 2)
@@ -349,22 +379,22 @@ export function HistogramChart({
       return
     }
 
-    /* 峰值标注 */
+    /* y 视窗顶部标注（zoom 后显示的是窗口上沿，而不是全图峰值） */
     context.textAlign = 'left'
-    context.fillText(formatCount(peak), plotLeft + 1, plotTop - 5)
+    context.fillText(formatCount(yRange.max), plotLeft + 1, plotTop - 5)
 
-    const heightAt = (count: number) => {
-      if (count <= 0) return 0
-      if (logScale) return (Math.log1p(count) / Math.log1p(peak)) * plotHeight
-      return (count / peak) * plotHeight
-    }
+    const heightAt = countToY
 
+    /* 每个桶的像素区间；只画落在 x 视窗内的部分，窗外直接跳过。 */
+    const columnLeft = (index: number) => dataMin + ((dataMax - dataMin) * index) / columnCount
+    const columnRight = (index: number) => dataMin + ((dataMax - dataMin) * (index + 1)) / columnCount
     const traceArea = () => {
       context.beginPath()
       context.moveTo(plotLeft, baseY)
       for (let i = 0; i < columnCount; i += 1) {
-        const x0 = plotLeft + i * (plotWidth / columnCount)
-        const x1 = x0 + plotWidth / columnCount
+        if (columnRight(i) < xRange.min || columnLeft(i) > xRange.max) continue
+        const x0 = Math.max(plotLeft, valueToX(columnLeft(i)))
+        const x1 = Math.min(plotRight, valueToX(columnRight(i)))
         const y = baseY - heightAt(columns[i]!)
         context.lineTo(x0, y)
         context.lineTo(x1, y)
@@ -395,11 +425,13 @@ export function HistogramChart({
       context.fill()
       if (stroked) {
         context.beginPath()
+        let first = true
         for (let i = 0; i < columnCount; i += 1) {
-          const x0 = plotLeft + i * (plotWidth / columnCount)
-          const x1 = x0 + plotWidth / columnCount
+          if (columnRight(i) < xRange.min || columnLeft(i) > xRange.max) continue
+          const x0 = Math.max(plotLeft, valueToX(columnLeft(i)))
+          const x1 = Math.min(plotRight, valueToX(columnRight(i)))
           const y = Math.round(baseY - heightAt(columns[i]!)) + 0.5
-          if (i === 0) context.moveTo(x0, y)
+          if (first) { context.moveTo(x0, y); first = false }
           else context.lineTo(x0, y)
           context.lineTo(x1, y)
         }
@@ -458,7 +490,7 @@ export function HistogramChart({
 
     /* hover 十字准线 */
     if (hover !== null && dragging === null && hover >= 0 && hover < columnCount) {
-      const x = Math.round(plotLeft + (hover + 0.5) * (plotWidth / columnCount)) + 0.5
+      const x = Math.round((valueToX(columnLeft(hover)) + valueToX(columnRight(hover))) / 2) + 0.5
       context.strokeStyle = palette.axis
       context.globalAlpha = 0.5
       context.lineWidth = 1
@@ -494,9 +526,12 @@ export function HistogramChart({
 
   const columnAt = (x: number) => {
     if (layout.columnCount <= 0) return -1
-    const column = Math.floor((x - PAD_LEFT) / (layout.plotWidth / layout.columnCount))
+    const value = xToValue(x)
+    const column = Math.floor(((value - dataMin) / dataSpan) * layout.columnCount)
     return column >= 0 && column < layout.columnCount ? column : -1
   }
+
+  /* ---------------- x / y 视窗缩放与平移 ---------------- */
 
   const scheduleHover = (column: number) => {
     pendingHover.current = column
@@ -511,14 +546,65 @@ export function HistogramChart({
     if (hoverFrame.current !== null) cancelAnimationFrame(hoverFrame.current)
   }, [])
 
+  const resetView = () => { setViewX(null); setViewY(null) }
+
+  /** 以某个分数位置为锚点缩放一个轴，锚点处的值保持不动。 */
+  const zoomAxis = (range: { min: number; max: number }, limit: { min: number; max: number }, anchor: number, factor: number) => {
+    const span = range.max - range.min
+    const value = range.min + span * anchor
+    const next = Math.max(span * factor, (limit.max - limit.min) / 5000)
+    const min = value - next * anchor
+    const max = min + next
+    if (min < limit.min) return { min: limit.min, max: Math.min(limit.max, limit.min + next) }
+    if (max > limit.max) return { min: Math.max(limit.min, limit.max - next), max: limit.max }
+    return { min, max }
+  }
+
+  /**
+   * 滚轮缩放。
+   *
+   * 必须用原生非 passive 监听：React 的 onWheel 默认 passive，preventDefault 会被忽略，
+   * 缩放的同时整页也会跟着滚。逻辑挂在 ref 上，所以监听器只注册一次也能读到最新视窗。
+   */
+  const wheelRef = useRef<(event: WheelEvent) => void>(() => {})
+  wheelRef.current = (event) => {
+    if (!counts) return
+    event.preventDefault()
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const anchorX = Math.max(0, Math.min(1, (event.clientX - rect.left - PAD_LEFT) / layout.plotWidth))
+    const anchorY = Math.max(0, Math.min(1, 1 - (event.clientY - rect.top - PAD_TOP) / layout.plotHeight))
+    const factor = event.deltaY > 0 ? 1.25 : 0.8
+    // 默认两轴一起缩；Shift 只缩 x（灰度区间），Alt 只缩 y（计数）。
+    const onlyX = event.shiftKey && !event.altKey
+    const onlyY = event.altKey && !event.shiftKey
+    if (!onlyY) setViewX((current) => zoomAxis(current ?? { min: dataMin, max: dataMax }, { min: dataMin, max: dataMax }, anchorX, factor))
+    if (!onlyX) setViewY((current) => zoomAxis(current ?? autoY, autoY, anchorY, factor))
+  }
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const listener = (event: WheelEvent) => wheelRef.current(event)
+    canvas.addEventListener('wheel', listener, { passive: false })
+    return () => canvas.removeEventListener('wheel', listener)
+  }, [])
+
+  const handleDoubleClick = () => resetView()
+
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (!nearestMarker || !counts) return
-    const index = nearestMarker(localX(event))
-    if (index < 0) return
+    if (!counts) return
+    const x = localX(event)
+    // 先给标记线让路：抓到标记就拖标记，否则在画布上拖 = 平移视窗。
+    const index = nearestMarker ? nearestMarker(x) : -1
     event.currentTarget.setPointerCapture(event.pointerId)
-    dragRef.current = index
-    setDragging(index)
-    setHover(null)
+    if (index >= 0) {
+      dragRef.current = index
+      setDragging(index)
+      setHover(null)
+      return
+    }
+    panRef.current = { x, y: event.clientY, viewX: { ...xRange }, viewY: { ...yRange } }
   }
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -532,12 +618,25 @@ export function HistogramChart({
       marker.onChange(value)
       return
     }
+    const pan = panRef.current
+    if (pan) {
+      const dx = ((x - pan.x) / layout.plotWidth) * (pan.viewX.max - pan.viewX.min)
+      const dy = ((pan.y - event.clientY) / layout.plotHeight) * (pan.viewY.max - pan.viewY.min)
+      const widthX = pan.viewX.max - pan.viewX.min
+      const minX = Math.max(dataMin, Math.min(Math.max(dataMin, dataMax - widthX), pan.viewX.min - dx))
+      setViewX({ min: minX, max: minX + widthX })
+      const widthY = pan.viewY.max - pan.viewY.min
+      const minY = Math.max(0, Math.min(Math.max(0, autoY.max - widthY), pan.viewY.min - dy))
+      setViewY({ min: minY, max: minY + widthY })
+      return
+    }
     scheduleHover(columnAt(x))
   }
 
   const endDrag = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (dragRef.current === null) return
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    panRef.current = null
+    if (dragRef.current === null) return
     dragRef.current = null
     setDragging(null)
   }
@@ -552,7 +651,7 @@ export function HistogramChart({
     const index = markers?.findIndex((marker) => marker.onChange) ?? -1
     if (index < 0) return
     const marker = markers![index]!
-    const step = marker.step ?? span / 100
+    const step = marker.step ?? dataSpan / 100
     const delta = event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? -step : event.key === 'ArrowRight' || event.key === 'ArrowUp' ? step : 0
     if (!delta) return
     event.preventDefault()
@@ -565,13 +664,13 @@ export function HistogramChart({
     const binCount = counts?.length ?? 0
     if (hover === null || hover < 0 || hover >= binCount || !counts) return null
     /* uint8：一桶 = 一个灰度值；16 位 / 浮点：按值域给出该桶的代表值。 */
-    const binWidth = binCount > 1 ? span / (binCount - 1) : span
+    const binWidth = binCount > 1 ? dataSpan / (binCount - 1) : dataSpan
     const discrete = Number.isInteger(dataMin) && Number.isInteger(dataMax) && Math.abs(binWidth - Math.round(binWidth)) < 1e-6
     const raw = dataMin + hover * binWidth
     let cumulative = 0
     for (let index = 0; index <= hover; index += 1) cumulative += counts[index] ?? 0
     return { level: discrete ? String(Math.round(raw)) : formatValue(raw), count: Math.round(counts[hover] ?? 0), cumulative, total: layout.total }
-  }, [counts, dataMin, dataMax, hover, layout.total, span, formatValue])
+  }, [counts, dataMin, dataMax, hover, layout.total, dataSpan, formatValue])
 
   const readoutLeft = readout ? Math.max(64, Math.min(width - 64, PAD_LEFT + (hover! + 0.5) * (layout.plotWidth / layout.columnCount))) : 0
 
@@ -583,13 +682,14 @@ export function HistogramChart({
         aria-label={ariaLabel}
         tabIndex={markers?.some((marker) => marker.onChange) ? 0 : -1}
         className="block w-full touch-none outline-none"
-        style={{ height, cursor: dragging !== null ? 'ew-resize' : markers?.some((marker) => marker.onChange) ? 'crosshair' : 'default' }}
+        style={{ height, cursor: dragging !== null ? 'ew-resize' : panRef.current ? 'grabbing' : markers?.some((marker) => marker.onChange) ? 'crosshair' : 'grab' }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onPointerLeave={handlePointerLeave}
         onKeyDown={handleKeyDown}
+        onDoubleClick={handleDoubleClick}
       />
       {readout ? (
         <div
@@ -609,3 +709,6 @@ export function HistogramChart({
     </div>
   )
 }
+
+
+

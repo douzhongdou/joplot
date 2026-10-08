@@ -42,13 +42,15 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { AnimationCommandPanel, CombineCommandPanel, DebayerCommandPanel, FilterCommandPanel, LabelCommandPanel, MontageCommandPanel, MontageToStackCommandPanel, OrthogonalCommandPanel, Project3dCommandPanel, ReduceCommandPanel, RemontageCommandPanel, ResliceCommandPanel, SetLabelCommandPanel, SubstackCommandPanel, ThresholdCommandPanel, ZProjectCommandPanel } from './CommandPanels'
 import { HistogramChart } from './HistogramChart'
 import { applyColorAdjustments, type ColorAdjustment } from '../engine/colorAdjustments'
+import { ColorGradingPanel } from './ColorGradingPanel'
+import type { ColorGradingMethod } from '../engine/colorGrading'
 import { needsSensorOptions, type RawSensorOptions } from '../engine/raw/sensor'
 
 /** 需要先调参数再执行的操作：面板在对应命令项下方展开，所以这里存命令 label。 */
 type ParamCommand =
-  | 'Brightness/Contrast' | 'Color Balance' | 'Threshold' | 'Debayer'
+  | 'Brightness/Contrast' | 'White Balance' | 'Threshold' | 'Debayer'
   | 'Mean' | 'Median' | 'Gaussian Blur' | 'Minimum' | 'Maximum' | 'Sharpen' | 'Unsharp Mask'
-type ParamOp = 'levels' | 'threshold' | 'debayer' | 'mean3x3' | 'median3x3' | 'gaussian' | 'minimum3x3' | 'maximum3x3' | 'sharpen3x3' | 'unsharpMask'
+type ParamOp = 'levels' | 'colorGrading' | 'threshold' | 'debayer' | 'mean3x3' | 'median3x3' | 'gaussian' | 'minimum3x3' | 'maximum3x3' | 'sharpen3x3' | 'unsharpMask'
 /** 需要一个"参数 + 预览"面板的滤镜算子（面板由 FilterCommandPanel 统一渲染）。 */
 /** 拖滤镜参数滑杆时，等停手这么久再真的重算预览。 */
 const FILTER_PREVIEW_DEBOUNCE_MS = 120
@@ -70,7 +72,7 @@ const FILTER_FIELDS: Partial<Record<ParamOp, readonly { key: string; fallback: n
 /** 命令 label → 算子 kind（命令目录里 label 是唯一键）。 */
 const COMMAND_OPS: Record<ParamCommand, ParamOp> = {
   'Brightness/Contrast': 'levels',
-  'Color Balance': 'levels',
+  'White Balance': 'colorGrading',
   Threshold: 'threshold',
   Debayer: 'debayer',
   Mean: 'mean3x3',
@@ -84,6 +86,7 @@ const COMMAND_OPS: Record<ParamCommand, ParamOp> = {
 /** 算子 kind → 命令目录里默认展开的那一项。 */
 const OP_COMMANDS: Record<ParamOp, ParamCommand> = {
   levels: 'Brightness/Contrast',
+  colorGrading: 'White Balance',
   threshold: 'Threshold',
   debayer: 'Debayer',
   mean3x3: 'Mean',
@@ -248,6 +251,8 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const [scope, setScope] = useState<'image' | 'roi'>('image')
   const [applyAll, setApplyAll] = useState(false)
   const [paramCommand, setParamCommand] = useState<ParamCommand | null>(null)
+  useEffect(() => {
+  }, [])
   /** 各滤镜面板当前参数（按算子 kind 分开记，切来切去不会丢）。 */
   const [filterValues, setFilterValues] = useState<Record<string, Record<string, number>>>({})
   /** 勾选「预览」时临时加进 recipe 的那一步；取消勾选/关面板要把它移除。 */
@@ -261,6 +266,11 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const [original, setOriginal] = useState<ImageBlock | null>(null), [showColor, setShowColor] = useState(true)
   const [showOriginal, setShowOriginal] = useState(false)
   const [colorPreview, setColorPreview] = useState<readonly ColorAdjustment[]>([])
+  /** 「白平衡」的调色参数：方法 + 各方法自己的参数。 */
+  const [gradingMethod, setGradingMethod] = useState<ColorGradingMethod>('grayWorld')
+  const [gradingClip, setGradingClip] = useState(0.5)
+  const [gradingStrength, setGradingStrength] = useState(100)
+  const [gradingGains, setGradingGains] = useState<[number, number, number]>([1, 1, 1])
   const [colorSession, setColorSession] = useState(0)
   /** 展开中的 Z 投影命令（`Z Project...` / `Grouped Z Project...`）；与算子参数面板互斥。 */
   const [projectCommand, setProjectCommand] = useState<ProjectCommand | null>(null)
@@ -1246,6 +1256,15 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     setProjectCommand(null)
     if (projected) onOpenDataset?.(projected)
   }
+  /** 「白平衡」：按所选调色算法往处理链加一步 colorGrading（纯调色，非显示范围）。 */
+  const applyColorGrading = () => {
+    if (!hasImage || busy) return
+    setError('')
+    const { method, clipPercent, strength } = { method: gradingMethod, clipPercent: gradingClip, strength: gradingStrength }
+    runtime.addStep('colorGrading', { method, clipPercent, strength, gainR: gradingGains[0], gainG: gradingGains[1], gainB: gradingGains[2] }, stepScope(null))
+    closeParamCommand()
+  }
+
   const commitColorPreview = (settings: readonly ColorAdjustment[], allPages: boolean) => {
     if (!image || busy) return
     for (const adjustment of settings) {
@@ -1411,10 +1430,10 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
 
   /* ---------------- 左栏：命令项下方内联展开的操作面板（同一时刻只展开一个命令） ---------------- */
 
-  // 色彩平衡只在 RGB 图上可用；灰度图下它保持「尚未接入」的禁用态。
+  // 白平衡只在 RGB 图上可用；灰度图下它保持「尚未接入」的禁用态。
   const expandableCommands = useMemo<string[]>(
     () => [
-      ...(isRgb ? ['Brightness/Contrast', 'Color Balance'] : ['Brightness/Contrast']),
+      ...(isRgb ? ['Brightness/Contrast', 'White Balance'] : ['Brightness/Contrast']),
       'Threshold', 'Debayer', ...FILTER_COMMANDS,
       // Z 投影只在多页 Stack 上有意义。
       ...(stack ? [...PROJECT_COMMANDS, 'Make Montage...'] : []),
@@ -1660,9 +1679,23 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
         onApply={() => void applyProjection(projectCommand === 'Grouped Z Project...')}
         onClose={() => setProjectCommand(null)}
       />
+    : paramOp === 'colorGrading'
+    ? <ColorGradingPanel
+        language={language}
+        method={gradingMethod}
+        clipPercent={gradingClip}
+        strength={gradingStrength}
+        gains={gradingGains}
+        disabled={!hasImage || busy}
+        onMethod={setGradingMethod}
+        onClipPercent={setGradingClip}
+        onStrength={setGradingStrength}
+        onGain={(channel, value) => setGradingGains((current) => [channel === 0 ? value : current[0], channel === 1 ? value : current[1], channel === 2 ? value : current[2]])}
+        onApply={applyColorGrading}
+      />
     : paramOp === 'levels'
     ? image
-      ? <ColorContrastPanel embedded session={colorSession} block={image} roi={roi ? roiBounds(roi) : null} language={language} busy={busy} hasStack={Boolean(stack)} singleChannel={!isRgb} onPreview={setColorPreview} onApply={commitColorPreview} onClose={closeParamCommand} />
+      ? <ColorContrastPanel embedded session={colorSession} block={image} roi={roi ? roiBounds(roi) : null} language={language} busy={busy} hasStack={Boolean(stack)} singleChannel={!isRgb} mode={paramCommand === 'White Balance' ? 'colorBalance' : 'brightness'} onPreview={setColorPreview} onApply={commitColorPreview} onClose={closeParamCommand} />
       : null
     : paramOp === 'threshold'
       ? <ThresholdCommandPanel copy={copy} level={thresholdLevel} minimum={stats?.histogramMin ?? 0} maximum={stats?.histogramMax ?? 255} step={image?.dtype === 'float32' ? 'any' : 1} disabled={!hasImage || busy} onLevel={setThresholdLevel} onApply={applyCurrentThreshold} onOtsu={applyOtsu} onClose={closeParamCommand} />
@@ -1688,8 +1721,9 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     <div className="grid gap-2">
       {views.map((card) => (
         <Card key={card.id} className="gap-1 rounded-sm border-base-300 px-1 py-1 shadow-none">
-          <CardHeader className="flex flex-row items-center justify-between gap-1 px-0 py-0">
-            <CardTitle className="text-sm font-semibold text-base-content/50">{viewTitle(card.type)}</CardTitle>
+          {/* 标题行压矮：行高由 16px 的按钮容器决定，标题本身不再撑高。 */}
+          <CardHeader className="flex h-4 flex-row items-center justify-between gap-1 px-0 py-0">
+            <CardTitle className="text-sm font-semibold leading-none text-base-content/50">{viewTitle(card.type)}</CardTitle>
             <CardAction className="row-span-1">
               <Button
                 type="button"
@@ -1697,7 +1731,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                 size="icon-sm"
                 aria-label={copy.close}
                 onClick={() => removeView(card.id)}
-                className="size-5 rounded-sm text-base-content/45 hover:bg-base-200 hover:text-base-content"
+                className="size-4 rounded-sm text-base-content/45 hover:bg-base-200 hover:text-base-content"
               >
                 <X size={13} />
               </Button>
@@ -2729,7 +2763,6 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
-
 
 
 
