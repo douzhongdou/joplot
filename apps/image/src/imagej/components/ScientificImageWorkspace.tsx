@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode, useSyncExternalStore } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode, useSyncExternalStore } from 'react'
 import { ChevronLeft, ChevronRight, Download, Image as ImageIcon, Plus, Redo2, RefreshCw, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { AppNavbar } from '../../components/AppNavbar'
 import { useI18n } from '../../i18n'
@@ -23,7 +23,7 @@ import { fastHistogram } from '../lib/fastHistogram'
 import { toRoi, type RoiInput } from '../lib/processor'
 import { animationInterval, nextAnimationStep } from '../lib/animation'
 import { clampRoi, isRoi, roiBounds, roiPoints, type Roi } from '../lib/roi'
-import { TOOLS, VARIANT_ICONS, toolByShortcut, type ToolDefinition, type ToolId } from '../lib/tools'
+import { VARIANT_ICONS, groupTools, toolByShortcut, type ToolDefinition, type ToolId } from '../lib/tools'
 import { getOperator, toUiRegistry } from '../engine/operators'
 import { stepAppliesToSelection, type StepScope } from '../engine/recipe'
 import { computeWindowLevel } from '../engine/render/rgba'
@@ -98,6 +98,22 @@ const OP_COMMANDS: Record<ParamOp, ParamCommand> = {
   maximum3x3: 'Maximum',
   sharpen3x3: 'Sharpen',
   unsharpMask: 'Unsharp Mask',
+}
+
+/**
+ * 顶栏工具按注册表里的族群分块：导航与取色、区域 ROI、线点 ROI。
+ * 块与块之间留发丝线，让 11 个图标各自管什么一眼可辨。
+ */
+const TOOL_GROUPS = groupTools()
+
+/**
+ * 顶栏里的发丝分隔线。
+ *
+ * 两层分组共用一根线，视觉语言才一致：`文件 / 工具 / 显示 / 视图 / 选区` 五个分区
+ * 之间用它，工具族之间（导航取色 · 区域 · 线点）也用它。
+ */
+function ToolbarDivider() {
+  return <span aria-hidden="true" className="mx-0.5 h-4 w-px shrink-0 bg-base-content/20" />
 }
 
 const VIEW_TYPES: ViewType[] = ['measurement', 'histogram', 'profile', 'particles']
@@ -1815,12 +1831,12 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const viewCards = views.length ? (
     <div className="grid gap-2">
       {views.map((card) => (
-        <Card key={card.id} className="gap-1 rounded-sm border-base-300 px-1 py-1 shadow-none">
+        <Card key={card.id} className="gap-1.5 rounded-sm border-base-300 px-2 py-1.5 shadow-none">
           {/* 标题行压矮：行高由按钮容器决定，标题本身不撑高。 */}
           <CardHeader className="flex h-4 flex-row items-center justify-between gap-1 px-0 py-0">
             {/* 刷新紧贴标题靠左，与右侧关闭按钮隔开一整行宽，避免误触。
                 两个按钮都只缩容器（14px），图标保持 13px。 */}
-            <div className="flex min-w-0 items-center gap-1">
+            <div className="flex min-w-0 items-center gap-2">
               <CardTitle className="text-sm font-semibold leading-none text-base-content/50">{viewTitle(card.type)}</CardTitle>
               {card.type === 'histogram' || card.type === 'measurement' ? (
                 <Button
@@ -1875,7 +1891,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                   ))}
                 </dl>
                 {/* 与直方图同一套机制：Live 跟随当前切片，冻结后保留当时的数值与来源。刷新按钮在标题行。 */}
-                <div className="mt-1 flex items-center gap-2 text-xs">
+                <div className="mt-1.5 flex items-baseline gap-2 text-xs">
                   <label className="flex shrink-0 items-center gap-1.5 text-base-content/70">
                     <Checkbox checked={isStatsLive(card.id)} onCheckedChange={(value) => toggleStatsLive(card.id, value === true)} />
                     {copy.stats.live}
@@ -1903,7 +1919,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               />
               {/* 对齐 ImageJ 直方图窗口：Live 决定是否跟随；冻结来源与它同一行并截断，
                   不再另起一行，避免切换冻结状态时把版面顶下去。刷新按钮在标题行。 */}
-              <div className="mt-1 flex items-center gap-2 text-xs">
+              <div className="mt-1.5 flex items-baseline gap-2 text-xs">
                 <label className="flex shrink-0 items-center gap-1.5 text-base-content/70">
                   <Checkbox checked={isHistLive(card.id)} onCheckedChange={(value) => toggleHistLive(card.id, value === true)} />
                   {copy.stats.live}
@@ -2103,6 +2119,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               className="hidden"
               onChange={onFileInput}
             />
+            {/* ① 文件：唯一的主操作，独立成块。 */}
             <Button
               type="button"
               size="sm"
@@ -2113,87 +2130,109 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               {copy.openImage}
             </Button>
 
-            {/* 工具网格：对齐 ImageJ 的工具栏。一个图标是一个"工具族"，
-                双击在族内切换子类型（直线 line/arrow、点 point/multipoint）。 */}
-            <div role="group" aria-label={copy.viewer.tool} className="inline-flex shrink-0 flex-wrap items-center gap-0.5 rounded-[var(--radius-field)] bg-muted p-0.5">
-              {TOOLS.map((entry) => {
-                const variantId = toolVariants[entry.id]
-                const Icon = (variantId ? VARIANT_ICONS[variantId] : undefined) ?? entry.icon
-                const active = tool === entry.id
-                const label = toolLabel(copy.tools, entry, variantId)
-                const hint = entry.variants?.length
-                  ? `${label} (${entry.shortcut.toUpperCase()}) · ${copy.tools.variantsHint}`
-                  : `${label} (${entry.shortcut.toUpperCase()})`
-                return (
-                  <Button
-                    key={entry.id}
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={label}
-                    aria-pressed={active}
-                    title={hint}
-                    disabled={!hasImage}
-                    className={`size-6 rounded-[calc(var(--radius-field)-2px)] ${
-                      active ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
-                    }`}
-                    onClick={() => setTool(entry.id)}
-                    onDoubleClick={() => cycleToolVariant(entry)}
-                  >
-                    <Icon size={15} />
-                  </Button>
-                )
-              })}
+            <ToolbarDivider />
+
+            {/* ② 工具：对齐 ImageJ 的工具栏。一个图标是一个"工具族"，
+                双击在族内切换子类型（直线 line/arrow、点 point/multipoint）；
+                族内是同类操作，族与族之间留发丝线。 */}
+            <div role="group" aria-label={copy.viewer.tool} className="inline-flex shrink-0 items-center gap-0.5 rounded-[var(--radius-field)] bg-muted p-0.5">
+              {TOOL_GROUPS.map(({ group, tools }, groupIndex) => (
+                <Fragment key={group}>
+                  {groupIndex > 0 ? <ToolbarDivider /> : null}
+                  {tools.map((entry) => {
+                    const variantId = toolVariants[entry.id]
+                    const Icon = (variantId ? VARIANT_ICONS[variantId] : undefined) ?? entry.icon
+                    const active = tool === entry.id
+                    const label = toolLabel(copy.tools, entry, variantId)
+                    const hint = entry.variants?.length
+                      ? `${label} (${entry.shortcut.toUpperCase()}) · ${copy.tools.variantsHint}`
+                      : `${label} (${entry.shortcut.toUpperCase()})`
+                    return (
+                      <Button
+                        key={entry.id}
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={label}
+                        aria-pressed={active}
+                        title={hint}
+                        disabled={!hasImage}
+                        className={`size-6 rounded-[calc(var(--radius-field)-2px)] ${
+                          active ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
+                        }`}
+                        onClick={() => setTool(entry.id)}
+                        onDoubleClick={() => cycleToolVariant(entry)}
+                      >
+                        <Icon size={15} />
+                      </Button>
+                    )
+                  })}
+                </Fragment>
+              ))}
             </div>
 
-            {state.dataset?.componentKind === 'rgb' ? (
-              <div role="group" aria-label={copy.viewer.display} className="inline-flex shrink-0 rounded-[var(--radius-field)] bg-muted p-0.5">
-                {(['color', 'gray'] as const).map((value) => {
-                  const active = value === 'color' ? showColor : !showColor
-                  return (
-                    <Button
-                      key={value}
-                      type="button"
-                      variant="ghost"
-                      aria-pressed={active}
-                      className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-xs font-medium ${
-                        active ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
-                      }`}
-                      onClick={() => setShowColor(value === 'color')}
-                    >
-                      {value === 'color' ? copy.viewer.color : copy.viewer.gray}
-                    </Button>
-                  )
-                })}
-              </div>
-            ) : null}
+            <ToolbarDivider />
 
-            <Button type="button" variant={showOriginal ? 'secondary' : 'outline'} size="sm" aria-pressed={showOriginal} disabled={navBusy} onClick={toggleOriginal}>{copy.original}</Button>
+            {/* ③ 显示：色彩模式与原始图是同一件事的两面，合成一块。 */}
+            <div className="flex shrink-0 items-center gap-1">
+              {state.dataset?.componentKind === 'rgb' ? (
+                <div role="group" aria-label={copy.viewer.display} className="inline-flex shrink-0 rounded-[var(--radius-field)] bg-muted p-0.5">
+                  {(['color', 'gray'] as const).map((value) => {
+                    const active = value === 'color' ? showColor : !showColor
+                    return (
+                      <Button
+                        key={value}
+                        type="button"
+                        variant="ghost"
+                        aria-pressed={active}
+                        className={`h-6 rounded-[calc(var(--radius-field)-2px)] px-2 text-xs font-medium ${
+                          active ? 'bg-base-100 text-base-content shadow-sm' : 'text-base-content/55 hover:text-base-content'
+                        }`}
+                        onClick={() => setShowColor(value === 'color')}
+                      >
+                        {value === 'color' ? copy.viewer.color : copy.viewer.gray}
+                      </Button>
+                    )
+                  })}
+                </div>
+              ) : null}
 
-            <span className="inline-flex shrink-0 items-center gap-0.5 rounded-[var(--radius-field)] bg-muted p-0.5">
-              <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.zoomOut} disabled={!hasImage || navBusy} onClick={() => zoomByStep(-1)}
-                className="size-6 rounded-[calc(var(--radius-field)-2px)] text-base-content/70 hover:bg-base-100 hover:text-base-content">
-                <ZoomOut size={14} />
-              </Button>
-              <span className="min-w-9 shrink-0 text-center text-xs tabular-nums text-base-content/70">
-                {Math.round(zoom * 100)}%
+              <Button type="button" variant={showOriginal ? 'secondary' : 'outline'} size="sm" aria-pressed={showOriginal} disabled={navBusy} onClick={toggleOriginal}>{copy.original}</Button>
+            </div>
+
+            <ToolbarDivider />
+
+            {/* ④ 视图：缩放步进、1:1、适应窗口都在改视口，归到一处。 */}
+            <div className="flex shrink-0 items-center gap-0.5">
+              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-[var(--radius-field)] bg-muted p-0.5">
+                <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.zoomOut} disabled={!hasImage || navBusy} onClick={() => zoomByStep(-1)}
+                  className="size-6 rounded-[calc(var(--radius-field)-2px)] text-base-content/70 hover:bg-base-100 hover:text-base-content">
+                  <ZoomOut size={14} />
+                </Button>
+                <span className="min-w-9 shrink-0 text-center text-xs tabular-nums text-base-content/70">
+                  {Math.round(zoom * 100)}%
+                </span>
+                <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.zoomIn} disabled={!hasImage || navBusy} onClick={() => zoomByStep(1)}
+                  className="size-6 rounded-[calc(var(--radius-field)-2px)] text-base-content/70 hover:bg-base-100 hover:text-base-content">
+                  <ZoomIn size={14} />
+                </Button>
               </span>
-              <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.zoomIn} disabled={!hasImage || navBusy} onClick={() => zoomByStep(1)}
-                className="size-6 rounded-[calc(var(--radius-field)-2px)] text-base-content/70 hover:bg-base-100 hover:text-base-content">
-                <ZoomIn size={14} />
+              <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={!hasImage || navBusy} onClick={showActualSize}>
+                {copy.viewer.actualSize}
               </Button>
-            </span>
-            <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={!hasImage || navBusy} onClick={showActualSize}>
-              {copy.viewer.actualSize}
-            </Button>
-            <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={!hasImage || navBusy} onClick={fitToWindow}>
-              {copy.fit}
-            </Button>
+              <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={!hasImage || navBusy} onClick={fitToWindow}>
+                {copy.fit}
+              </Button>
+            </div>
+
+            <ToolbarDivider />
+
+            {/* ⑤ 选区：清除当前 ROI。 */}
             <Button type="button" variant="ghost" size="sm" className="shrink-0" disabled={!roi} onClick={() => setRoi(null)}>
               {copy.roi.clear}
             </Button>
 
-            <span className="ml-auto hidden shrink-0 truncate pl-2 font-mono text-xs text-base-content/55 md:inline">
+            <span className="ml-auto hidden shrink-0 truncate border-l border-base-300 pl-3 font-mono text-xs text-base-content/55 md:inline">
               {probe ? `(${probe.x}, ${probe.y}) = ${probe.value} · ` : ''}{roiLabel}
             </span>
           </>
@@ -2909,6 +2948,7 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
 
 
 
