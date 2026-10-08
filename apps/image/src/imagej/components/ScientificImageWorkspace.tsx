@@ -1819,7 +1819,21 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
           {/* 标题行压矮：行高由 16px 的按钮容器决定，标题本身不再撑高。 */}
           <CardHeader className="flex h-4 flex-row items-center justify-between gap-1 px-0 py-0">
             <CardTitle className="text-sm font-semibold leading-none text-base-content/50">{viewTitle(card.type)}</CardTitle>
-            <CardAction className="row-span-1">
+            <CardAction className="row-span-1 flex items-center gap-0.5">
+              {/* 刷新放在标题行：正文里只留 Live 与冻结来源，避免多一行把版面顶下去。 */}
+              {card.type === 'histogram' || card.type === 'measurement' ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={copy.stats.refresh}
+                  disabled={busy || isStatsLive(card.id) || (card.type === 'histogram' ? !currentHistogram : !currentStatsWithSource)}
+                  onClick={() => { if (card.type === 'histogram') refreshHistogram(card.id); else refreshStats(card.id) }}
+                  className="size-4 rounded-sm text-base-content/45 hover:bg-base-200 hover:text-base-content"
+                >
+                  <RefreshCw size={13} />
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="ghost"
@@ -1857,22 +1871,18 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                     </div>
                   ))}
                 </dl>
-                {/* 与直方图同一套机制：Live 跟随当前切片，冻结后保留当时的数值与来源。 */}
-                <div className="mt-1 flex items-center justify-between gap-2 text-xs">
-                  <label className="flex items-center gap-1.5 text-base-content/70">
+                {/* 与直方图同一套机制：Live 跟随当前切片，冻结后保留当时的数值与来源。刷新按钮在标题行。 */}
+                <div className="mt-1 flex items-center gap-2 text-xs">
+                  <label className="flex shrink-0 items-center gap-1.5 text-base-content/70">
                     <Checkbox checked={isStatsLive(card.id)} onCheckedChange={(value) => toggleStatsLive(card.id, value === true)} />
                     {copy.stats.live}
                   </label>
-                  <Button type="button" size="sm" variant="ghost" className="h-5 px-1.5" disabled={busy || isStatsLive(card.id) || !currentStatsWithSource} onClick={() => refreshStats(card.id)}>
-                    <RefreshCw size={12} />
-                    <span className="ml-1">{copy.stats.refresh}</span>
-                  </Button>
+                  {!isStatsLive(card.id) && viewsState.frozenStats[card.id] ? (
+                    <span className="min-w-0 flex-1 truncate text-[10px] text-base-content/45" title={viewsState.frozenStats[card.id]!.source}>
+                      {copy.stats.frozen} · {viewsState.frozenStats[card.id]!.source || '—'}
+                    </span>
+                  ) : null}
                 </div>
-                {!isStatsLive(card.id) && viewsState.frozenStats[card.id] ? (
-                  <p className="mt-0.5 truncate text-[10px] text-base-content/45" title={viewsState.frozenStats[card.id]!.source}>
-                    {copy.stats.frozen} · {viewsState.frozenStats[card.id]!.source || '—'}
-                  </p>
-                ) : null}
               </>
             ) : (
               <p className="text-sm text-base-content/55">{scope === 'roi' && !roi ? copy.roi.needRoi : copy.status.loading}</p>
@@ -1888,23 +1898,19 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                 labels={{ count: copy.stats.pixel, cumulative: copy.stats.cumulative, level: copy.stats.level, frequency: copy.stats.frequency, empty: currentHistogram ? '' : copy.status.loading }}
                 ariaLabel={copy.views.histogram}
               />
-              {/* 对齐 ImageJ 直方图窗口：Live 决定是否跟随当前切片，刷新拉一次。每张卡片独立。 */}
-              <div className="mt-1 flex items-center justify-between gap-2 text-xs">
-                <label className="flex items-center gap-1.5 text-base-content/70">
+              {/* 对齐 ImageJ 直方图窗口：Live 决定是否跟随；冻结来源与它同一行并截断，
+                  不再另起一行，避免切换冻结状态时把版面顶下去。刷新按钮在标题行。 */}
+              <div className="mt-1 flex items-center gap-2 text-xs">
+                <label className="flex shrink-0 items-center gap-1.5 text-base-content/70">
                   <Checkbox checked={isHistLive(card.id)} onCheckedChange={(value) => toggleHistLive(card.id, value === true)} />
                   {copy.stats.live}
                 </label>
-                <Button type="button" size="sm" variant="ghost" className="h-5 px-1.5" disabled={busy || isHistLive(card.id) || !currentHistogram} onClick={() => refreshHistogram(card.id)}>
-                  <RefreshCw size={12} />
-                  <span className="ml-1">{copy.stats.refresh}</span>
-                </Button>
+                {!isHistLive(card.id) && viewsState.frozen[card.id] ? (
+                  <span className="min-w-0 flex-1 truncate text-[10px] text-base-content/45" title={viewsState.frozen[card.id]!.source}>
+                    {copy.stats.frozen} · {viewsState.frozen[card.id]!.source || '—'}
+                  </span>
+                ) : null}
               </div>
-              {/* 冻结时标出它来自哪张图/哪一页：切到别的图后才知道自己在看什么。 */}
-              {!isHistLive(card.id) && viewsState.frozen[card.id] ? (
-                <p className="mt-0.5 truncate text-[10px] text-base-content/45" title={viewsState.frozen[card.id]!.source}>
-                  {copy.stats.frozen} · {viewsState.frozen[card.id]!.source || '—'}
-                </p>
-              ) : null}
             </>
           ) : null}
 
