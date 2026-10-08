@@ -8,6 +8,8 @@
  * 往处理链里加一步 `colorGrading`。
  */
 import { Button } from '@joplot/ui/button'
+
+import { Checkbox } from '@joplot/ui/checkbox'
 import { Input } from '@joplot/ui/input'
 import { Label } from '@joplot/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@joplot/ui/select'
@@ -15,7 +17,7 @@ import { COLOR_GRADING_METHODS, type ColorGradingMethod } from '../engine/colorG
 
 const COPY = {
   'zh-CN': {
-    title: '白平衡',
+    title: '白平衡', preview: '预览',
     method: '方法',
     grayWorld: '灰度世界', whitePatch: '白点', autoLevels: '自动色阶', equalize: '直方图均衡化', manual: '手动增益',
     grayWorldHint: '假设画面平均色应为中性灰，按各通道均值求增益，校正整体偏色。',
@@ -26,7 +28,7 @@ const COPY = {
     clip: '裁剪比例 (%)', strength: '强度 (%)', red: '红', green: '绿', blue: '蓝', apply: '应用',
   },
   en: {
-    title: 'White Balance',
+    title: 'White Balance', preview: 'Preview',
     method: 'Method',
     grayWorld: 'Gray World', whitePatch: 'White Patch', autoLevels: 'Auto Levels', equalize: 'Equalize', manual: 'Manual gains',
     grayWorldHint: 'Assume the scene averages to neutral gray; per-channel gain from channel means.',
@@ -37,7 +39,7 @@ const COPY = {
     clip: 'Clip (%)', strength: 'Strength (%)', red: 'Red', green: 'Green', blue: 'Blue', apply: 'Apply',
   },
   'ja-JP': {
-    title: 'ホワイトバランス',
+    title: 'ホワイトバランス', preview: 'プレビュー',
     method: '方法',
     grayWorld: 'グレーワールド', whitePatch: 'ホワイトパッチ', autoLevels: '自動レベル', equalize: 'ヒストグラム平坦化', manual: '手動ゲイン',
     grayWorldHint: '画面の平均色が無彩色と仮定し、チャンネル平均からゲインを求めます。',
@@ -57,7 +59,7 @@ const METHOD_LABELS: Record<ColorGradingMethod, keyof (typeof COPY)['zh-CN']> = 
   manual: 'manual',
 }
 
-export function ColorGradingPanel({ language, method, clipPercent, strength, gains, disabled, onMethod, onClipPercent, onStrength, onGain, onApply }: {
+export function ColorGradingPanel({ language, method, clipPercent, strength, gains, preview, disabled, onMethod, onClipPercent, onStrength, onGain, onPreview, onApply }: {
   language: keyof typeof COPY
   method: ColorGradingMethod
   /** 自动色阶两端各裁掉的像素比例（%）。 */
@@ -66,11 +68,14 @@ export function ColorGradingPanel({ language, method, clipPercent, strength, gai
   strength: number
   /** 手动模式的 RGB 增益。 */
   gains: readonly number[]
+  /** 「预览」复选框：勾上才把当前参数实时刷进画面。 */
+  preview: boolean
   disabled: boolean
   onMethod(value: ColorGradingMethod): void
   onClipPercent(value: number): void
   onStrength(value: number): void
   onGain(channel: number, value: number): void
+  onPreview(value: boolean): void
   onApply(): void
 }) {
   const copy = COPY[language] ?? COPY.en
@@ -88,6 +93,14 @@ export function ColorGradingPanel({ language, method, clipPercent, strength, gai
         </Select>
       </div>
       <p className="text-xs text-base-content/55">{copy[hintKey]}</p>
+
+      <label className="flex items-center gap-2 text-xs">
+
+        <Checkbox checked={preview} disabled={disabled} onCheckedChange={(value) => onPreview(value === true)} />
+
+        {copy.preview}
+
+      </label>
       {method === 'autoLevels' ? <div className="grid gap-1">
         <Label htmlFor="imagej-grading-clip" className="text-xs">{copy.clip}</Label>
         <Input id="imagej-grading-clip" type="number" min={0} max={10} step={0.1} value={clipPercent} disabled={disabled}

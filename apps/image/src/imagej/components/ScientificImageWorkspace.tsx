@@ -278,6 +278,10 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
    * 点「应用」时停止跟踪使那一步变成正式步骤，收起面板时把它撤掉。
    */
   const gradingPreviewStepId = useRef<string | null>(null)
+
+  /** 「预览」复选框：默认开启（ImageJ 的 Color Balance 默认就勾着）。 */
+
+  const [gradingPreview, setGradingPreview] = useState(true)
   const [colorSession, setColorSession] = useState(0)
   /** 展开中的 Z 投影命令（`Z Project...` / `Grouped Z Project...`）；与算子参数面板互斥。 */
   const [projectCommand, setProjectCommand] = useState<ProjectCommand | null>(null)
@@ -404,7 +408,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
    * 与滤镜面板同一套思路（临时步骤 + 防抖），点「应用」只是停止跟踪该步骤，它就留在链里变成正式一步。
    */
   useEffect(() => {
-    if (paramCommand !== 'White Balance') {
+    if (paramCommand !== 'White Balance' || !gradingPreview) {
       if (gradingPreviewStepId.current) { runtime.removeStep(gradingPreviewStepId.current); gradingPreviewStepId.current = null }
       return
     }
@@ -424,7 +428,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     }, FILTER_PREVIEW_DEBOUNCE_MS)
     return () => clearTimeout(timer)
     // image / busy / runtime / stepScope 不进依赖：预览本身会改写它们，放进去会自激。
-  }, [paramCommand, gradingMethod, gradingClip, gradingStrength, gradingGains])
+  }, [paramCommand, gradingPreview, gradingMethod, gradingClip, gradingStrength, gradingGains])
   const particlesRequested = views.some((view) => view.type === 'particles')
   const analysisChannel = isRgb && colorPreview.length ? 'all' as const : undefined
   /* 引擎在 run 里已顺带算好整帧分析：整图、无 ROI、无粒子、无通道调整时直接用，免复制、免第二个 Worker。 */
@@ -1731,11 +1735,14 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
         clipPercent={gradingClip}
         strength={gradingStrength}
         gains={gradingGains}
+        preview={gradingPreview}
         disabled={!hasImage || busy}
         onMethod={setGradingMethod}
         onClipPercent={setGradingClip}
         onStrength={setGradingStrength}
         onGain={(channel, value) => setGradingGains((current) => [channel === 0 ? value : current[0], channel === 1 ? value : current[1], channel === 2 ? value : current[2]])}
+
+        onPreview={setGradingPreview}
         onApply={applyColorGrading}
       />
     : paramOp === 'levels'
@@ -2808,7 +2815,6 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
-
 
 
 
