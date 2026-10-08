@@ -25,15 +25,27 @@ export interface FrozenHistogram {
   source: string
 }
 
+/** 冻结的统计测量结果。 */
+export interface FrozenStats {
+  count: number
+  area: number
+  mean: number
+  min: number
+  max: number
+  stdDev: number
+  source: string
+}
+
 interface AnalysisViewsState {
   cards: ViewCard[]
   nextId: number
-  /** 缺省视为 Live；显式 false 表示冻住。 */
+  /** 缺省视为 Live；显式 false 表示冻住。Live 标志按卡片，两类冻结值各自存。 */
   live: Record<number, boolean>
   frozen: Record<number, FrozenHistogram>
+  frozenStats: Record<number, FrozenStats>
 }
 
-let state: AnalysisViewsState = { cards: [], nextId: 1, live: {}, frozen: {} }
+let state: AnalysisViewsState = { cards: [], nextId: 1, live: {}, frozen: {}, frozenStats: {} }
 const listeners = new Set<() => void>()
 
 function commit(next: AnalysisViewsState) {
@@ -65,16 +77,17 @@ export const analysisViews = {
   isLive(id: number) {
     return state.live[id] !== false
   },
-  setLive(id: number, on: boolean, freeze: FrozenHistogram | null) {
-    commit({
-      ...state,
-      live: { ...state.live, [id]: on },
-      frozen: !on && freeze ? { ...state.frozen, [id]: freeze } : state.frozen,
-    })
+  /** 只切 Live 标志；定格值由 freeze* 负责，调用方知道卡片是哪种类型。 */
+  setLive(id: number, on: boolean) {
+    commit({ ...state, live: { ...state.live, [id]: on } })
   },
   freeze(id: number, value: FrozenHistogram | null) {
     if (!value) return
     commit({ ...state, frozen: { ...state.frozen, [id]: value } })
+  },
+  freezeStats(id: number, value: FrozenStats | null) {
+    if (!value) return
+    commit({ ...state, frozenStats: { ...state.frozenStats, [id]: value } })
   },
 }
 

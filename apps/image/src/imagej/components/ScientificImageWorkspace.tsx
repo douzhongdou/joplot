@@ -466,7 +466,22 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const isHistLive = (id: number) => viewsState.live[id] !== false
   const histogramFor = (id: number) => isHistLive(id) ? currentHistogram : (viewsState.frozen[id] ?? currentHistogram)
   const refreshHistogram = (id: number) => analysisViews.freeze(id, currentHistogramWithSource)
-  const toggleHistLive = (id: number, on: boolean) => analysisViews.setLive(id, on, currentHistogramWithSource)
+  const toggleHistLive = (id: number, on: boolean) => {
+    analysisViews.setLive(id, on)
+    if (!on) analysisViews.freeze(id, currentHistogramWithSource)
+  }
+  /** 统计测量卡片用同一套机制：Live 跟随当前切片，冻结后保留它当时的数值与来源。 */
+  const currentStatsWithSource = stats ? {
+    count: stats.count, area: stats.area, mean: stats.mean,
+    min: stats.min, max: stats.max, stdDev: stats.stdDev, source: histogramSource,
+  } : null
+  const statsFor = (id: number) => isHistLive(id) ? currentStatsWithSource : (viewsState.frozenStats[id] ?? currentStatsWithSource)
+  const isStatsLive = isHistLive
+  const refreshStats = (id: number) => analysisViews.freezeStats(id, currentStatsWithSource)
+  const toggleStatsLive = (id: number, on: boolean) => {
+    analysisViews.setLive(id, on)
+    if (!on) analysisViews.freezeStats(id, currentStatsWithSource)
+  }
   const baselineWindow = useMemo(() => {
     if (!displayBlock) return { window: 255, level: 127.5 }
     return displayBlock.dtype === 'uint8' ? { window: 255, level: 127.5 } : computeWindowLevel(displayBlock)
@@ -1822,22 +1837,43 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
           {card.type === 'measurement' ? (
             !hasImage ? (
               <p className="text-sm text-base-content/55">{copy.emptyDescription}</p>
-            ) : stats ? (
-              <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5">
-                {[
-                  [copy.stats.pixels, stats.count.toLocaleString()],
-                  [copy.stats.area, stats.area.toLocaleString()],
-                  [copy.stats.mean, stats.mean.toFixed(2)],
-                  [copy.stats.min, String(stats.min)],
-                  [copy.stats.max, String(stats.max)],
-                  [copy.stats.stdDev, stats.stdDev.toFixed(2)],
-                ].map(([label, value]) => (
-                  <div key={label} className="flex items-baseline justify-between gap-2">
-                    <dt className="truncate text-xs text-base-content/55">{label}</dt>
-                    <dd className="font-mono text-xs font-semibold tabular-nums text-base-content">{value}</dd>
-                  </div>
-                ))}
-              </dl>
+            ) : statsFor(card.id) ? (
+              <>
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                  {(() => {
+                    const shown = statsFor(card.id)!
+                    return [
+                      [copy.stats.pixels, shown.count.toLocaleString()],
+                      [copy.stats.area, shown.area.toLocaleString()],
+                      [copy.stats.mean, shown.mean.toFixed(2)],
+                      [copy.stats.min, String(shown.min)],
+                      [copy.stats.max, String(shown.max)],
+                      [copy.stats.stdDev, shown.stdDev.toFixed(2)],
+                    ] as const
+                  })().map(([label, value]) => (
+                    <div key={label} className="flex items-baseline justify-between gap-2">
+                      <dt className="truncate text-xs text-base-content/55">{label}</dt>
+                      <dd className="font-mono text-xs font-semibold tabular-nums text-base-content">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                {/* 与直方图同一套机制：Live 跟随当前切片，冻结后保留当时的数值与来源。 */}
+                <div className="mt-1 flex items-center justify-between gap-2 text-xs">
+                  <label className="flex items-center gap-1.5 text-base-content/70">
+                    <Checkbox checked={isStatsLive(card.id)} onCheckedChange={(value) => toggleStatsLive(card.id, value === true)} />
+                    {copy.stats.live}
+                  </label>
+                  <Button type="button" size="sm" variant="ghost" className="h-5 px-1.5" disabled={busy || isStatsLive(card.id) || !currentStatsWithSource} onClick={() => refreshStats(card.id)}>
+                    <RefreshCw size={12} />
+                    <span className="ml-1">{copy.stats.refresh}</span>
+                  </Button>
+                </div>
+                {!isStatsLive(card.id) && viewsState.frozenStats[card.id] ? (
+                  <p className="mt-0.5 truncate text-[10px] text-base-content/45" title={viewsState.frozenStats[card.id]!.source}>
+                    {copy.stats.frozen} · {viewsState.frozenStats[card.id]!.source || '—'}
+                  </p>
+                ) : null}
+              </>
             ) : (
               <p className="text-sm text-base-content/55">{scope === 'roi' && !roi ? copy.roi.needRoi : copy.status.loading}</p>
             )
