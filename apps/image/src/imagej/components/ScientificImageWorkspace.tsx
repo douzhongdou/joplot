@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@joplot/ui/tabs'
 import { ToggleGroup, ToggleGroupItem } from '@joplot/ui/toggle-group'
 import { Label } from '@joplot/ui/label'
+import { Separator } from '@joplot/ui/separator'
 import { Slider } from '@joplot/ui/slider'
 import { createImagejCopy } from '../lib/i18n'
 import { readDroppedContent } from '../lib/dropFiles'
@@ -2197,6 +2198,10 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               </DropdownMenuContent>
             </DropdownMenu>
 
+            {/* 菜单组与工具组是两类东西，中间用一条竖线隔开：
+                顶栏容器的 gap 是统一值，不加这条线两组会贴着，亲密性就错了。 */}
+            <Separator orientation="vertical" className="mx-0.5 h-4 shrink-0" />
+
             {/* ② 工具（图标语汇）：对齐 ImageJ 的工具栏。一个图标是一个"工具族"，
                 双击在族内切换子类型（直线 line/arrow、点 point/multipoint）；
                 族与族之间只留一条淡线，不再和"分区"抢同一种视觉语言。 */}
@@ -3018,6 +3023,7 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
 
 
 
