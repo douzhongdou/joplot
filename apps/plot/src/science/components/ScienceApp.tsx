@@ -1144,6 +1144,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
               y2Title={wave.hasResidual ? copy.plot.residual : undefined}
               height={300}
               onRangeChange={handleWaveRangeChange}
+              resizeLabel={copy.plot.resizePlot}
             />
           ) : (
             <p className="p-6 text-center text-xs text-base-content/40">{copy.empty}</p>
@@ -1194,6 +1195,7 @@ export function ScienceApp({ language }: { language: ScienceLanguage }) {
                 logX={frequencyScale === 'log'}
                 height={300}
                 onRangeChange={handleSpectrumRangeChange}
+                resizeLabel={copy.plot.resizePlot}
               />
             ) : (
               <p className="p-6 text-center text-xs text-base-content/40">{copy.empty}</p>

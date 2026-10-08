@@ -1,7 +1,15 @@
 'use client'
 
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { loadPlotly } from '../lib/plotly.ts'
+import {
+  SCIENCE_PLOT_KEYBOARD_STEP,
+  SCIENCE_PLOT_MARGIN_TOP,
+  clampPlotHeight,
+  resolveLegendY,
+  resolvePlotMarginBottom,
+} from '../lib/plotLayout.ts'
 import { resolveAxisColor, resolveFontFamily, resolveGridColor } from '../lib/plotTheme.ts'
 import { buildChartExportOptions } from '../../lib/chartExport.ts'
 import { copyPngDataUrlToClipboard, type ClipboardPort } from '../../lib/clipboard.ts'
@@ -51,15 +59,32 @@ export interface PlotProps {
   height?: number
   exportTitle?: string
   onRangeChange?: (range: AxisRange | null) => void
+  /** 高度拖拽手柄的无障碍文案。 */
+  resizeLabel?: string
 }
 
+/** 拖拽可调的高度范围与图例定位换算见 ../lib/plotLayout.ts。 */
+
 export const Plot = forwardRef<PlotApi, PlotProps>(function Plot(
-  { traces, xTitle, yTitle, y2Title, logX = false, logY = false, height = 260, exportTitle, onRangeChange },
+  {
+    traces,
+    xTitle,
+    yTitle,
+    y2Title,
+    logX = false,
+    logY = false,
+    height = 260,
+    exportTitle,
+    onRangeChange,
+    resizeLabel,
+  },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
   const rangeHandlerRef = useRef(onRangeChange)
   const tracesRef = useRef(traces)
+  const [plotHeight, setPlotHeight] = useState(height)
+  const [resizingHeight, setResizingHeight] = useState(false)
 
   rangeHandlerRef.current = onRangeChange
   tracesRef.current = traces
@@ -79,6 +104,61 @@ export const Plot = forwardRef<PlotApi, PlotProps>(function Plot(
     return fullLayout.xaxis.type === 'log'
       ? { min: 10 ** lower, max: 10 ** upper }
       : { min: lower, max: upper }
+  }
+
+  /**
+   * 图表下方分隔条的拖拽调高：拖动过程直接 relayout，避免每帧重跑整份 react；
+   * 高度先留在闭包局部变量里，抬手时才提交到 state。
+   */
+  function beginHeightDrag(event: ReactPointerEvent<HTMLElement>) {
+    const element = containerRef.current
+    if (!element || event.button !== 0) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    const startY = event.clientY
+    const startHeight = plotHeight
+    let nextHeight = startHeight
+
+    setResizingHeight(true)
+
+    const handlePointerMove = (moveEvent: globalThis.PointerEvent) => {
+      const candidate = clampPlotHeight(startHeight + (moveEvent.clientY - startY))
+
+      if (candidate === nextHeight) {
+        return
+      }
+
+      nextHeight = candidate
+      void loadPlotly().then((plotly) => plotly.relayout(element, { height: candidate }))
+    }
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerUp)
+      setResizingHeight(false)
+      setPlotHeight(nextHeight)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+    // 触屏上指针可能被系统取消（手势被打断），不收尾的话手柄会一直停在拖拽态。
+    window.addEventListener('pointercancel', handlePointerUp)
+  }
+
+  /** 分隔条聚焦后可以用上下方向键微调高度。 */
+  function handleResizeKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
+      return
+    }
+
+    event.preventDefault()
+    const step = event.key === 'ArrowDown' ? SCIENCE_PLOT_KEYBOARD_STEP : -SCIENCE_PLOT_KEYBOARD_STEP
+    setPlotHeight((current) => clampPlotHeight(current + step))
   }
 
   /** 把 trace 数据恢复为 props 里的全量预览（refine 后图上只有窗口切片），再 autorange。 */
@@ -214,15 +294,26 @@ export const Plot = forwardRef<PlotApi, PlotProps>(function Plot(
         hovertemplate: '%{y:.4g}<extra>%{fullData.name}</extra>',
       }))
 
+      const showLegend = traces.length > 1
+      const marginBottom = resolvePlotMarginBottom(showLegend)
+
       const layout: Record<string, unknown> = {
-        height,
+        height: plotHeight,
         // b 要给 x 轴标题留出位置：标题行高约 14px，34 会把它压到容器底边被裁掉。
-        margin: { l: 52, r: y2Title ? 48 : 16, t: 14, b: 48 },
+        // 图例移到绘图区下方后，这段留白还要再容纳一行图例。
+        margin: { l: 52, r: y2Title ? 48 : 16, t: SCIENCE_PLOT_MARGIN_TOP, b: marginBottom },
         paper_bgcolor: 'rgba(0,0,0,0)',
         plot_bgcolor: 'rgba(0,0,0,0)',
         font: { family: resolveFontFamily(), size: 11, color: axis },
-        showlegend: traces.length > 1,
-        legend: { orientation: 'h', y: 1.12, x: 0, font: { size: 10 } },
+        showlegend: showLegend,
+        legend: {
+          orientation: 'h',
+          x: 0,
+          xanchor: 'left',
+          y: resolveLegendY(plotHeight, showLegend),
+          yanchor: 'top',
+          font: { size: 10 },
+        },
         hovermode: 'x unified',
         hoverlabel: CHART_HOVERLABEL,
         // Keep the user's viewport across data updates (restyle/refine).
@@ -262,7 +353,7 @@ export const Plot = forwardRef<PlotApi, PlotProps>(function Plot(
     return () => {
       cancelled = true
     }
-  }, [traces, xTitle, yTitle, y2Title, logX, logY, height])
+  }, [traces, xTitle, yTitle, y2Title, logX, logY, plotHeight])
 
   useEffect(() => {
     const element = containerRef.current
@@ -298,5 +389,28 @@ export const Plot = forwardRef<PlotApi, PlotProps>(function Plot(
     }
   }, [])
 
-  return <div ref={containerRef} className="w-full" />
+  return (
+    <div className="w-full">
+      <div ref={containerRef} className="w-full" />
+      {/* 通栏分隔条：拖动它改图表高度。静止是一条细线，悬停/聚焦/拖拽中变粗并染成主色。 */}
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label={resizeLabel ?? 'Resize plot height'}
+        title={resizeLabel ?? 'Resize plot height'}
+        tabIndex={0}
+        className="group flex h-3 w-full cursor-ns-resize touch-none select-none items-center focus-visible:outline-none"
+        onPointerDown={beginHeightDrag}
+        onKeyDown={handleResizeKeyDown}
+      >
+        <span
+          className={`w-full rounded-full transition-all ${
+            resizingHeight
+              ? 'h-[3px] bg-primary'
+              : 'h-px bg-base-300 group-hover:h-[3px] group-hover:bg-primary/60 group-focus-visible:h-[3px] group-focus-visible:bg-primary/60'
+          }`}
+        />
+      </div>
+    </div>
+  )
 })

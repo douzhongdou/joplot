@@ -82,6 +82,8 @@ export interface ScienceCopy {
     dcHiddenOnLogFrequency: string
     phase: string
     phaseUnavailable: string
+    /** 图表右下角高度拖拽手柄的无障碍标签。 */
+    resizePlot: string
   }
   fit: {
     rSquared: string
@@ -307,6 +309,7 @@ const ZH: ScienceCopy = {
     dcHiddenOnLogFrequency: '对数频率轴从第一个非零频点开始；切换到线性频率可查看 0 Hz 直流分量。',
     phase: '相位 (rad)',
     phaseUnavailable: 'Welch 分段平均的是功率谱，没有唯一相位。将分段数设为 1 可查看 FFT 相位。',
+    resizePlot: '拖动调整图表高度',
   },
   fit: { rSquared: 'R²', rmse: 'RMSE', iterations: '迭代', converged: '收敛', yes: '是', no: '否', params: '参数', stopReason: '停止原因', reasons: { converged: '步长收敛', maxIterations: '达到最大迭代', stalled: '无法继续下降' } },
   stats: {
@@ -417,6 +420,7 @@ const EN: ScienceCopy = {
     dcHiddenOnLogFrequency: 'The log frequency axis starts at the first nonzero bin. Switch to linear frequency to view DC at 0 Hz.',
     phase: 'Phase (rad)',
     phaseUnavailable: 'Welch averages power across segments, so there is no unique phase. Set segments to 1 to view FFT phase.',
+    resizePlot: 'Drag to resize the plot height',
   },
   fit: { rSquared: 'R²', rmse: 'RMSE', iterations: 'Iterations', converged: 'Converged', yes: 'yes', no: 'no', params: 'Parameters', stopReason: 'Stop reason', reasons: { converged: 'Step converged', maxIterations: 'Max iterations', stalled: 'No further descent' } },
   stats: {
@@ -508,7 +512,7 @@ const JA: ScienceCopy = {
   },
   kinds: { series: '系列', spectrum: 'スペクトル', fit: 'フィット', stats: '統計' },
   view: { label: '表示切替', plot: 'プロット', table: 'テーブル' },
-  plot: { timeDomain: '時間領域', dataDomain: 'データ曲線', frequencyDomain: '周波数領域', residual: '残差', fit: 'フィット', data: 'データ', peak: 'ピーク', magnitude: '振幅', magnitudeDb: '相対振幅 (dB)', spectrumScale: 'スペクトル縦軸', dbScale: 'dB', linearScale: '線形', frequencyScale: '周波数軸', logFrequency: '対数周波数', linearFrequency: '線形周波数', dcHiddenOnLogFrequency: '対数周波数軸は最初の非ゼロ周波数から表示します。0 Hz の直流成分は線形周波数で確認できます。', phase: '位相 (rad)', phaseUnavailable: 'Welch 法はパワースペクトルを平均するため、一意の位相はありません。位相を表示するには分割数を 1 にしてください。' },
+  plot: { timeDomain: '時間領域', dataDomain: 'データ曲線', frequencyDomain: '周波数領域', residual: '残差', fit: 'フィット', data: 'データ', peak: 'ピーク', magnitude: '振幅', magnitudeDb: '相対振幅 (dB)', spectrumScale: 'スペクトル縦軸', dbScale: 'dB', linearScale: '線形', frequencyScale: '周波数軸', logFrequency: '対数周波数', linearFrequency: '線形周波数', dcHiddenOnLogFrequency: '対数周波数軸は最初の非ゼロ周波数から表示します。0 Hz の直流成分は線形周波数で確認できます。', phase: '位相 (rad)', phaseUnavailable: 'Welch 法はパワースペクトルを平均するため、一意の位相はありません。位相を表示するには分割数を 1 にしてください。', resizePlot: 'ドラッグしてグラフの高さを変更' },
   fit: { rSquared: 'R²', rmse: 'RMSE', iterations: '反復回数', converged: '収束', yes: 'はい', no: 'いいえ', params: 'パラメータ', stopReason: '停止理由', reasons: { converged: 'ステップ収束', maxIterations: '最大反復', stalled: '改善不能' } },
   stats: {
     count: '標本数', mean: '平均', std: '標準偏差', min: '最小', max: '最大', median: '中央値',

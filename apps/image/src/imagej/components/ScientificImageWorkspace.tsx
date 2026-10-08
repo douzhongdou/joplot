@@ -1876,9 +1876,9 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                 aria-label={copy.stats.refresh}
                 disabled={busy || isStatsLive(card.id) || (card.type === 'histogram' ? !currentHistogram : !currentStatsWithSource)}
                 onClick={() => { if (card.type === 'histogram') refreshHistogram(card.id); else refreshStats(card.id) }}
-                className="size-3.5! shrink-0 rounded-sm text-base-content/45 hover:bg-base-200 hover:text-base-content"
+                className="size-3.5! shrink-0 rounded-sm text-base-content/45 hover:bg-transparent hover:text-base-content dark:hover:bg-transparent"
               >
-                <RefreshCw size={13} />
+                <RefreshCw className="size-3" />
               </Button>
             ) : null}
             <span className="flex-1" aria-hidden="true" />
@@ -1888,9 +1888,9 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               size="icon-sm"
               aria-label={copy.close}
               onClick={() => removeView(card.id)}
-              className="size-3.5! shrink-0 rounded-sm text-base-content/45 hover:bg-base-200 hover:text-base-content"
+              className="size-3.5! shrink-0 rounded-sm text-base-content/45 hover:bg-transparent hover:text-base-content dark:hover:bg-transparent"
             >
-              <X size={13} />
+              <X className="size-3" />
             </Button>
           </CardHeader>
           <CardContent className="grid gap-1 px-0 py-0">
@@ -3001,6 +3001,7 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
 
 
 
