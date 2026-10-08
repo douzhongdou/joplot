@@ -92,7 +92,7 @@ test('spectrum previews keep phase paired with selected magnitude bins', () => {
   const spectrum: SpectrumValue = {
     id: 'fft1', name: 'fft1', kind: 'spectrum',
     frequency: createDense(frequency), magnitude: createDense(magnitude), phase: createDense(phase),
-    peaks: [], sampleRate: 4000, provenance: 'test',
+    sampleRate: 4000, provenance: 'test',
   }
   for (const preview of [toPreview(spectrum, 100), toPreviewInRange(spectrum, { min: 400, max: 800 }, 100)]) {
     assert.equal(preview.kind, 'spectrum')
@@ -113,7 +113,7 @@ test('spectrum preview retains a narrow low-frequency line beside a strong DC bi
   const spectrum: SpectrumValue = {
     id: 'fft1', name: 'fft1', kind: 'spectrum',
     frequency: createDense(frequency), magnitude: createDense(magnitude), phase: null,
-    peaks: [], sampleRate: 200_000, provenance: 'test',
+    sampleRate: 200_000, provenance: 'test',
   }
   for (const preview of [toPreview(spectrum, 400), toPreviewInRange(spectrum, { min: 0, max: 100_000 }, 400)]) {
     assert.equal(preview.kind, 'spectrum')

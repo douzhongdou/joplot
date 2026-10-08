@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode, useSyncExternalStore } from 'react'
-import { ChevronLeft, ChevronRight, Download, Ellipsis, Image as ImageIcon, Maximize, Plus, Redo2, RefreshCw, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, Ellipsis, File as FileIcon, Image as ImageIcon, Maximize, Plus, Redo2, RefreshCw, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { AppNavbar } from '../../components/AppNavbar'
 import { useI18n } from '../../i18n'
 import { Button } from '@joplot/ui/button'
@@ -2154,21 +2154,23 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" size="sm" className="shrink-0 font-semibold">
-                  <ImageIcon size={14} strokeWidth={2.2} />
+                  <FileIcon size={14} strokeWidth={2.2} />
                   {copy.fileMenu}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-52">
-                <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>{copy.openImage}</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}><ImageIcon size={14} />{copy.openImage}</DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem disabled={!hasImage || busy} onSelect={() => void exportPng()}>
                   <Download size={14} />
                   {copy.exportPng}
                 </DropdownMenuItem>
                 <DropdownMenuItem disabled={!hasImage || busy} onSelect={() => downloadTiff(false)}>
+                  <Download size={14} />
                   {copy.stack.exportCurrent}
                 </DropdownMenuItem>
                 <DropdownMenuItem disabled={busy || !stack || stack.length < 2} onSelect={() => downloadTiff(true)}>
+                  <Download size={14} />
                   {copy.stack.exportAll}
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -2916,7 +2918,7 @@ export function ScientificImageWorkspace() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>{copy.openImage}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}><ImageIcon size={14} />{copy.openImage}</DropdownMenuItem>
           <DropdownMenuItem onSelect={pickFolder}>{copy.tabs.openFolder}</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem disabled={documents.length < 2} onSelect={() => setStackDialog(true)}>{copy.tabs.buildStack}</DropdownMenuItem>
@@ -3002,6 +3004,8 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
+
 
 
 

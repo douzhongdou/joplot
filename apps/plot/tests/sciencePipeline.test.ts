@@ -18,7 +18,6 @@ test('sample pipeline runs without errors and fits the damped signal', () => {
 
   const spectrum = values.find((value) => value.id === 'fft1')
   assert.ok(spectrum && spectrum.kind === 'spectrum')
-  assert.ok(spectrum.peaks.length > 0)
   assert.ok(spectrum.phase)
   assert.deepEqual(vectorFields(spectrum), ['frequency', 'magnitude', 'phase'])
   assert.equal(resolveValue(values, 'fft1::phase')?.kind, 'series')

@@ -150,16 +150,8 @@ function buildSpectrumTraces(values: ScienceValue[], selected: ScienceValue, cop
   const magnitude = values1d(spectrum.magnitude)
   const reference = spectrumReference(magnitude)
   const displayMagnitude = scale === 'db' ? toRelativeDb(magnitude, reference) : magnitude
-  const peakMagnitude = spectrum.peaks.map((peak) => peak.magnitude)
   return [
     seriesTrace(scale === 'db' ? copy.plot.magnitudeDb : copy.plot.magnitude, values1d(spectrum.frequency), displayMagnitude, SCIENCE_COLORS.spectrum, 1.6),
-    {
-      x: spectrum.peaks.map((peak) => peak.frequency),
-      y: scale === 'db' ? toRelativeDb(peakMagnitude, reference) : peakMagnitude,
-      name: 'peaks',
-      color: SCIENCE_COLORS.peak,
-      mode: 'markers',
-    },
     ...(spectrum.phase ? [{
       ...seriesTrace(copy.plot.phase, values1d(spectrum.frequency), values1d(spectrum.phase), SCIENCE_COLORS.residual, 1.2),
       yAxis: 'y2' as const,

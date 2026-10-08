@@ -412,7 +412,6 @@ export const OPERATORS: OperatorDef[] = [
         frequency: createDense(computation.frequency),
         magnitude: createDense(computation.magnitude),
         phase: computation.phase ? createDense(computation.phase) : null,
-        peaks: computation.peaks,
         sampleRate,
         frequencyUnit: input.xUnit === 's' ? 'Hz' : input.xUnit === 'sample'
           ? 'cycles/sample'

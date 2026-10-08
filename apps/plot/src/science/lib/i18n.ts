@@ -70,7 +70,6 @@ export interface ScienceCopy {
     residual: string
     fit: string
     data: string
-    peak: string
     magnitude: string
     magnitudeDb: string
     spectrumScale: string
@@ -297,7 +296,6 @@ const ZH: ScienceCopy = {
     residual: '残差',
     fit: '拟合',
     data: '数据',
-    peak: '峰值',
     magnitude: '幅度',
     magnitudeDb: '相对幅度 (dB)',
     spectrumScale: '频谱纵轴',
@@ -408,7 +406,6 @@ const EN: ScienceCopy = {
     residual: 'Residual',
     fit: 'Fit',
     data: 'Data',
-    peak: 'Peak',
     magnitude: 'Magnitude',
     magnitudeDb: 'Relative magnitude (dB)',
     spectrumScale: 'Spectrum scale',
@@ -512,7 +509,7 @@ const JA: ScienceCopy = {
   },
   kinds: { series: '系列', spectrum: 'スペクトル', fit: 'フィット', stats: '統計' },
   view: { label: '表示切替', plot: 'プロット', table: 'テーブル' },
-  plot: { timeDomain: '時間領域', dataDomain: 'データ曲線', frequencyDomain: '周波数領域', residual: '残差', fit: 'フィット', data: 'データ', peak: 'ピーク', magnitude: '振幅', magnitudeDb: '相対振幅 (dB)', spectrumScale: 'スペクトル縦軸', dbScale: 'dB', linearScale: '線形', frequencyScale: '周波数軸', logFrequency: '対数周波数', linearFrequency: '線形周波数', dcHiddenOnLogFrequency: '対数周波数軸は最初の非ゼロ周波数から表示します。0 Hz の直流成分は線形周波数で確認できます。', phase: '位相 (rad)', phaseUnavailable: 'Welch 法はパワースペクトルを平均するため、一意の位相はありません。位相を表示するには分割数を 1 にしてください。', resizePlot: 'ドラッグしてグラフの高さを変更' },
+  plot: { timeDomain: '時間領域', dataDomain: 'データ曲線', frequencyDomain: '周波数領域', residual: '残差', fit: 'フィット', data: 'データ', magnitude: '振幅', magnitudeDb: '相対振幅 (dB)', spectrumScale: 'スペクトル縦軸', dbScale: 'dB', linearScale: '線形', frequencyScale: '周波数軸', logFrequency: '対数周波数', linearFrequency: '線形周波数', dcHiddenOnLogFrequency: '対数周波数軸は最初の非ゼロ周波数から表示します。0 Hz の直流成分は線形周波数で確認できます。', phase: '位相 (rad)', phaseUnavailable: 'Welch 法はパワースペクトルを平均するため、一意の位相はありません。位相を表示するには分割数を 1 にしてください。', resizePlot: 'ドラッグしてグラフの高さを変更' },
   fit: { rSquared: 'R²', rmse: 'RMSE', iterations: '反復回数', converged: '収束', yes: 'はい', no: 'いいえ', params: 'パラメータ', stopReason: '停止理由', reasons: { converged: 'ステップ収束', maxIterations: '最大反復', stalled: '改善不能' } },
   stats: {
     count: '標本数', mean: '平均', std: '標準偏差', min: '最小', max: '最大', median: '中央値',

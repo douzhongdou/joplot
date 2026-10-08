@@ -32,12 +32,6 @@ export interface Series {
   provenance: string
 }
 
-export interface SpectrumPeak {
-  frequency: number
-  magnitude: number
-  relativeDb: number
-}
-
 export interface SpectrumValue {
   id: string
   name: string
@@ -46,7 +40,6 @@ export interface SpectrumValue {
   magnitude: DenseArray
   /** 单次 FFT 相位（弧度）；Welch 功率平均时为 null。 */
   phase: DenseArray | null
-  peaks: SpectrumPeak[]
   sampleRate: number
   frequencyUnit?: string
   pointCount?: number
