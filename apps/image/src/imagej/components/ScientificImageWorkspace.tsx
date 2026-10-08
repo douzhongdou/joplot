@@ -1816,11 +1816,12 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     <div className="grid gap-2">
       {views.map((card) => (
         <Card key={card.id} className="gap-1 rounded-sm border-base-300 px-1 py-1 shadow-none">
-          {/* 标题行压矮：行高由 16px 的按钮容器决定，标题本身不再撑高。 */}
+          {/* 标题行压矮：行高由按钮容器决定，标题本身不撑高。 */}
           <CardHeader className="flex h-4 flex-row items-center justify-between gap-1 px-0 py-0">
-            <CardTitle className="text-sm font-semibold leading-none text-base-content/50">{viewTitle(card.type)}</CardTitle>
-            <CardAction className="row-span-1 flex items-center gap-0.5">
-              {/* 刷新放在标题行：正文里只留 Live 与冻结来源，避免多一行把版面顶下去。 */}
+            {/* 刷新紧贴标题靠左，与右侧关闭按钮隔开一整行宽，避免误触。
+                两个按钮都只缩容器（14px），图标保持 13px。 */}
+            <div className="flex min-w-0 items-center gap-1">
+              <CardTitle className="text-sm font-semibold leading-none text-base-content/50">{viewTitle(card.type)}</CardTitle>
               {card.type === 'histogram' || card.type === 'measurement' ? (
                 <Button
                   type="button"
@@ -1829,18 +1830,20 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                   aria-label={copy.stats.refresh}
                   disabled={busy || isStatsLive(card.id) || (card.type === 'histogram' ? !currentHistogram : !currentStatsWithSource)}
                   onClick={() => { if (card.type === 'histogram') refreshHistogram(card.id); else refreshStats(card.id) }}
-                  className="size-4 rounded-sm text-base-content/45 hover:bg-base-200 hover:text-base-content"
+                  className="size-3.5 shrink-0 rounded-sm text-base-content/45 hover:bg-base-200 hover:text-base-content"
                 >
                   <RefreshCw size={13} />
                 </Button>
               ) : null}
+            </div>
+            <CardAction className="row-span-1">
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
                 aria-label={copy.close}
                 onClick={() => removeView(card.id)}
-                className="size-4 rounded-sm text-base-content/45 hover:bg-base-200 hover:text-base-content"
+                className="size-3.5 rounded-sm text-base-content/45 hover:bg-base-200 hover:text-base-content"
               >
                 <X size={13} />
               </Button>
