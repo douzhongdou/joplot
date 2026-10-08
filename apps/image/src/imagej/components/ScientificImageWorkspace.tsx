@@ -2149,11 +2149,12 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               className="hidden"
               onChange={onFileInput}
             />
-            {/* ① 主操作：整个顶栏唯一的实心按钮，现在是「文件」下拉——
-                打开 / 打开文件夹 / 导出 PNG / 导出 TIFF 都归到这一处。 */}
+            {/* 「文件」下拉：打开 / 导出都归到这一处。
+                用 ghost，不再一上来就实心高亮——那是原来「打开图片」主按钮的做法，
+                但菜单本身不需要抢这个视觉焦点。 */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button type="button" size="sm" className="shrink-0 font-semibold">
+                <Button type="button" variant="ghost" size="sm" className="shrink-0 font-medium">
                   <FileIcon size={14} strokeWidth={2.2} />
                   {copy.fileMenu}
                 </Button>
@@ -2172,6 +2173,25 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                 <DropdownMenuItem disabled={busy || !stack || stack.length < 2} onSelect={() => downloadTiff(true)}>
                   <Download size={14} />
                   {copy.stack.exportAll}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* 「编辑」与「文件」并列成一组：撤销 / 重做归到这里，之后还能继续塞编辑类操作。 */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" className="shrink-0 font-medium">
+                  {copy.editMenu}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-52">
+                <DropdownMenuItem disabled={busy || !historyFlags.canUndo} onSelect={() => void undo()}>
+                  <Undo2 size={14} />
+                  {copy.history.undo}
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={busy || !historyFlags.canRedo} onSelect={() => void redo()}>
+                  <Redo2 size={14} />
+                  {copy.history.redo}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -2346,15 +2366,8 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
             </AccordionItem>
           </Accordion>
           <footer className="shrink-0 border-t border-base-300 px-2.5 py-2">
-            <div className="flex items-center gap-1">
-              <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.history.undo} disabled={busy || !historyFlags.canUndo} onClick={undo}>
-                <Undo2 size={14} />
-              </Button>
-              <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.history.redo} disabled={busy || !historyFlags.canRedo} onClick={redo}>
-                <Redo2 size={14} />
-              </Button>
-            </div>
-            <div role="status" aria-live="polite" className="mt-1 min-h-4 text-xs text-base-content/60">
+            {/* 撤销 / 重做已移到顶栏的「编辑」菜单，这里只留状态文字。 */}
+            <div role="status" aria-live="polite" className="min-h-4 text-xs text-base-content/60">
               {preload ? `${copy.stack.preloading} ${preload.done} / ${preload.total}` : status}
               {!preload && state.lastRunMs !== undefined ? ` · ${state.lastRunMs} ms` : ''}
               {state.sliceLabels?.[pageIndex] ? ` · ${state.sliceLabels[pageIndex]}` : ''}
@@ -3004,6 +3017,8 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
+
 
 
 
