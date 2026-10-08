@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode, useSyncExternalStore } from 'react'
 import { ChevronLeft, ChevronRight, Download, Image as ImageIcon, Plus, Redo2, RefreshCw, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { AppNavbar } from '../../components/AppNavbar'
 import { useI18n } from '../../i18n'
@@ -18,6 +18,7 @@ import { Label } from '@joplot/ui/label'
 import { Slider } from '@joplot/ui/slider'
 import { createImagejCopy } from '../lib/i18n'
 import { readDroppedContent } from '../lib/dropFiles'
+import { analysisViews, type ViewType } from '../lib/analysisViews'
 import { fastHistogram } from '../lib/fastHistogram'
 import { toRoi, type RoiInput } from '../lib/processor'
 import { animationInterval, nextAnimationStep } from '../lib/animation'
@@ -98,8 +99,7 @@ const OP_COMMANDS: Record<ParamOp, ParamCommand> = {
   sharpen3x3: 'Sharpen',
   unsharpMask: 'Unsharp Mask',
 }
-type ViewType = 'measurement' | 'histogram' | 'profile' | 'particles' | 'zprofile' | 'stackMeasure' | 'stackStatistics' | 'xyProfile'
-interface ViewCard { id: number; type: ViewType }
+
 const VIEW_TYPES: ViewType[] = ['measurement', 'histogram', 'profile', 'particles']
 /**
  * 栈命令 → 它打开的视图卡片。
@@ -261,8 +261,9 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const filterPreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** 视口变化后更新预览作用域的防抖定时器。 */
   const filterScopeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [views, setViews] = useState<ViewCard[]>([])
-  const viewsIdRef = useRef(1)
+  // 分析面板跨图片标签页共享（见 lib/analysisViews）：切标签页不重置，卡片列表是全局的。
+  const viewsState = useSyncExternalStore(analysisViews.subscribe, analysisViews.snapshot, analysisViews.snapshot)
+  const views = viewsState.cards
   const [minParticleArea, setMinParticleArea] = useState(1)
   const [original, setOriginal] = useState<ImageBlock | null>(null), [showColor, setShowColor] = useState(true)
   const [showOriginal, setShowOriginal] = useState(false)
@@ -455,13 +456,12 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
    */
   const liveHistogram = useMemo(() => displayBlock ? fastHistogram(displayBlock, analysisChannel ?? 'all') : null, [displayBlock, analysisChannel])
   const currentHistogram = liveHistogram ? { counts: liveHistogram.counts, min: liveHistogram.histogramMin, max: liveHistogram.histogramMax } : null
-  // Live 与冻结值都按卡片 id 记录：多个直方图卡片各自独立，才能一个跟随当前切片、一个冻在原地对照。
-  const [histLive, setHistLive] = useState<Record<number, boolean>>({})
-  const [histFrozen, setHistFrozen] = useState<Record<number, { counts: Uint32Array; min: number; max: number }>>({})
-  const isHistLive = (id: number) => histLive[id] !== false
-  const histogramFor = (id: number) => isHistLive(id) ? currentHistogram : (histFrozen[id] ?? currentHistogram)
-  const refreshHistogram = (id: number) => { if (currentHistogram) setHistFrozen((frozen) => ({ ...frozen, [id]: currentHistogram })) }
-  const toggleHistLive = (id: number, on: boolean) => { setHistLive((live) => ({ ...live, [id]: on })); if (!on) refreshHistogram(id) }
+  // Live 与冻结值按卡片 id 存在共享 store 里（不在本组件内）：跨图片标签页保留，
+  // 所以可以冻住一张图的直方图、切到另一张继续看，两张并排对比。
+  const isHistLive = (id: number) => viewsState.live[id] !== false
+  const histogramFor = (id: number) => isHistLive(id) ? currentHistogram : (viewsState.frozen[id] ?? currentHistogram)
+  const refreshHistogram = (id: number) => analysisViews.freeze(id, currentHistogram)
+  const toggleHistLive = (id: number, on: boolean) => analysisViews.setLive(id, on, currentHistogram)
   const baselineWindow = useMemo(() => {
     if (!displayBlock) return { window: 255, level: 127.5 }
     return displayBlock.dtype === 'uint8' ? { window: 255, level: 127.5 } : computeWindowLevel(displayBlock)
@@ -578,7 +578,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     return null
   }, [paramCommand, projectCommand, montageOpen, montageToStackOpen, resliceOpen, orthogonalOpen, reduceOpen, substackOpen, combineOpen, combineOp, animationOpen, labelOpen, annotateOpen, project3dOpen, remontageOpen])
 
-  const seedDefaultViews = () => setViews((cards) => cards.length ? cards : [{ id: viewsIdRef.current++, type: 'measurement' }, { id: viewsIdRef.current++, type: 'histogram' }])
+  const seedDefaultViews = () => analysisViews.seed()
   useEffect(() => {
     // 翻页作废在途的 Original 读取：Original 改为按需读，见 toggleOriginal。
     originalRequest.current += 1
@@ -1286,7 +1286,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     if (!view) return
     if (sliceCount < 2) { setError(copy.stackOps.needsStack); return }
     setError('')
-    setViews((cards) => [...cards, { id: viewsIdRef.current++, type: view }])
+    analysisViews.add(view)
     // Plot XY Profile 取逐页剖面（线选区沿线采样）；其余三个共用一次整栈统计。
     if (command === 'plot-xy-profile') {
       void runtime.loadStackProfiles({ roi: roiRegion(roi), line: lineSamplePoints(roi) })
@@ -1377,11 +1377,11 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const zoomByStep = (direction: 1 | -1) => viewportRef.current?.zoomBy(direction > 0 ? 1.25 : 0.8)
   const fitToWindow = () => viewportRef.current?.fit()
   const showActualSize = () => viewportRef.current?.actualSize()
-  const analyzeCurrentParticles = () => setViews((cards) => [...cards, { id: viewsIdRef.current++, type: 'particles' }])
+  const analyzeCurrentParticles = () => analysisViews.add('particles')
   const viewTitle = (type: ViewType) => type === 'particles' && particles ? `${copy.views.particles} · ${particles.length}` : copy.views[type]
   // 不再去重：同一种视图允许并存（配合各自的 Live 状态做对照）。
-  const addView = (type: ViewType) => setViews((cards) => [...cards, { id: viewsIdRef.current++, type }])
-  const removeView = (id: number) => setViews((cards) => cards.filter((card) => card.id !== id))
+  const addView = (type: ViewType) => analysisViews.add(type)
+  const removeView = (id: number) => analysisViews.remove(id)
   const exportParticlesCsv = () => {
     if (!particles) return
     const lines = ['id,area,perimeter,circularity,centroid_x,centroid_y,bounds_x,bounds_y,bounds_width,bounds_height', ...particles.map((p) => [p.id,p.area,p.perimeter,p.circularity,p.centroidX,p.centroidY,p.bounds.x,p.bounds.y,p.bounds.width,p.bounds.height].join(','))]
@@ -2853,6 +2853,8 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
+
 
 
 
