@@ -164,6 +164,8 @@ export interface ImagejCopy {
     /** 直方图窗口的 Live 复选框。 */
     live: string
     refresh: string
+    /** 冻结卡片的来源标注前缀。 */
+    frozen: string
     histogram: string
     thresholdMark: string
     pixel: string
@@ -457,6 +459,7 @@ const zhCN: ImagejCopy = {
     stdDev: '标准差',
     live: '实时',
     refresh: '刷新',
+    frozen: '已冻结',
     histogram: '直方图',
     thresholdMark: '阈值',
     pixel: '像素',
@@ -747,6 +750,7 @@ const en: ImagejCopy = {
     stdDev: 'StdDev',
     live: 'Live',
     refresh: 'Refresh',
+    frozen: 'Frozen',
     histogram: 'Histogram',
     thresholdMark: 'Threshold',
     pixel: 'Pixel',
@@ -1037,6 +1041,7 @@ const jaJP: ImagejCopy = {
     stdDev: '標準偏差',
     live: 'ライブ',
     refresh: '更新',
+    frozen: '凍結',
     histogram: 'ヒストグラム',
     thresholdMark: 'しきい値',
     pixel: 'ピクセル',
@@ -1182,6 +1187,7 @@ const COPIES: Record<ImagejLanguage, ImagejCopy> = {
 export function createImagejCopy(language: ImagejLanguage): ImagejCopy {
   return COPIES[language] ?? COPIES.en
 }
+
 
 
 

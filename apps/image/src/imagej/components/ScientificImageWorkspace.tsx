@@ -458,10 +458,15 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const currentHistogram = liveHistogram ? { counts: liveHistogram.counts, min: liveHistogram.histogramMin, max: liveHistogram.histogramMax } : null
   // Live 与冻结值按卡片 id 存在共享 store 里（不在本组件内）：跨图片标签页保留，
   // 所以可以冻住一张图的直方图、切到另一张继续看，两张并排对比。
+  /** 冻结时记下来源（图名 · 切片位置），卡片上会标出来。 */
+  const histogramSource = slice && slice.length > 1
+    ? `${sourceName} · ${slice.axis.toUpperCase()} ${pageIndex + 1}/${slice.length}`
+    : sourceName
+  const currentHistogramWithSource = currentHistogram ? { ...currentHistogram, source: histogramSource } : null
   const isHistLive = (id: number) => viewsState.live[id] !== false
   const histogramFor = (id: number) => isHistLive(id) ? currentHistogram : (viewsState.frozen[id] ?? currentHistogram)
-  const refreshHistogram = (id: number) => analysisViews.freeze(id, currentHistogram)
-  const toggleHistLive = (id: number, on: boolean) => analysisViews.setLive(id, on, currentHistogram)
+  const refreshHistogram = (id: number) => analysisViews.freeze(id, currentHistogramWithSource)
+  const toggleHistLive = (id: number, on: boolean) => analysisViews.setLive(id, on, currentHistogramWithSource)
   const baselineWindow = useMemo(() => {
     if (!displayBlock) return { window: 255, level: 127.5 }
     return displayBlock.dtype === 'uint8' ? { window: 255, level: 127.5 } : computeWindowLevel(displayBlock)
@@ -1858,6 +1863,12 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                   <span className="ml-1">{copy.stats.refresh}</span>
                 </Button>
               </div>
+              {/* 冻结时标出它来自哪张图/哪一页：切到别的图后才知道自己在看什么。 */}
+              {!isHistLive(card.id) && viewsState.frozen[card.id] ? (
+                <p className="mt-0.5 truncate text-[10px] text-base-content/45" title={viewsState.frozen[card.id]!.source}>
+                  {copy.stats.frozen} · {viewsState.frozen[card.id]!.source || '—'}
+                </p>
+              ) : null}
             </>
           ) : null}
 
@@ -2853,6 +2864,7 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
 
 
 

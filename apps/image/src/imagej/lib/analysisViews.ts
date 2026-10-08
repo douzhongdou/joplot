@@ -21,6 +21,8 @@ export interface FrozenHistogram {
   counts: Uint32Array
   min: number
   max: number
+  /** 冻结时的来源（图名 · 切片位置）：对照时才知道看的是哪一张。 */
+  source: string
 }
 
 interface AnalysisViewsState {
@@ -75,4 +77,5 @@ export const analysisViews = {
     commit({ ...state, frozen: { ...state.frozen, [id]: value } })
   },
 }
+
 
