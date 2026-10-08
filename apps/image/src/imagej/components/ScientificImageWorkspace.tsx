@@ -1872,7 +1872,9 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               <p className="text-sm text-base-content/55">{copy.emptyDescription}</p>
             ) : statsFor(card.id) ? (
               <>
-                <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                {/* 标签与值各自成列：长标签（如「面积（像素）」）不再挤压邻列，
+                    所有数值共享同一条右边界。 */}
+                <dl className="grid grid-cols-[auto_1fr_auto_1fr] items-baseline gap-x-3 gap-y-0.5">
                   {(() => {
                     const shown = statsFor(card.id)!
                     return [
@@ -1884,14 +1886,14 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                       [copy.stats.stdDev, shown.stdDev.toFixed(2)],
                     ] as const
                   })().map(([label, value]) => (
-                    <div key={label} className="flex items-baseline justify-between gap-2">
+                    <Fragment key={label}>
                       <dt className="truncate text-xs text-base-content/55">{label}</dt>
-                      <dd className="font-mono text-xs font-semibold tabular-nums text-base-content">{value}</dd>
-                    </div>
+                      <dd className="text-right font-mono text-xs font-semibold tabular-nums text-base-content">{value}</dd>
+                    </Fragment>
                   ))}
                 </dl>
                 {/* 与直方图同一套机制：Live 跟随当前切片，冻结后保留当时的数值与来源。刷新按钮在标题行。 */}
-                <div className="mt-1.5 flex items-baseline gap-2 text-xs">
+                <div className="mt-1.5 flex items-center gap-2 text-xs">
                   <label className="flex shrink-0 items-center gap-1.5 text-base-content/70">
                     <Checkbox checked={isStatsLive(card.id)} onCheckedChange={(value) => toggleStatsLive(card.id, value === true)} />
                     {copy.stats.live}
@@ -1919,7 +1921,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               />
               {/* 对齐 ImageJ 直方图窗口：Live 决定是否跟随；冻结来源与它同一行并截断，
                   不再另起一行，避免切换冻结状态时把版面顶下去。刷新按钮在标题行。 */}
-              <div className="mt-1.5 flex items-baseline gap-2 text-xs">
+              <div className="mt-1.5 flex items-center gap-2 text-xs">
                 <label className="flex shrink-0 items-center gap-1.5 text-base-content/70">
                   <Checkbox checked={isHistLive(card.id)} onCheckedChange={(value) => toggleHistLive(card.id, value === true)} />
                   {copy.stats.live}
@@ -2049,7 +2051,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
           {/* 整栈统计：一行汇总（Statistics）。 */}
           {card.type === 'stackStatistics' ? (
             stackStats ? (
-              <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+              <dl className="grid grid-cols-[auto_1fr_auto_1fr] items-baseline gap-x-3 gap-y-0.5">
                 {([
                   [copy.stackOps.voxels, stackStats.summary.voxels.toLocaleString()],
                   [copy.stats.mean, stackStats.summary.mean.toFixed(2)],
@@ -2059,10 +2061,10 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                   [copy.stackOps.median, Number.isNaN(stackStats.summary.median) ? '—' : String(stackStats.summary.median)],
                   [copy.stackOps.mode, Number.isNaN(stackStats.summary.mode) ? '—' : String(stackStats.summary.mode)],
                 ] as const).map(([label, value]) => (
-                  <div key={label} className="flex items-baseline justify-between gap-2">
+                  <Fragment key={label}>
                     <dt className="truncate text-xs text-base-content/55">{label}</dt>
-                    <dd className="font-mono text-xs font-semibold tabular-nums text-base-content">{value}</dd>
-                  </div>
+                    <dd className="text-right font-mono text-xs font-semibold tabular-nums text-base-content">{value}</dd>
+                  </Fragment>
                 ))}
               </dl>
             ) : (
@@ -2948,6 +2950,9 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
+
+
 
 
 
