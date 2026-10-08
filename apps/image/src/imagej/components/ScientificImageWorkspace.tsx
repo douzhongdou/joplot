@@ -654,7 +654,8 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   }, [current?.width, current?.height])
   /* 数据集就绪后播种默认视图：新建文档由外壳导入，不经过本组件的 loadFile。 */
   useEffect(() => {
-    if (state.dataset) seedDefaultViews()
+    // 无图像时也填入默认卡片：右栏结构始终可见，布局问题也更容易被发现（seed 自身幂等，重复调用无副作用）。
+    seedDefaultViews()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.dataset?.id])
   /* 打开文件交给外壳：每个文件开一个新 tab。 */
@@ -1875,7 +1876,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                 aria-label={copy.stats.refresh}
                 disabled={busy || isStatsLive(card.id) || (card.type === 'histogram' ? !currentHistogram : !currentStatsWithSource)}
                 onClick={() => { if (card.type === 'histogram') refreshHistogram(card.id); else refreshStats(card.id) }}
-                className="size-3.5 shrink-0 rounded-sm text-base-content/45 hover:bg-base-200 hover:text-base-content"
+                className="size-3.5! shrink-0 rounded-sm text-base-content/45 hover:bg-base-200 hover:text-base-content"
               >
                 <RefreshCw size={13} />
               </Button>
@@ -1887,7 +1888,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               size="icon-sm"
               aria-label={copy.close}
               onClick={() => removeView(card.id)}
-              className="size-3.5 shrink-0 rounded-sm text-base-content/45 hover:bg-base-200 hover:text-base-content"
+              className="size-3.5! shrink-0 rounded-sm text-base-content/45 hover:bg-base-200 hover:text-base-content"
             >
               <X size={13} />
             </Button>
@@ -3000,6 +3001,8 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
+
 
 
 
