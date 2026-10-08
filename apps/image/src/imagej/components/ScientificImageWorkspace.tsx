@@ -271,6 +271,13 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const [gradingClip, setGradingClip] = useState(0.5)
   const [gradingStrength, setGradingStrength] = useState(100)
   const [gradingGains, setGradingGains] = useState<[number, number, number]>([1, 1, 1])
+  /**
+   * 白平衡的预览步骤 id（用 ref 而非 state：UI 不依赖它，也不该因为它重渲染）。
+   *
+   * 与滤镜面板同一套机制：参数一变就把预览作为**临时步骤**加进处理链（或更新它），
+   * 点「应用」时停止跟踪使那一步变成正式步骤，收起面板时把它撤掉。
+   */
+  const gradingPreviewStepId = useRef<string | null>(null)
   const [colorSession, setColorSession] = useState(0)
   /** 展开中的 Z 投影命令（`Z Project...` / `Grouped Z Project...`）；与算子参数面板互斥。 */
   const [projectCommand, setProjectCommand] = useState<ProjectCommand | null>(null)
@@ -391,6 +398,33 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     }))
   }, [state.stackProfiles])
   const paramOp = paramCommand ? COMMAND_OPS[paramCommand] : null
+  /**
+   * 白平衡预览：参数一变就把效果作为**临时步骤**刷进处理链；面板收起或切到别的命令时撤掉它。
+   *
+   * 与滤镜面板同一套思路（临时步骤 + 防抖），点「应用」只是停止跟踪该步骤，它就留在链里变成正式一步。
+   */
+  useEffect(() => {
+    if (paramCommand !== 'White Balance') {
+      if (gradingPreviewStepId.current) { runtime.removeStep(gradingPreviewStepId.current); gradingPreviewStepId.current = null }
+      return
+    }
+    if (!image || busy) return
+    const timer = setTimeout(() => {
+      const params = {
+        method: gradingMethod,
+        clipPercent: gradingClip,
+        strength: gradingStrength,
+        gainR: gradingGains[0],
+        gainG: gradingGains[1],
+        gainB: gradingGains[2],
+      }
+      const current = gradingPreviewStepId.current
+      if (current) runtime.updateParams(current, params)
+      else gradingPreviewStepId.current = runtime.addStep('colorGrading', params, stepScope(null)) ?? null
+    }, FILTER_PREVIEW_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+    // image / busy / runtime / stepScope 不进依赖：预览本身会改写它们，放进去会自激。
+  }, [paramCommand, gradingMethod, gradingClip, gradingStrength, gradingGains])
   const particlesRequested = views.some((view) => view.type === 'particles')
   const analysisChannel = isRgb && colorPreview.length ? 'all' as const : undefined
   /* 引擎在 run 里已顺带算好整帧分析：整图、无 ROI、无粒子、无通道调整时直接用，免复制、免第二个 Worker。 */
@@ -1260,9 +1294,20 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const applyColorGrading = () => {
     if (!hasImage || busy) return
     setError('')
-    const { method, clipPercent, strength } = { method: gradingMethod, clipPercent: gradingClip, strength: gradingStrength }
-    runtime.addStep('colorGrading', { method, clipPercent, strength, gainR: gradingGains[0], gainG: gradingGains[1], gainB: gradingGains[2] }, stepScope(null))
-    closeParamCommand()
+    if (gradingPreviewStepId.current) {
+      // 预览已经是处理链里的一步：停止跟踪它就等于「固化」，不需要再加一步。
+      gradingPreviewStepId.current = null
+      return
+    }
+    runtime.addStep('colorGrading', {
+      method: gradingMethod,
+      clipPercent: gradingClip,
+      strength: gradingStrength,
+      gainR: gradingGains[0],
+      gainG: gradingGains[1],
+      gainB: gradingGains[2],
+    }, stepScope(null))
+    // 应用后不收起面板：白平衡通常要连着试几种方法/参数，收起反而碍事（再点一次命令项即可收起）。
   }
 
   const commitColorPreview = (settings: readonly ColorAdjustment[], allPages: boolean) => {

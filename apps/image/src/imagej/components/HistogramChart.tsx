@@ -1,35 +1,26 @@
 'use client'
 
 /**
- * 图像直方图绘制组件。
+ * 图像直方图绘制组件（Plotly 实现）。
  *
- * 替代原先散落在工作台卡片与亮度/对比度面板里的手绘实现：
- * - 视觉：阶梯面积 + 渐变填充（避免 1px 柱子在亚像素下的摩尔纹）、跟随主题令牌配色、DPR 正确。
- * - 交互：hover 十字准线读数、可拖动的阈值 / 显示范围标记、方向键微调、键盘可达。
- * - 性能：单 canvas、按显示宽度聚合（O(显示宽度) 而不是 O(桶数)）、rAF 合帧、主题色解析带缓存。
+ * 为什么交给 Plotly：缩放/平移/框选/双击复位/modebar 全是现成的，而且 `relayout` 只改
+ * shapes 时不会动 `axis.range`，用户的缩放状态能保住。原先那套手写 canvas 交互（约 80 行）
+ * 因此删掉。
+ *
+ * 桶数与聚合：8 位数据是 256 桶，面板宽度通常 ≥ 256px，所以**一桶一列**、hover 能读到单个
+ * 灰度级；16 位是 65536 桶，按显示宽度聚合（否则 SVG 撑不住），此时 hover 读到的是区间。
  *
  * 组件只负责「画」和「交互」，不持有桶的语义：调用方给出 counts 与其值域 [min, max]。
  */
 
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
-} from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { loadPlotly, type PlotlyRuntime } from '../lib/plotly'
 
 /* ------------------------------------------------------------------ *
  * 主题颜色解析
  * ------------------------------------------------------------------ */
 
-/**
- * `--chart-grid` 等令牌的值是 `color-mix()` 表达式，canvas 消费不了；
- * 这里借 1×1 canvas 让浏览器渲染成 sRGB 再读回 rgba。
- * apps 之间不共享代码，因此与 apps/plot 各自保留一份同思路的实现。
- */
+/** `--chart-grid` 等令牌的值是 `color-mix()` 表达式，Plotly 消费不了，借 DOM 解析成 sRGB。 */
 const GRID_FALLBACK = 'rgba(15, 23, 42, 0.1)'
 const AXIS_FALLBACK = 'rgba(15, 23, 42, 0.6)'
 const TEXT_FALLBACK = 'rgba(15, 23, 42, 0.55)'
@@ -49,7 +40,6 @@ function toRgba(expression: string, fallback: string): string {
     canvas.height = 1
     const context = canvas.getContext('2d', { willReadFrequently: true })
     if (!context) return fallback
-    // 非法颜色不会改变 fillStyle，据此判断表达式是否被浏览器接受。
     context.fillStyle = '#000000'
     context.fillStyle = expression
     const first = context.fillStyle
@@ -77,42 +67,9 @@ function resolveColor(expression: string | undefined, fallback: string): string 
   return toRgba(expression, fallback)
 }
 
-function withAlpha(color: string, alpha: number): string {
-  const match = /^rgba?\(([^)]+)\)$/.exec(color.trim())
-  if (!match) return color
-  const parts = match[1]!.split(',').map((part) => Number(part.trim()))
-  if (parts.length < 3 || parts.some((part) => !Number.isFinite(part))) return color
-  return `rgba(${Math.round(parts[0]!)}, ${Math.round(parts[1]!)}, ${Math.round(parts[2]!)}, ${alpha})`
-}
-
 /* ------------------------------------------------------------------ *
- * 数据与几何辅助
+ * 数据辅助
  * ------------------------------------------------------------------ */
-
-const FONT = '9px ui-monospace, SFMono-Regular, Menlo, monospace'
-
-/**
- * 把 counts 聚合到 ≤ columns 列：桶数多于列数时按区间求和，否则保持 1:1。
- * 求和（而不是取最大值）保证聚合后的高度仍然等于该区间的真实像素数。
- */
-function aggregateColumns(counts: ArrayLike<number>, columns: number): Float64Array {
-  const result = new Float64Array(columns)
-  const length = counts.length
-  if (length === 0 || columns <= 0) return result
-  if (length <= columns) {
-    for (let i = 0; i < length; i += 1) result[i] = counts[i] ?? 0
-    return result
-  }
-  const scale = length / columns
-  for (let column = 0; column < columns; column += 1) {
-    const start = Math.floor(column * scale)
-    const end = Math.min(length, Math.max(start + 1, Math.floor((column + 1) * scale)))
-    let sum = 0
-    for (let i = start; i < end; i += 1) sum += counts[i] ?? 0
-    result[column] = sum
-  }
-  return result
-}
 
 /** 刻度与读数用的数值格式化：整数原样，浮点按量级收敛小数位。 */
 export function formatHistogramValue(value: number): string {
@@ -124,22 +81,33 @@ export function formatHistogramValue(value: number): string {
   return Number(value.toPrecision(3)).toString()
 }
 
-/** y 轴峰值这类大数字用紧凑写法，避免撑爆 112px 宽的图。 */
+/** y 轴峰值这类大数字用紧凑写法，避免撑爆窄面板。 */
 function formatCount(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
   if (value >= 10_000) return `${Math.round(value / 1000)}k`
   return String(Math.round(value))
 }
 
-function snapValue(value: number, step?: number): number {
-  if (!step || step <= 0) return value
-  return Math.round(value / step) * step
+/** 聚合到 ≤ columns 列；桶数不超过列数时保持一桶一列（逐桶读数）。 */
+function aggregate(counts: ArrayLike<number>, columns: number): { values: Float64Array; stride: number } {
+  const length = counts.length
+  if (length === 0 || columns <= 0) return { values: new Float64Array(0), stride: 1 }
+  if (length <= columns) {
+    const values = new Float64Array(length)
+    for (let i = 0; i < length; i += 1) values[i] = counts[i] ?? 0
+    return { values, stride: 1 }
+  }
+  const values = new Float64Array(columns)
+  const scale = length / columns
+  for (let column = 0; column < columns; column += 1) {
+    const start = Math.floor(column * scale)
+    const end = Math.min(length, Math.max(start + 1, Math.floor((column + 1) * scale)))
+    let sum = 0
+    for (let i = start; i < end; i += 1) sum += counts[i] ?? 0
+    values[column] = sum
+  }
+  return { values, stride: scale }
 }
-
-const PAD_LEFT = 8
-const PAD_RIGHT = 8
-const PAD_TOP = 16
-const PAD_BOTTOM = 16
 
 /* ------------------------------------------------------------------ *
  * 组件
@@ -164,15 +132,10 @@ export interface HistogramMarker {
 }
 
 export interface HistogramLabels {
-  /** tooltip 中计数的单位，例如「像素」。 */
   count: string
-  /** tooltip 中累积占比的标签。 */
   cumulative: string
-  /** tooltip 中灰度级 / 数值的标签。 */
   level: string
-  /** tooltip 中频率（占比）的标签。 */
   frequency: string
-  /** 无数据时的占位文案。 */
   empty: string
 }
 
@@ -194,6 +157,11 @@ export interface HistogramChartProps {
 }
 
 const DEFAULT_LABELS: HistogramLabels = { count: 'px', cumulative: 'cumulative', level: 'Level', frequency: 'Frequency', empty: 'No data yet' }
+/** 拖动手柄的命中宽度（px）：只在竖线附近接管指针，其余区域留给 Plotly 缩放。 */
+const HANDLE_WIDTH = 12
+/** 与下面 layout.margin 一致：手柄要落在绘图区内，不能按整个容器宽度算。 */
+const PLOT_MARGIN_LEFT = 30
+const PLOT_MARGIN_RIGHT = 8
 
 export function HistogramChart({
   data,
@@ -207,40 +175,34 @@ export function HistogramChart({
   ariaLabel,
   className,
 }: HistogramChartProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const hostRef = useRef<HTMLDivElement>(null)
+  const runtimeRef = useRef<PlotlyRuntime | null>(null)
+  const plottedRef = useRef(false)
   const [width, setWidth] = useState(0)
-  const [hover, setHover] = useState<number | null>(null)
-  const [dragging, setDragging] = useState<number | null>(null)
   const [themeVersion, setThemeVersion] = useState(0)
-  const dragRef = useRef<number | null>(null)
-  const hoverFrame = useRef<number | null>(null)
-  const pendingHover = useRef<number | null>(null)
+  const [dragValue, setDragValue] = useState<number | null>(null)
 
   const copy = { ...DEFAULT_LABELS, ...labels }
-  /* 下面只依赖具体值：调用方每次渲染都会新建 data 字面量，按引用比对会白白重绘。 */
   const counts = data?.counts ?? null
   const dataMin = data?.min ?? 0
   const dataMax = data?.max ?? 1
 
-  /* 尺寸：ResizeObserver 只更新 state，绘制交给渲染后的 effect，避免回调里同步重绘。 */
   useLayoutEffect(() => {
-    const measured = containerRef.current?.clientWidth ?? 0
+    const measured = hostRef.current?.clientWidth ?? 0
     if (measured > 0) setWidth((previous) => (Math.abs(previous - measured) < 0.5 ? previous : measured))
   }, [height])
 
   useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
+    const host = hostRef.current
+    if (!host) return
     const observer = new ResizeObserver((entries) => {
       const measured = entries[0]?.contentRect.width ?? 0
       setWidth((previous) => (Math.abs(previous - measured) < 0.5 ? previous : measured))
     })
-    observer.observe(container)
+    observer.observe(host)
     return () => observer.disconnect()
   }, [])
 
-  /* 主题切换时重新解析令牌颜色。 */
   useEffect(() => {
     const observer = new MutationObserver(() => setThemeVersion((value) => value + 1))
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] })
@@ -248,7 +210,7 @@ export function HistogramChart({
   }, [])
 
   const palette = useMemo(() => {
-    void themeVersion // 主题变化时强制重新解析
+    void themeVersion
     return {
       grid: resolveColor('--chart-grid', GRID_FALLBACK),
       axis: resolveColor('--chart-axis', AXIS_FALLBACK),
@@ -259,456 +221,212 @@ export function HistogramChart({
     }
   }, [color, themeVersion])
 
-  /* 每桶一列（不按面板宽度聚合）：保证每个灰度值都能单独取到读数。 */
-  const layout = useMemo(() => {
-    const plotWidth = Math.max(1, width - PAD_LEFT - PAD_RIGHT)
-    const plotHeight = Math.max(1, height - PAD_TOP - PAD_BOTTOM)
-    const binCount = counts?.length ?? 0
-    /* 每个桶一列，绝不与相邻灰度合并：读数始终对应单一灰度级，不出现区间。 */
-    const columnCount = Math.max(1, binCount)
-    const columns = counts ? aggregateColumns(counts, columnCount) : new Float64Array(0)
-    let total = 0
-    let peak = 0
-    for (let i = 0; i < columns.length; i += 1) {
-      const value = columns[i]!
-      total += value
-      if (value > peak) peak = value
-    }
-    return { plotWidth, plotHeight, baseY: PAD_TOP + plotHeight, columnCount, columns, total, peak }
-  }, [counts, height, width])
+  /* 一桶一列，直到桶数超过可用像素；16 位数据此时才聚合。 */
+  const { values, stride, total } = useMemo(() => {
+    const columns = Math.max(1, Math.floor(width) || 256)
+    const aggregated = counts ? aggregate(counts, columns) : { values: new Float64Array(0), stride: 1 }
+    let sum = 0
+    for (let i = 0; i < aggregated.values.length; i += 1) sum += aggregated.values[i]!
+    return { values: aggregated.values, stride: aggregated.stride, total: sum }
+  }, [counts, width])
 
-  /**
-   * 显示视窗（x = 灰度级，y = 计数）。
-   *
-   * `null` 表示自动铺满；一旦用户 zoom/平移过就固定下来。两轴独立，
-   * 因为看直方图时常见的诉求是"只看 100–200 这一段的分布"或者"压掉背景峰看细节"。
-   */
-  const [viewX, setViewX] = useState<{ min: number; max: number } | null>(null)
-  const [viewY, setViewY] = useState<{ min: number; max: number } | null>(null)
-  const panRef = useRef<{ x: number; y: number; viewX: { min: number; max: number }; viewY: { min: number; max: number } } | null>(null)
-
-  const autoY = useMemo(() => ({ min: 0, max: Math.max(1, layout.peak) }), [layout.peak])
-  const xRange = viewX ?? { min: dataMin, max: dataMax }
-  const yRange = viewY ?? autoY
-  const xSpan = (xRange.max - xRange.min) || 1
-  /** 数据自身的值域宽度：读数与键盘步进按它算，不受显示视窗影响。 */
-  const dataSpan = (dataMax - dataMin) || 1
-  const ySpan = (yRange.max - yRange.min) || 1
-
-  /* 数据换了（或点复位）就回到自动铺满。 */
-  useEffect(() => { setViewX(null); setViewY(null) }, [counts, dataMin, dataMax])
-
-  const valueToX = useMemo(
-    () => (value: number) => PAD_LEFT + ((value - xRange.min) / xSpan) * layout.plotWidth,
-    [xRange.min, layout.plotWidth, xSpan],
+  const binWidth = (dataMax - dataMin) / Math.max(1, counts?.length ?? 1)
+  const xValues = useMemo(
+    () => Array.from({ length: values.length }, (_, i) => dataMin + (i + 0.5) * binWidth * stride),
+    [values.length, dataMin, binWidth, stride],
   )
-
-  const xToValue = useMemo(
-    () => (x: number) => xRange.min + ((x - PAD_LEFT) / layout.plotWidth) * xSpan,
-    [xRange.min, layout.plotWidth, xSpan],
-  )
-
-  /** 按 y 视窗求高度：低于窗口底部为 0，高于顶部截到顶；对数刻度按 log1p 映射到当前上界。 */
-  const countToY = useMemo(
-    () => (count: number) => {
-      if (logScale) {
-        const ceiling = Math.max(1, yRange.max)
-        return (Math.log1p(Math.max(0, count)) / Math.log1p(ceiling)) * layout.plotHeight
-      }
-      const fraction = (count - yRange.min) / ySpan
-      return Math.max(0, Math.min(1, fraction)) * layout.plotHeight
-    },
-    [logScale, yRange.max, yRange.min, ySpan, layout.plotHeight],
-  )
-
-  /* ---------------- 绘制 ---------------- */
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas || width <= 0) return
-    const context = canvas.getContext('2d')
-    if (!context) return
-
-    const dpr = Math.max(1, window.devicePixelRatio || 1)
-    canvas.width = Math.round(width * dpr)
-    canvas.height = Math.round(height * dpr)
-    context.setTransform(dpr, 0, 0, dpr, 0, 0)
-    context.clearRect(0, 0, width, height)
-
-    const { plotWidth, plotHeight, baseY, columnCount, columns } = layout
-    const plotLeft = PAD_LEFT
-    const plotRight = PAD_LEFT + plotWidth
-    const plotTop = PAD_TOP
-
-    /* 水平网格 */
-    context.strokeStyle = palette.grid
-    context.lineWidth = 1
-    for (const fraction of [0, 0.5, 1]) {
-      const y = Math.round(plotTop + plotHeight * fraction) + 0.5
-      context.beginPath()
-      context.moveTo(plotLeft, y)
-      context.lineTo(plotRight, y)
-      context.stroke()
+  /** hover 里显示累积占比：预计算，避免每次悬停都扫一遍。 */
+  const cumulative = useMemo(() => {
+    const result = new Float64Array(values.length)
+    let running = 0
+    for (let i = 0; i < values.length; i += 1) {
+      running += values[i]!
+      result[i] = total > 0 ? (running / total) * 100 : 0
     }
+    return result
+  }, [values, total])
 
-    /* 基线 */
-    context.strokeStyle = palette.axis
-    context.globalAlpha = 0.45
-    context.lineWidth = 0.75
-    context.beginPath()
-    context.moveTo(plotLeft, Math.round(baseY) + 0.5)
-    context.lineTo(plotRight, Math.round(baseY) + 0.5)
-    context.stroke()
-    context.globalAlpha = 1
-
-    /* x 轴刻度：当前视窗的 min / mid / max（zoom 后跟着变） */
-    context.font = FONT
-    context.fillStyle = palette.text
-    context.textAlign = 'left'
-    context.fillText(formatValue(xRange.min), plotLeft, height - 4)
-    context.textAlign = 'center'
-    context.fillText(formatValue((xRange.min + xRange.max) / 2), plotLeft + plotWidth / 2, height - 4)
-    context.textAlign = 'right'
-    context.fillText(formatValue(xRange.max), plotRight, height - 4)
-
-    if (!counts || layout.peak <= 0) {
-      if (copy.empty) {
-        context.textAlign = 'center'
-        context.fillText(copy.empty, plotLeft + plotWidth / 2, plotTop + plotHeight / 2)
-      }
-      return
-    }
-
-    /* y 视窗顶部标注（zoom 后显示的是窗口上沿，而不是全图峰值） */
-    context.textAlign = 'left'
-    context.fillText(formatCount(yRange.max), plotLeft + 1, plotTop - 5)
-
-    const heightAt = countToY
-
-    /* 每个桶的像素区间；只画落在 x 视窗内的部分，窗外直接跳过。 */
-    const columnLeft = (index: number) => dataMin + ((dataMax - dataMin) * index) / columnCount
-    const columnRight = (index: number) => dataMin + ((dataMax - dataMin) * (index + 1)) / columnCount
-    const traceArea = () => {
-      context.beginPath()
-      context.moveTo(plotLeft, baseY)
-      for (let i = 0; i < columnCount; i += 1) {
-        if (columnRight(i) < xRange.min || columnLeft(i) > xRange.max) continue
-        const x0 = Math.max(plotLeft, valueToX(columnLeft(i)))
-        const x1 = Math.min(plotRight, valueToX(columnRight(i)))
-        const y = baseY - heightAt(columns[i]!)
-        context.lineTo(x0, y)
-        context.lineTo(x1, y)
-      }
-      context.lineTo(plotRight, baseY)
-      context.closePath()
-    }
-
-    /* 高亮区间底纹 */
-    if (highlight) {
-      const left = Math.max(plotLeft, valueToX(highlight.min))
-      const right = Math.min(plotRight, valueToX(highlight.max))
-      if (right > left) {
-        context.fillStyle = withAlpha(palette.selection, 0.22)
-        context.fillRect(left, plotTop, right - left, plotHeight)
-      }
-    }
-
-    /* 纯灰阶平铺填充：不用渐变，避免看起来花哨。 */
-    const fill = withAlpha(palette.series, 0.35)
-
-    /* 区间外淡出：先铺一层低透明度，再在区间内以完整强度重画。 */
-    const paintSeries = (alphaScale: number, stroked: boolean) => {
-      context.save()
-      context.globalAlpha = alphaScale
-      traceArea()
-      context.fillStyle = fill
-      context.fill()
-      if (stroked) {
-        context.beginPath()
-        let first = true
-        for (let i = 0; i < columnCount; i += 1) {
-          if (columnRight(i) < xRange.min || columnLeft(i) > xRange.max) continue
-          const x0 = Math.max(plotLeft, valueToX(columnLeft(i)))
-          const x1 = Math.min(plotRight, valueToX(columnRight(i)))
-          const y = Math.round(baseY - heightAt(columns[i]!)) + 0.5
-          if (first) { context.moveTo(x0, y); first = false }
-          else context.lineTo(x0, y)
-          context.lineTo(x1, y)
-        }
-        context.strokeStyle = withAlpha(palette.series, 0.75)
-        context.lineWidth = 0.75
-        context.lineJoin = 'round'
-        context.stroke()
-      }
-      context.restore()
-    }
-
-    if (highlight && highlight.max > highlight.min) {
-      paintSeries(0.32, false)
-      const left = Math.max(plotLeft, valueToX(highlight.min))
-      const right = Math.min(plotRight, valueToX(highlight.max))
-      context.save()
-      context.beginPath()
-      context.rect(left, plotTop - PAD_TOP, Math.max(0, right - left), height)
-      context.clip()
-      paintSeries(1, true)
-      context.restore()
-    } else {
-      paintSeries(1, true)
-    }
-
-    /* 标记线（阈值 / 显示范围） */
-    for (let index = 0; index < (markers?.length ?? 0); index += 1) {
-      const marker = markers![index]!
-      const x = valueToX(marker.value)
-      if (x < plotLeft - 0.5 || x > plotRight + 0.5) continue
-      const active = dragging === index
-      const markerColor = marker.tone === 'range' ? palette.series : palette.marker
-      context.strokeStyle = markerColor
-      context.globalAlpha = active || marker.onChange ? 0.95 : 0.6
-      context.lineWidth = active ? 2 : 1.5
-      context.setLineDash(marker.tone === 'range' ? [] : [4, 3])
-      context.beginPath()
-      context.moveTo(Math.round(x) + 0.5, plotTop - 4)
-      context.lineTo(Math.round(x) + 0.5, baseY)
-      context.stroke()
-      context.setLineDash([])
-      if (marker.onChange) {
-        // 顶部把手：提示这条线可以直接拖。
-        context.fillStyle = markerColor
-        const handleX = Math.round(x) - 2.5
-        if (typeof context.roundRect === 'function') {
-          context.beginPath()
-          context.roundRect(handleX, plotTop - 9, 5, 6, 1.5)
-          context.fill()
-        } else {
-          context.fillRect(handleX, plotTop - 9, 5, 6)
-        }
-      }
-      context.globalAlpha = 1
-    }
-
-    /* hover 十字准线 */
-    if (hover !== null && dragging === null && hover >= 0 && hover < columnCount) {
-      const x = Math.round((valueToX(columnLeft(hover)) + valueToX(columnRight(hover))) / 2) + 0.5
-      context.strokeStyle = palette.axis
-      context.globalAlpha = 0.5
-      context.lineWidth = 1
-      context.beginPath()
-      context.moveTo(x, plotTop)
-      context.lineTo(x, baseY)
-      context.stroke()
-      context.globalAlpha = 1
-    }
-  }, [copy.empty, counts, dataMax, dataMin, dragging, formatValue, height, highlight, hover, layout, logScale, markers, palette, valueToX, width])
-
-  /* ---------------- 交互 ---------------- */
-
-  const nearestMarker = useMemo(() => {
-    if (!markers?.length) return null
-    return (x: number): number => {
-      let best = -1
-      let bestDistance = 10
-      for (let index = 0; index < markers.length; index += 1) {
-        const marker = markers[index]!
-        if (!marker.onChange) continue
-        const distance = Math.abs(valueToX(marker.value) - x)
-        if (distance <= bestDistance) {
-          bestDistance = distance
-          best = index
-        }
-      }
-      return best
-    }
-  }, [markers, valueToX])
-
-  const localX = (event: ReactPointerEvent<HTMLCanvasElement>) => event.clientX - event.currentTarget.getBoundingClientRect().left
-
-  const columnAt = (x: number) => {
-    if (layout.columnCount <= 0) return -1
-    const value = xToValue(x)
-    const column = Math.floor(((value - dataMin) / dataSpan) * layout.columnCount)
-    return column >= 0 && column < layout.columnCount ? column : -1
-  }
-
-  /* ---------------- x / y 视窗缩放与平移 ---------------- */
-
-  const scheduleHover = (column: number) => {
-    pendingHover.current = column
-    if (hoverFrame.current !== null) return
-    hoverFrame.current = requestAnimationFrame(() => {
-      hoverFrame.current = null
-      setHover(pendingHover.current)
+  const barColors = useMemo(() => {
+    if (!highlight || highlight.max <= highlight.min) return palette.series
+    return Array.from({ length: values.length }, (_, i) => {
+      const x = xValues[i]!
+      return x >= highlight.min && x <= highlight.max ? palette.series : `${palette.series}33`
     })
-  }
+  }, [highlight, palette.series, values.length, xValues])
 
-  useEffect(() => () => {
-    if (hoverFrame.current !== null) cancelAnimationFrame(hoverFrame.current)
-  }, [])
+  /* ---------------- 首次绘制 ---------------- */
 
-  const resetView = () => { setViewX(null); setViewY(null) }
-
-  /** 以某个分数位置为锚点缩放一个轴，锚点处的值保持不动。 */
-  const zoomAxis = (range: { min: number; max: number }, limit: { min: number; max: number }, anchor: number, factor: number) => {
-    const span = range.max - range.min
-    const value = range.min + span * anchor
-    const next = Math.max(span * factor, (limit.max - limit.min) / 5000)
-    const min = value - next * anchor
-    const max = min + next
-    if (min < limit.min) return { min: limit.min, max: Math.min(limit.max, limit.min + next) }
-    if (max > limit.max) return { min: Math.max(limit.min, limit.max - next), max: limit.max }
-    return { min, max }
-  }
-
-  /**
-   * 滚轮缩放。
-   *
-   * 必须用原生非 passive 监听：React 的 onWheel 默认 passive，preventDefault 会被忽略，
-   * 缩放的同时整页也会跟着滚。逻辑挂在 ref 上，所以监听器只注册一次也能读到最新视窗。
-   */
-  const wheelRef = useRef<(event: WheelEvent) => void>(() => {})
-  wheelRef.current = (event) => {
-    if (!counts) return
-    event.preventDefault()
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const rect = canvas.getBoundingClientRect()
-    const anchorX = Math.max(0, Math.min(1, (event.clientX - rect.left - PAD_LEFT) / layout.plotWidth))
-    const anchorY = Math.max(0, Math.min(1, 1 - (event.clientY - rect.top - PAD_TOP) / layout.plotHeight))
-    const factor = event.deltaY > 0 ? 1.25 : 0.8
-    // 默认两轴一起缩；Shift 只缩 x（灰度区间），Alt 只缩 y（计数）。
-    const onlyX = event.shiftKey && !event.altKey
-    const onlyY = event.altKey && !event.shiftKey
-    if (!onlyY) setViewX((current) => zoomAxis(current ?? { min: dataMin, max: dataMax }, { min: dataMin, max: dataMax }, anchorX, factor))
-    if (!onlyX) setViewY((current) => zoomAxis(current ?? autoY, autoY, anchorY, factor))
-  }
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const listener = (event: WheelEvent) => wheelRef.current(event)
-    canvas.addEventListener('wheel', listener, { passive: false })
-    return () => canvas.removeEventListener('wheel', listener)
+    const host = hostRef.current
+    if (!host || width <= 0 || !counts || counts.length === 0) return
+    let cancelled = false
+    void loadPlotly().then((runtime) => {
+      if (cancelled || !hostRef.current) return
+      runtimeRef.current = runtime
+      if (plottedRef.current) return
+      plottedRef.current = true
+      void runtime.react(hostRef.current, [{
+        type: 'bar',
+        x: xValues,
+        y: Array.from(values),
+        customdata: Array.from(cumulative),
+        marker: { color: barColors, line: { width: 0 } },
+        hovertemplate: `${copy.level} %{x:.6~g}<br>%{y:,} ${copy.count} · ${copy.frequency} %{customdata:.2f}%<br>${copy.cumulative} %{customdata:.1f}%<extra></extra>`,
+      }], {
+        margin: { l: PLOT_MARGIN_LEFT, r: PLOT_MARGIN_RIGHT, t: 4, b: 20 },
+        bargap: 0,
+        showlegend: false,
+        dragmode: 'pan',
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { size: 9, color: palette.text },
+        xaxis: { range: [dataMin, dataMax], gridcolor: palette.grid, zeroline: false, tickfont: { size: 9 } },
+        yaxis: { gridcolor: palette.grid, zeroline: false, tickfont: { size: 9 }, tickformat: '~s' },
+      }, {
+        displaylogo: false,
+        responsive: true,
+        scrollZoom: true,
+        doubleClick: 'reset',
+        displayModeBar: true,
+        modeBarButtonsToRemove: ['select2d', 'lasso2d', 'toImage', 'sendDataToCloud'],
+      })
+    })
+    return () => { cancelled = true }
+    // 只在数据/尺寸首次可用时建图；后续增量走下面的 restyle/relayout。
+  }, [counts, width, xValues, values, cumulative, barColors, dataMin, dataMax, palette.text, palette.grid, copy.count, copy.cumulative, copy.frequency, copy.level])
+
+  /* 卸载时让 Plotly 释放 DOM 与监听器。 */
+  useEffect(() => () => {
+    const host = hostRef.current
+    const runtime = runtimeRef.current
+    if (host && runtime) runtime.purge(host)
+    plottedRef.current = false
   }, [])
 
-  const handleDoubleClick = () => resetView()
+  /* ---------------- 增量更新 ---------------- */
 
-  const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (!counts) return
-    const x = localX(event)
-    // 先给标记线让路：抓到标记就拖标记，否则在画布上拖 = 平移视窗。
-    const index = nearestMarker ? nearestMarker(x) : -1
-    event.currentTarget.setPointerCapture(event.pointerId)
-    if (index >= 0) {
-      dragRef.current = index
-      setDragging(index)
-      setHover(null)
-      return
+  const previousRef = useRef({ barColors, logScale, markers, highlight, xValues, values, cumulative })
+  useEffect(() => {
+    const host = hostRef.current
+    const runtime = runtimeRef.current
+    const previous = previousRef.current
+    if (!host || !runtime || !plottedRef.current) { previousRef.current = { barColors, logScale, markers, highlight, xValues, values, cumulative }; return }
+
+    if (previous.xValues !== xValues || previous.values !== values) {
+      void runtime.restyle(host, { x: [xValues], y: [Array.from(values)], customdata: [Array.from(cumulative)] })
     }
-    panRef.current = { x, y: event.clientY, viewX: { ...xRange }, viewY: { ...yRange } }
-  }
-
-  const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (!counts) return
-    const x = localX(event)
-    const index = dragRef.current
-    if (index !== null) {
-      const marker = markers?.[index]
-      if (!marker?.onChange) return
-      const value = Math.max(dataMin, Math.min(dataMax, snapValue(xToValue(x), marker.step)))
-      marker.onChange(value)
-      return
+    if (previous.barColors !== barColors) void runtime.restyle(host, { 'marker.color': [barColors] })
+    if (previous.logScale !== logScale) void runtime.relayout(host, { 'yaxis.type': logScale ? 'log' : 'linear' })
+    // shapes 变化不影响 axis.range，所以用户的缩放会保留。
+    if (previous.markers !== markers || previous.highlight !== highlight) {
+      void runtime.relayout(host, { shapes: markerShapes() })
     }
-    const pan = panRef.current
-    if (pan) {
-      const dx = ((x - pan.x) / layout.plotWidth) * (pan.viewX.max - pan.viewX.min)
-      const dy = ((pan.y - event.clientY) / layout.plotHeight) * (pan.viewY.max - pan.viewY.min)
-      const widthX = pan.viewX.max - pan.viewX.min
-      const minX = Math.max(dataMin, Math.min(Math.max(dataMin, dataMax - widthX), pan.viewX.min - dx))
-      setViewX({ min: minX, max: minX + widthX })
-      const widthY = pan.viewY.max - pan.viewY.min
-      const minY = Math.max(0, Math.min(Math.max(0, autoY.max - widthY), pan.viewY.min - dy))
-      setViewY({ min: minY, max: minY + widthY })
-      return
+    previousRef.current = { barColors, logScale, markers, highlight, xValues, values, cumulative }
+  }, [barColors, logScale, markers, highlight, xValues, values, cumulative])
+
+  /** 标记线画成 shape：axis 坐标，缩放时会跟着走。 */
+  function markerShapes(): Record<string, unknown>[] {
+    const shapes: Record<string, unknown>[] = []
+    if (highlight && highlight.max > highlight.min) {
+      shapes.push({
+        type: 'rect', xref: 'x', yref: 'paper',
+        x0: highlight.min, x1: highlight.max, y0: 0, y1: 1,
+        fillcolor: `${palette.selection}`, line: { width: 0 }, layer: 'below',
+      })
     }
-    scheduleHover(columnAt(x))
+    for (const marker of markers ?? []) {
+      shapes.push({
+        type: 'line', xref: 'x', yref: 'paper',
+        x0: marker.value, x1: marker.value, y0: 0, y1: 1,
+        line: { color: marker.tone === 'range' ? palette.series : palette.marker, width: 1.5, dash: marker.tone === 'range' ? 'solid' : 'dot' },
+      })
+    }
+    return shapes
   }
 
-  const endDrag = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-    panRef.current = null
-    if (dragRef.current === null) return
-    dragRef.current = null
-    setDragging(null)
-  }
+  /* ---------------- 可拖标记线的命中层 ---------------- */
 
-  const handlePointerLeave = () => {
-    if (dragRef.current !== null) return
-    scheduleHover(-1)
-  }
-
-  const handleKeyDown = (event: ReactKeyboardEvent<HTMLCanvasElement>) => {
-    if (!counts) return
-    const index = markers?.findIndex((marker) => marker.onChange) ?? -1
-    if (index < 0) return
-    const marker = markers![index]!
-    const step = marker.step ?? dataSpan / 100
-    const delta = event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? -step : event.key === 'ArrowRight' || event.key === 'ArrowUp' ? step : 0
-    if (!delta) return
+  const dragRef = useRef<{ index: number; startX: number; startValue: number; perPixel: number } | null>(null)
+  const startDrag = (index: number) => (event: React.PointerEvent<HTMLDivElement>) => {
+    const marker = markers?.[index]
+    if (!marker?.onChange) return
+    const host = hostRef.current
+    if (!host) return
     event.preventDefault()
-    marker.onChange!(Math.max(dataMin, Math.min(dataMax, snapValue(marker.value + delta, marker.step))))
+    event.currentTarget.setPointerCapture(event.pointerId)
+    dragRef.current = { index, startX: event.clientX, startValue: marker.value, perPixel: (dataMax - dataMin) / host.clientWidth }
+    setDragValue(marker.value)
+  }
+  const moveDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    if (!drag) return
+    const marker = markers?.[drag.index]
+    if (!marker?.onChange) return
+    const raw = drag.startValue + (event.clientX - drag.startX) * drag.perPixel
+    const snapped = marker.step ? Math.round(raw / marker.step) * marker.step : raw
+    const next = Math.max(dataMin, Math.min(dataMax, snapped))
+    setDragValue(next)
+    marker.onChange(next)
+  }
+  const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    dragRef.current = null
+    setDragValue(null)
   }
 
-  /* ---------------- 读数浮层 ---------------- */
+  /** 绘图区宽度（扣除 Plotly 的左右内边距），手柄定位用它。 */
+  const plotWidth = Math.max(1, width - PLOT_MARGIN_LEFT - PLOT_MARGIN_RIGHT)
+  const handleLeft = (value: number) => PLOT_MARGIN_LEFT + ((value - dataMin) / ((dataMax - dataMin) || 1)) * plotWidth
 
-  const readout = useMemo(() => {
-    const binCount = counts?.length ?? 0
-    if (hover === null || hover < 0 || hover >= binCount || !counts) return null
-    /* uint8：一桶 = 一个灰度值；16 位 / 浮点：按值域给出该桶的代表值。 */
-    const binWidth = binCount > 1 ? dataSpan / (binCount - 1) : dataSpan
-    const discrete = Number.isInteger(dataMin) && Number.isInteger(dataMax) && Math.abs(binWidth - Math.round(binWidth)) < 1e-6
-    const raw = dataMin + hover * binWidth
-    let cumulative = 0
-    for (let index = 0; index <= hover; index += 1) cumulative += counts[index] ?? 0
-    return { level: discrete ? String(Math.round(raw)) : formatValue(raw), count: Math.round(counts[hover] ?? 0), cumulative, total: layout.total }
-  }, [counts, dataMin, dataMax, hover, layout.total, dataSpan, formatValue])
-
-  const readoutLeft = readout ? Math.max(64, Math.min(width - 64, PAD_LEFT + (hover! + 0.5) * (layout.plotWidth / layout.columnCount))) : 0
+  const empty = !counts || counts.length === 0
 
   return (
-    <div ref={containerRef} className={`relative w-full ${className ?? ''}`} style={{ height }}>
-      <canvas
-        ref={canvasRef}
-        role="img"
-        aria-label={ariaLabel}
-        tabIndex={markers?.some((marker) => marker.onChange) ? 0 : -1}
-        className="block w-full touch-none outline-none"
-        style={{ height, cursor: dragging !== null ? 'ew-resize' : panRef.current ? 'grabbing' : markers?.some((marker) => marker.onChange) ? 'crosshair' : 'grab' }}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        onPointerLeave={handlePointerLeave}
-        onKeyDown={handleKeyDown}
-        onDoubleClick={handleDoubleClick}
-      />
-      {readout ? (
+    <div ref={hostRef} className={`relative w-full ${className ?? ''}`} style={{ height }} aria-label={ariaLabel}>
+      {empty ? <p className="flex h-full items-center justify-center text-xs text-base-content/50">{copy.empty}</p> : null}
+      {/* 竖线附近的窄条：接管指针用于拖动，其余区域留给 Plotly 的缩放/平移。 */}
+      {markers?.map((marker, index) => marker.onChange ? (
         <div
-          className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-[var(--radius-field)] border border-base-300 bg-base-100/95 px-1.5 py-1 font-mono text-xs leading-tight tabular-nums text-base-content shadow-sm"
-          style={{ left: readoutLeft }}
-        >
-          <div className="font-medium text-base-content">{copy.level} {readout.level}</div>
-          <div className="text-base-content/70">
-            {readout.count.toLocaleString()} {copy.count}
-            {readout.total > 0 ? ` · ${copy.frequency} ${((readout.count / readout.total) * 100).toFixed(2)}%` : ''}
-          </div>
-          <div className="text-base-content/55">
-            {copy.cumulative} {readout.total > 0 ? `${((readout.cumulative / readout.total) * 100).toFixed(1)}%` : '—'}
-          </div>
+          key={`handle-${index}`}
+          role="slider"
+          tabIndex={0}
+          aria-label={`${copy.level} ${formatValue(marker.value)}`}
+          aria-valuenow={marker.value}
+          aria-valuemin={dataMin}
+          aria-valuemax={dataMax}
+          onPointerDown={startDrag(index)}
+          onPointerMove={moveDrag}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onKeyDown={(event) => {
+            const step = marker.step ?? (dataMax - dataMin) / 100
+            const delta = event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? -step : event.key === 'ArrowRight' || event.key === 'ArrowUp' ? step : 0
+            if (!delta) return
+            event.preventDefault()
+            const snapped = marker.step ? Math.round((marker.value + delta) / marker.step) * marker.step : marker.value + delta
+            marker.onChange?.(Math.max(dataMin, Math.min(dataMax, snapped)))
+          }}
+          className="absolute top-0 z-10 -translate-x-1/2 cursor-ew-resize touch-none"
+          style={{
+            left: handleLeft(marker.value),
+            width: HANDLE_WIDTH,
+            height: '100%',
+            background: 'transparent',
+          }}
+        />
+      ) : null)}
+      {dragValue !== null ? (
+        <div className="pointer-events-none absolute -top-0.5 z-20 -translate-x-1/2 rounded-[var(--radius-field)] border border-base-300 bg-base-100/95 px-1.5 py-0.5 font-mono text-xs tabular-nums shadow-sm"
+          style={{ left: handleLeft(dragValue) }}>
+          {formatValue(dragValue)}
         </div>
       ) : null}
     </div>
   )
 }
+
+/** 峰值标注（保留导出，供调用方复用在读数里）。 */
+export { formatCount }
+
 
 
 

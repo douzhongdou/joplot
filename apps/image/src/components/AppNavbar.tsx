@@ -32,13 +32,12 @@ export function AppNavbar({
       <Link
         href={IMAGEJ_PATH}
         aria-current={section === 'imagej' ? 'page' : undefined}
-        className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-field)] px-1 text-sm font-semibold text-base-content"
+        className="inline-flex shrink-0 items-center rounded-[var(--radius-field)] px-1 text-sm font-semibold text-base-content"
       >
-        {/* 品牌标识与 plot 用同一份 `public/navbar-icon.webp`：这里只放方标，文字由隔壁 span 给。 */}
-        <span className="block size-6 shrink-0 overflow-hidden rounded-md sm:size-7 sm:rounded-lg">
-          <img src="/navbar-icon.webp" alt="" className="block size-full object-contain" />
+        {/* 品牌标识与 plot 同一形态：横版图里已经带图标与名字，因此不再另渲染文字。 */}
+        <span className="block h-6 shrink-0 overflow-hidden sm:h-7">
+          <img src="/navbar-icon.webp" alt="jo image" className="block h-full w-auto" />
         </span>
-        <span className="hidden sm:inline">{t('chrome.brand')}</span>
       </Link>
 
       {toolbar ? (
