@@ -134,6 +134,11 @@ function ToolbarGroup({ label, className, children }: { label: string; className
  */
 const TOOLBAR_ITEM = 'shrink-0 rounded-[calc(var(--radius-field)-2px)] text-base-content/60 hover:bg-base-100 hover:text-base-content'
 const TOOLBAR_ITEM_ON = 'bg-base-100 text-base-content shadow-sm'
+/**
+ * 药丸**外面**的项：底色就是顶栏自己（`bg-base-100`），
+ * 所以 hover 得往上抬一档用 `bg-muted`，否则浮起的底色和背景一模一样、点了没反馈。
+ */
+const TOOLBAR_ITEM_BARE = 'shrink-0 rounded-[calc(var(--radius-field)-2px)] text-base-content/60 hover:bg-muted hover:text-base-content'
 
 /** 药丸内部的工具族分隔线：只有工具组用它，比分区分隔线更短、更淡。 */
 function ToolFamilyDivider() {
@@ -1921,7 +1926,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                     {copy.stats.live}
                   </label>
                   {!isStatsLive(card.id) && viewsState.frozenStats[card.id] ? (
-                    <span className="min-w-0 flex-1 truncate text-[10px] text-base-content/45" title={viewsState.frozenStats[card.id]!.source}>
+                    <span className="min-w-0 flex-1 truncate text-base-content/45" title={viewsState.frozenStats[card.id]!.source}>
                       {copy.stats.frozen} · {viewsState.frozenStats[card.id]!.source || '—'}
                     </span>
                   ) : null}
@@ -1949,7 +1954,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                   {copy.stats.live}
                 </label>
                 {!isHistLive(card.id) && viewsState.frozen[card.id] ? (
-                  <span className="min-w-0 flex-1 truncate text-[10px] text-base-content/45" title={viewsState.frozen[card.id]!.source}>
+                  <span className="min-w-0 flex-1 truncate text-base-content/45" title={viewsState.frozen[card.id]!.source}>
                     {copy.stats.frozen} · {viewsState.frozen[card.id]!.source || '—'}
                   </span>
                 ) : null}
@@ -2213,28 +2218,31 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               </Button>
             </ToolbarGroup>
 
-            {/* ④ 显示（文字语汇）：色彩模式与原始图是同一件事的两面。
-                窄屏放不下，同一组控件在后面的 ⋯ 菜单里再给一份（共用同一份状态）。 */}
-            <ToolbarGroup label={copy.viewer.display} className="hidden xl:inline-flex">
-              {state.dataset?.componentKind === 'rgb' ? (
-                <>
-                  {(['color', 'gray'] as const).map((value) => {
-                    const active = value === 'color' ? showColor : !showColor
-                    return (
-                      <Button
-                        key={value}
-                        type="button"
-                        variant="ghost"
-                        aria-pressed={active}
-                        className={cn(TOOLBAR_ITEM, 'px-2 text-xs font-medium', active && TOOLBAR_ITEM_ON)}
-                        onClick={() => setShowColor(value === 'color')}
-                      >
-                        {value === 'color' ? copy.viewer.color : copy.viewer.gray}
-                      </Button>
-                    )
-                  })}
-                </>
-              ) : null}
+            {/* ④ 色彩模式（文字语汇）：彩色 / 灰度 = **怎么解释像素**（通道映射）。
+                非 RGB 数据集没有这条轴，整组不渲染。 */}
+            {state.dataset?.componentKind === 'rgb' ? (
+              <ToolbarGroup label={copy.viewer.display} className="hidden xl:inline-flex">
+                {(['color', 'gray'] as const).map((value) => {
+                  const active = value === 'color' ? showColor : !showColor
+                  return (
+                    <Button
+                      key={value}
+                      type="button"
+                      variant="ghost"
+                      aria-pressed={active}
+                      className={cn(TOOLBAR_ITEM, 'px-2 text-xs font-medium', active && TOOLBAR_ITEM_ON)}
+                      onClick={() => setShowColor(value === 'color')}
+                    >
+                      {value === 'color' ? copy.viewer.color : copy.viewer.gray}
+                    </Button>
+                  )
+                })}
+              </ToolbarGroup>
+            ) : null}
+
+            {/* ⑤ 原图（文字语汇）：**看哪一份像素**（处理链的结果 ⇄ 一步都不挂的源帧）。
+                和 ④ 是两条不同的轴，所以另起一组，不并进色彩模式里。 */}
+            <ToolbarGroup label={copy.original} className="hidden xl:inline-flex">
               <Button type="button" variant="ghost" aria-pressed={showOriginal} disabled={navBusy}
                 className={cn(TOOLBAR_ITEM, 'px-2 text-xs font-medium', showOriginal && TOOLBAR_ITEM_ON)}
                 onClick={toggleOriginal}>
@@ -2242,7 +2250,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               </Button>
             </ToolbarGroup>
 
-            {/* 窄屏（< 1280）的溢出菜单：装的就是 ④ 那一组。 */}
+            {/* 窄屏（< 1280）的溢出菜单：把 ④⑤ 两组一并收进来（共用同一份状态）。 */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="ghost" size="icon-sm" aria-label={copy.viewer.display} title={copy.viewer.display}
@@ -2251,29 +2259,31 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="min-w-40">
-                <DropdownMenuLabel>{copy.viewer.display}</DropdownMenuLabel>
                 {state.dataset?.componentKind === 'rgb' ? (
-                  <DropdownMenuRadioGroup value={showColor ? 'color' : 'gray'} onValueChange={(value) => setShowColor(value === 'color')}>
-                    <DropdownMenuRadioItem value="color">{copy.viewer.color}</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="gray">{copy.viewer.gray}</DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
+                  <>
+                    <DropdownMenuLabel>{copy.viewer.display}</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup value={showColor ? 'color' : 'gray'} onValueChange={(value) => setShowColor(value === 'color')}>
+                      <DropdownMenuRadioItem value="color">{copy.viewer.color}</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="gray">{copy.viewer.gray}</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                    <DropdownMenuSeparator />
+                  </>
                 ) : null}
-                <DropdownMenuSeparator />
                 <DropdownMenuCheckboxItem checked={showOriginal} disabled={navBusy} onCheckedChange={() => toggleOriginal()}>
                   {copy.original}
                 </DropdownMenuCheckboxItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* ⑤ 选区（文字语汇）：只在真的有选区时出现。 */}
+            {/* ⑥ 选区（文字语汇）：只在真的有选区时出现，裸露在药丸外。 */}
             {roi ? (
               <Button type="button" variant="ghost" disabled={navBusy}
-                className={cn(TOOLBAR_ITEM, 'px-2 text-xs font-medium')} onClick={() => setRoi(null)}>
+                className={cn(TOOLBAR_ITEM_BARE, 'px-2 text-xs font-medium')} onClick={() => setRoi(null)}>
                 {copy.roi.clear}
               </Button>
             ) : null}
 
-            {/* ⑥ 状态读数：靠右。分区一律用间距表达，所以这里不再挂一根左边框。 */}
+            {/* ⑦ 状态读数：靠右。分区一律用间距表达，所以这里不再挂一根左边框。 */}
             <span className="ml-auto hidden shrink-0 truncate pl-2 font-mono text-xs text-base-content/55 md:inline">
               {probe ? `(${probe.x}, ${probe.y}) = ${probe.value} · ` : ''}{roiLabel}
             </span>
@@ -2990,6 +3000,7 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
 
 
 
