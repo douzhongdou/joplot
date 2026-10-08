@@ -161,6 +161,9 @@ export interface ImagejCopy {
     min: string
     max: string
     stdDev: string
+    /** 直方图窗口的 Live 复选框。 */
+    live: string
+    refresh: string
     histogram: string
     thresholdMark: string
     pixel: string
@@ -452,6 +455,8 @@ const zhCN: ImagejCopy = {
     min: '最小值',
     max: '最大值',
     stdDev: '标准差',
+    live: '实时',
+    refresh: '刷新',
     histogram: '直方图',
     thresholdMark: '阈值',
     pixel: '像素',
@@ -740,6 +745,8 @@ const en: ImagejCopy = {
     min: 'Min',
     max: 'Max',
     stdDev: 'StdDev',
+    live: 'Live',
+    refresh: 'Refresh',
     histogram: 'Histogram',
     thresholdMark: 'Threshold',
     pixel: 'Pixel',
@@ -1028,6 +1035,8 @@ const jaJP: ImagejCopy = {
     min: '最小値',
     max: '最大値',
     stdDev: '標準偏差',
+    live: 'ライブ',
+    refresh: '更新',
     histogram: 'ヒストグラム',
     thresholdMark: 'しきい値',
     pixel: 'ピクセル',
@@ -1173,6 +1182,7 @@ const COPIES: Record<ImagejLanguage, ImagejCopy> = {
 export function createImagejCopy(language: ImagejLanguage): ImagejCopy {
   return COPIES[language] ?? COPIES.en
 }
+
 
 
 

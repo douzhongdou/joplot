@@ -59,7 +59,7 @@ const METHOD_LABELS: Record<ColorGradingMethod, keyof (typeof COPY)['zh-CN']> = 
   manual: 'manual',
 }
 
-export function ColorGradingPanel({ language, method, clipPercent, strength, gains, preview, rgb = true, disabled, onMethod, onClipPercent, onStrength, onGain, onPreview, onApply }: {
+export function ColorGradingPanel({ language, method, clipPercent, strength, gains, preview, rgb = true, diag = '', disabled, onMethod, onClipPercent, onStrength, onGain, onPreview, onApply }: {
   language: keyof typeof COPY
   method: ColorGradingMethod
   /** 自动色阶两端各裁掉的像素比例（%）。 */
@@ -71,7 +71,9 @@ export function ColorGradingPanel({ language, method, clipPercent, strength, gai
   /** 「预览」复选框：勾上才把当前参数实时刷进画面。 */
   preview: boolean
   /** 彩色图像才有白平衡可言：灰度图上灰度世界/白点都是恒等变换，不该出现在列表里。 */
-  rgb?: boolean
+  rgb?: boolean
+  /** 临时诊断文本（定位预览问题用）。 */
+  diag?: string
   disabled: boolean
   onMethod(value: ColorGradingMethod): void
   onClipPercent(value: number): void
@@ -122,6 +124,7 @@ export function ColorGradingPanel({ language, method, clipPercent, strength, gai
             onChange={(event) => onGain(index, Math.max(0, Math.min(4, Number(event.target.value) || 0)))} className="h-7 px-2 text-xs" />
         </div>)}
       </div> : null}
+      {diag ? <p className="break-all font-mono text-xs text-warning">{diag}</p> : null}
       <Button size="sm" className="h-8" disabled={disabled} onClick={onApply}>{copy.apply}</Button>
     </div>
   </section>

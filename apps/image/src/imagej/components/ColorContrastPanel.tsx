@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
 import { Button } from '@joplot/ui/button'
 import { Checkbox } from '@joplot/ui/checkbox'
 import { Label } from '@joplot/ui/label'
@@ -12,7 +11,7 @@ import { Slider } from '@joplot/ui/slider'
 import { adjustContrastRange, contrastSliderValues, imagejAutoRange, type ColorAdjustment, type ColorChannel } from '../engine/colorAdjustments'
 import type { ImageBlock } from '../engine/types'
 import type { Rect } from '../lib/processor'
-import { fastHistogram, type FastHistogram } from '../lib/fastHistogram'
+import { fastHistogram } from '../lib/fastHistogram'
 import { HistogramChart } from './HistogramChart'
 
 const COPY = {
@@ -57,15 +56,9 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, embed
    * 往返上百毫秒，而为了让画面不闪旧结果又被保留到新结果返回——翻页时明显滞后。
    * 直方图数据本来就在内存里，抽样同步扫一遍即可，几毫秒出结果。
    *
-   * Live（对齐 ImageJ 直方图窗口的 Live 复选框）：勾上就跟随当前切片即时重算；
-   * 取消后画面停在最后一次结果上，直到点刷新——用于翻页时想对比某一页的分布。
+   * Live / 刷新两个控件放在右栏的「直方图」卡片上，这里始终跟随当前切片。
    */
-  const computed = useMemo(() => fastHistogram(block, channel), [block, channel])
-  const [live, setLive] = useState(true)
-  const [frozen, setFrozen] = useState<FastHistogram | null>(null)
-  const histogram = live ? computed : (frozen ?? computed)
-  const refresh = () => setFrozen(computed)
-  const toggleLive = (on: boolean) => { setLive(on); if (!on) setFrozen(computed) }
+  const histogram = useMemo(() => fastHistogram(block, channel), [block, channel])
   const values = contrastSliderValues(range, 0, defaultMax)
   useEffect(() => { setRange({ min: 0, max: defaultMax }); setSnapshots([]); setAutoWholeImage(false); autoThreshold.current = 0 }, [block, defaultMax, session])
   useEffect(() => onPreview(settings), [settings, onPreview])
@@ -97,11 +90,6 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, embed
     <div className="mb-2 flex justify-between font-mono text-xs"><span>{Math.round(range.min)}</span><span>{Math.round(range.max)}</span></div>
     <div className="mb-2 flex items-center gap-3 text-xs">
       <label className="flex items-center gap-2"><Checkbox checked={log} onCheckedChange={(value) => setLog(value === true)} />{copy.log}</label>
-      {/* ImageJ 直方图窗口的两个控件：Live 决定是否跟随，刷新拉一次当前切片。 */}
-      <label className="flex items-center gap-2"><Checkbox checked={live} onCheckedChange={(value) => toggleLive(value === true)} />{copy.live}</label>
-      <Button type="button" size="sm" variant="ghost" className="h-6 px-1.5" disabled={busy || live} onClick={refresh} aria-label={copy.refresh}>
-        <RefreshCw size={12} />
-      </Button>
     </div>
     <div className="grid gap-2">
       {(['minimum', 'maximum', 'brightness', 'contrast'] as const).map((control) => <div key={control} className="grid gap-1">
@@ -131,6 +119,7 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, embed
     <Dialog open={stackDialog} onOpenChange={setStackDialog}><DialogContent><DialogHeader><DialogTitle>{copy.stack}</DialogTitle><DialogDescription>{copy.stackHint}</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setStackDialog(false)}>{copy.cancel}</Button><Button variant="outline" onClick={() => apply(false)}>{copy.current}</Button><Button onClick={() => apply(true)}>{copy.all}</Button></DialogFooter></DialogContent></Dialog>
   </section>
 }
+
 
 
 

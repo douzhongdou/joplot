@@ -11,6 +11,9 @@ import {
   whiteBalanceGains,
 } from '../src/imagej/engine/colorGrading.ts'
 import { getOperator } from '../src/imagej/engine/operators.ts'
+import { PureComputeEngine } from '../src/imagej/engine/compute/engine.ts'
+import { importMemory } from '../src/imagej/engine/importer.ts'
+import { appendStep, createRecipe, makeStep } from '../src/imagej/engine/recipe.ts'
 import type { AxisName, Dtype, ImageBlock, PixelArray } from '../src/imagej/engine/types.ts'
 
 function makeBlock(dtype: Dtype, shape: readonly number[], axes: readonly AxisName[], values: readonly number[]): ImageBlock {
@@ -154,4 +157,22 @@ test('colorGrading 已在算子表注册并声明为全局依赖', () => {
   for (const key of ['method', 'clipPercent', 'strength', 'gainR', 'gainG', 'gainB']) {
     assert.ok(keys.includes(key), `算子参数缺少 ${key}`)
   }
+})
+
+/* ---------------- 端到端：引擎是否真的改变了彩色像素 ---------------- */
+
+test('colorGrading 经引擎执行时真的改变彩色像素', async () => {
+  const imported = importMemory({ name: 'rgb', dtype: 'uint8', axes: ['c', 'y', 'x'], shape: [3, 1, 2], data: Uint8Array.from([200, 200, 100, 100, 50, 50]) })
+  const engine = new PureComputeEngine()
+  const recipe = appendStep(
+    createRecipe(imported.dataset.id, imported.dataset.revision),
+    makeStep('colorGrading', { method: 'grayWorld', clipPercent: 0.5, strength: 100, gainR: 1, gainG: 1, gainB: 1 }),
+  )
+  const outcome = await engine.runRecipe({ dataset: imported.dataset, storage: imported.storage, selection: {} }, recipe)
+  const failures = outcome.results.filter((result) => result.status === 'error')
+  assert.deepEqual(failures.map((result) => result.error), [], '这一步不应报错')
+  assert.ok(outcome.image, '引擎没有产出图像')
+  const values = Array.from(outcome.image!.data as Uint8Array)
+  console.info('[e2e] in =', [200, 200, 100, 100, 50, 50], ' out =', values)
+  assert.notDeepEqual(values, [200, 200, 100, 100, 50, 50], '灰度世界应改变彩色像素')
 })

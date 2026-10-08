@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
-import { Check, ChevronLeft, ChevronRight, Download, Image as ImageIcon, Plus, Redo2, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Download, Image as ImageIcon, Plus, Redo2, RefreshCw, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { AppNavbar } from '../../components/AppNavbar'
 import { useI18n } from '../../i18n'
 import { Button } from '@joplot/ui/button'
@@ -18,6 +18,7 @@ import { Label } from '@joplot/ui/label'
 import { Slider } from '@joplot/ui/slider'
 import { createImagejCopy } from '../lib/i18n'
 import { readDroppedContent } from '../lib/dropFiles'
+import { fastHistogram } from '../lib/fastHistogram'
 import { toRoi, type RoiInput } from '../lib/processor'
 import { animationInterval, nextAnimationStep } from '../lib/animation'
 import { clampRoi, isRoi, roiBounds, roiPoints, type Roi } from '../lib/roi'
@@ -283,6 +284,10 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
 
   const [gradingPreview, setGradingPreview] = useState(true)
 
+  /** 临时诊断：把预览 effect 的判定结果摊到面板上（定位完就删）。 */
+
+  const [gradingDiag, setGradingDiag] = useState('')
+
   const [colorSession, setColorSession] = useState(0)
   /** 展开中的 Z 投影命令（`Z Project...` / `Grouped Z Project...`）；与算子参数面板互斥。 */
   const [projectCommand, setProjectCommand] = useState<ProjectCommand | null>(null)
@@ -352,6 +357,35 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   useEffect(() => {
     if (!isRgb && (gradingMethod === 'grayWorld' || gradingMethod === 'whitePatch')) setGradingMethod('autoLevels')
   }, [isRgb, gradingMethod])
+  useEffect(() => {
+    setGradingDiag(`method=${gradingMethod} isRgb=${isRgb} axes=${image ? image.axes.join('') : '-'} cmd=${paramCommand ?? '-'} pv=${gradingPreview} img=${Boolean(image)} busy=${busy}`)
+  }, [gradingMethod, isRgb, image, paramCommand, gradingPreview, busy])
+  /**
+   * 白平衡预览：参数一变就把效果作为**临时步骤**刷进处理链；面板收起或切到别的命令时撤掉它。
+   * 点「应用」只是停止跟踪该步骤，它就留在链里变成正式一步。
+   */
+  useEffect(() => {
+    if (paramCommand !== 'White Balance' || !gradingPreview) {
+      if (gradingPreviewStepId.current) { runtime.removeStep(gradingPreviewStepId.current); gradingPreviewStepId.current = null }
+      return
+    }
+    if (!image || busy) return
+    const timer = setTimeout(() => {
+      const params = {
+        method: gradingMethod,
+        clipPercent: gradingClip,
+        strength: gradingStrength,
+        gainR: gradingGains[0],
+        gainG: gradingGains[1],
+        gainB: gradingGains[2],
+      }
+      const current = gradingPreviewStepId.current
+      if (current) runtime.updateParams(current, params)
+      else gradingPreviewStepId.current = runtime.addStep('colorGrading', params, { kind: 'frame', selection: { ...state.selection } }) ?? null
+    }, FILTER_PREVIEW_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+    // image / busy / runtime / state 故意不进依赖：预览会改写它们，放进去会自激。
+  }, [paramCommand, gradingPreview, gradingMethod, gradingClip, gradingStrength, gradingGains])
   /* 翻页导航只受导入 / 导出影响：切片切换很轻，不应因正在计算而变灰（否则滚动时工具栏一直灰）。 */
   const navBusy = state.status === 'importing' || exporting
   // 切片切换后新像素就绪前，视口里仍是上一帧。此时不显示新页码，
@@ -407,33 +441,6 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     }))
   }, [state.stackProfiles])
   const paramOp = paramCommand ? COMMAND_OPS[paramCommand] : null
-  /**
-   * 白平衡预览：参数一变就把效果作为**临时步骤**刷进处理链；面板收起或切到别的命令时撤掉它。
-   *
-   * 与滤镜面板同一套思路（临时步骤 + 防抖），点「应用」只是停止跟踪该步骤，它就留在链里变成正式一步。
-   */
-  useEffect(() => {
-    if (paramCommand !== 'White Balance' || !gradingPreview) {
-      if (gradingPreviewStepId.current) { runtime.removeStep(gradingPreviewStepId.current); gradingPreviewStepId.current = null }
-      return
-    }
-    if (!image || busy) return
-    const timer = setTimeout(() => {
-      const params = {
-        method: gradingMethod,
-        clipPercent: gradingClip,
-        strength: gradingStrength,
-        gainR: gradingGains[0],
-        gainG: gradingGains[1],
-        gainB: gradingGains[2],
-      }
-      const current = gradingPreviewStepId.current
-      if (current) runtime.updateParams(current, params)
-      else gradingPreviewStepId.current = runtime.addStep('colorGrading', params, stepScope(null)) ?? null
-    }, FILTER_PREVIEW_DEBOUNCE_MS)
-    return () => clearTimeout(timer)
-    // image / busy / runtime / stepScope 不进依赖：预览本身会改写它们，放进去会自激。
-  }, [paramCommand, gradingPreview, gradingMethod, gradingClip, gradingStrength, gradingGains])
   const particlesRequested = views.some((view) => view.type === 'particles')
   const analysisChannel = isRgb && colorPreview.length ? 'all' as const : undefined
   /* 引擎在 run 里已顺带算好整帧分析：整图、无 ROI、无粒子、无通道调整时直接用，免复制、免第二个 Worker。 */
@@ -447,6 +454,19 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const particles = analysisResult.particles ?? null
   const profileData = analysisResult.analysis?.profile ?? null
   const displayBlock = showOriginal && original ? original : image
+
+  /*
+   * 右栏「直方图」卡片：主线程同步算，翻页同帧即出结果（不再等 worker 往返）。
+   * Live 对齐 ImageJ 直方图窗口的复选框：勾上跟随当前切片；取消后画面冻在最后一次结果上，
+   * 点刷新才拉当前切片——用于边翻边对照某一页的分布。
+   */
+  const liveHistogram = useMemo(() => displayBlock ? fastHistogram(displayBlock, analysisChannel ?? 'all') : null, [displayBlock, analysisChannel])
+  const [histLive, setHistLive] = useState(true)
+  const [histFrozen, setHistFrozen] = useState<{ counts: Uint32Array; min: number; max: number } | null>(null)
+  const currentHistogram = liveHistogram ? { counts: liveHistogram.counts, min: liveHistogram.histogramMin, max: liveHistogram.histogramMax } : null
+  const refreshHistogram = () => setHistFrozen(currentHistogram)
+  const toggleHistLive = (on: boolean) => { setHistLive(on); if (!on) setHistFrozen(currentHistogram) }
+  const histogramData = histLive ? currentHistogram : (histFrozen ?? currentHistogram)
   const baselineWindow = useMemo(() => {
     if (!displayBlock) return { window: 255, level: 127.5 }
     return displayBlock.dtype === 'uint8' ? { window: 255, level: 127.5 } : computeWindowLevel(displayBlock)
@@ -1743,6 +1763,8 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
         preview={gradingPreview}
 
         rgb={isRgb}
+
+        diag={gradingDiag}
         disabled={!hasImage || busy}
         onMethod={setGradingMethod}
         onClipPercent={setGradingClip}
@@ -1823,13 +1845,26 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
           ) : null}
 
           {card.type === 'histogram' ? (
-            <HistogramChart
-              data={stats ? { counts: stats.histogram, min: stats.histogramMin, max: stats.histogramMax } : null}
-              height={96}
-              color="var(--foreground)"
-              labels={{ count: copy.stats.pixel, cumulative: copy.stats.cumulative, level: copy.stats.level, frequency: copy.stats.frequency, empty: stats ? '' : copy.status.loading }}
-              ariaLabel={copy.views.histogram}
-            />
+            <>
+              <HistogramChart
+                data={histogramData}
+                height={96}
+                color="var(--foreground)"
+                labels={{ count: copy.stats.pixel, cumulative: copy.stats.cumulative, level: copy.stats.level, frequency: copy.stats.frequency, empty: histogramData ? '' : copy.status.loading }}
+                ariaLabel={copy.views.histogram}
+              />
+              {/* 对齐 ImageJ 直方图窗口：Live 决定是否跟随当前切片，刷新拉一次。 */}
+              <div className="mt-1 flex items-center justify-between gap-2 text-xs">
+                <label className="flex items-center gap-1.5 text-base-content/70">
+                  <Checkbox checked={histLive} onCheckedChange={(value) => toggleHistLive(value === true)} />
+                  {copy.stats.live}
+                </label>
+                <Button type="button" size="sm" variant="ghost" className="h-5 px-1.5" disabled={busy || histLive || !liveHistogram} onClick={refreshHistogram}>
+                  <RefreshCw size={12} />
+                  <span className="ml-1">{copy.stats.refresh}</span>
+                </Button>
+              </div>
+            </>
           ) : null}
 
           {card.type === 'profile' ? (
@@ -2822,7 +2857,6 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
-
 
 
 
