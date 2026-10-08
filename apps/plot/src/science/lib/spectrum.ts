@@ -8,7 +8,7 @@
 import { computeSpectrum, DEFAULT_SPECTRUM_OPTIONS } from '../../superplot/lib/fft.ts'
 import type { DetrendMode, WindowKind } from '../../superplot/types.ts'
 import type { ScienceValue, SpectrumValue } from '../types.ts'
-import { vectorField, vectorParentId, type VectorField } from './vectors.ts'
+import { vectorField, vectorParentId } from './vectors.ts'
 
 export interface SpectrumSettings {
   window: WindowKind
@@ -23,11 +23,14 @@ export interface SpectrumComputation {
   fftSize: number
 }
 
+/** 频谱图能单独显示的字段（frequency 只是横轴数据，不在此列）。 */
+export type SpectrumField = 'magnitude' | 'phase'
+
 /** 频谱区要画哪个频谱、以及是否只画它的某一个字段。 */
 export interface SpectrumTarget {
   spectrum: SpectrumValue
-  /** null 表示选中的是频谱本身（幅度挂主轴、相位挂副轴）；否则只画该字段。 */
-  field: VectorField | null
+  /** null 表示画整个频谱：幅度挂主轴、相位挂副轴。 */
+  field: SpectrumField | null
 }
 
 /**
@@ -52,9 +55,15 @@ export function resolveSpectrumTarget(
   }
 
   const parent = values.find((value) => value.id === parentId)
-  return parent && parent.kind === 'spectrum'
-    ? { spectrum: parent, field: vectorField(selected.id) }
-    : null
+  if (!parent || parent.kind !== 'spectrum') {
+    return null
+  }
+
+  const field = vectorField(selected.id)
+  return {
+    spectrum: parent,
+    field: field === 'phase' || field === 'magnitude' ? field : null,
+  }
 }
 
 export function computeSpectrumFor(

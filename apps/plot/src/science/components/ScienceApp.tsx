@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CircleHelp, Download, Play, Table2, UploadCloud, X } from 'lucide-react'
-import type { DatasetMapping, DatasetSummary, ScienceValue, SpectrumValue, WorkspaceSource } from '../types.ts'
+import type { DatasetMapping, DatasetSummary, ScienceValue, WorkspaceSource } from '../types.ts'
 import { values1d } from '../lib/dense.ts'
-import { resolveValue, vectorField, vectorParentId, type VectorField } from '../lib/vectors.ts'
+import { resolveValue, vectorParentId } from '../lib/vectors.ts'
 import { reconcileSteps, sanitizeMapping } from '../lib/base.ts'
 import { datasetKey, loadScienceWorkspace, saveScienceRecipe, type ScienceRecipe } from '../lib/persistence.ts'
 import { SCIENCE_COLORS } from '../lib/colors.ts'
 import { createScienceCopy, type ScienceLanguage } from '../lib/i18n.ts'
+import { resolveSpectrumTarget, type SpectrumTarget } from '../lib/spectrum.ts'
 import { spectrumReference, toRelativeDb } from '../lib/spectrumDisplay.ts'
 import { getOperator, insertAnalysisStep, type AnalysisStep, type OpKind, type StepInsertPosition } from '../lib/pipeline.ts'
 import { computeDirtySteps } from '../lib/dirty.ts'
@@ -138,37 +139,7 @@ function buildWaveTraces(values: ScienceValue[], selected: ScienceValue, copy: R
   return { traces, sources, hasResidual }
 }
 
-/** 频谱区要画哪个频谱、以及是否只画它的某一个字段。 */
-interface SpectrumTarget {
-  spectrum: SpectrumValue
-  /** null 表示选中的是频谱本身（幅度挂主轴、相位挂副轴）；否则只画该字段。 */
-  field: VectorField | null
-}
-
-/**
- * 变量树里的 `fft1::phase` 是投影出来的 series，直接当普通 series 处理会把频域数据
- * 画到时域图上。这里把它还原成所属频谱 + 字段，交给频谱图去响应。
- */
-function resolveSpectrumTarget(values: ScienceValue[], selected: ScienceValue | undefined): SpectrumTarget | null {
-  if (!selected) {
-    return null
-  }
-
-  if (selected.kind === 'spectrum') {
-    return { spectrum: selected, field: null }
-  }
-
-  const parentId = vectorParentId(selected.id)
-  if (parentId === selected.id) {
-    return null
-  }
-
-  const parent = values.find((value) => value.id === parentId)
-  return parent && parent.kind === 'spectrum'
-    ? { spectrum: parent, field: vectorField(selected.id) }
-    : null
-}
-
+/** 按选中目标作画：选中频谱本身是幅度主轴 + 相位副轴，选中某个字段则只画那一条。 */
 function buildSpectrumTraces(target: SpectrumTarget, copy: ReturnType<typeof createScienceCopy>, scale: SpectrumScale): ScienceTrace[] {
   const { spectrum, field } = target
   const frequency = values1d(spectrum.frequency)
