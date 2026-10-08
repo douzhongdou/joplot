@@ -282,6 +282,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   /** 「预览」复选框：默认开启（ImageJ 的 Color Balance 默认就勾着）。 */
 
   const [gradingPreview, setGradingPreview] = useState(true)
+
   const [colorSession, setColorSession] = useState(0)
   /** 展开中的 Z 投影命令（`Z Project...` / `Grouped Z Project...`）；与算子参数面板互斥。 */
   const [projectCommand, setProjectCommand] = useState<ProjectCommand | null>(null)
@@ -347,6 +348,10 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const current = image ? { width: image.shape[image.axes.indexOf('x')]!, height: image.shape[image.axes.indexOf('y')]!, data: image.data } : null
   const sourceName = state.dataset?.source.name ?? ''
   const busy = state.status === 'importing' || state.status === 'running' || exporting
+  // 灰度图上灰度世界/白点是恒等变换：切到灰度图时把方法挪到真正有效的那个。
+  useEffect(() => {
+    if (!isRgb && (gradingMethod === 'grayWorld' || gradingMethod === 'whitePatch')) setGradingMethod('autoLevels')
+  }, [isRgb, gradingMethod])
   /* 翻页导航只受导入 / 导出影响：切片切换很轻，不应因正在计算而变灰（否则滚动时工具栏一直灰）。 */
   const navBusy = state.status === 'importing' || exporting
   // 切片切换后新像素就绪前，视口里仍是上一帧。此时不显示新页码，
@@ -1736,6 +1741,8 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
         strength={gradingStrength}
         gains={gradingGains}
         preview={gradingPreview}
+
+        rgb={isRgb}
         disabled={!hasImage || busy}
         onMethod={setGradingMethod}
         onClipPercent={setGradingClip}
@@ -2815,9 +2822,6 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
-
-
-
 
 
 

@@ -59,7 +59,7 @@ const METHOD_LABELS: Record<ColorGradingMethod, keyof (typeof COPY)['zh-CN']> = 
   manual: 'manual',
 }
 
-export function ColorGradingPanel({ language, method, clipPercent, strength, gains, preview, disabled, onMethod, onClipPercent, onStrength, onGain, onPreview, onApply }: {
+export function ColorGradingPanel({ language, method, clipPercent, strength, gains, preview, rgb = true, disabled, onMethod, onClipPercent, onStrength, onGain, onPreview, onApply }: {
   language: keyof typeof COPY
   method: ColorGradingMethod
   /** 自动色阶两端各裁掉的像素比例（%）。 */
@@ -69,7 +69,9 @@ export function ColorGradingPanel({ language, method, clipPercent, strength, gai
   /** 手动模式的 RGB 增益。 */
   gains: readonly number[]
   /** 「预览」复选框：勾上才把当前参数实时刷进画面。 */
-  preview: boolean
+  preview: boolean
+  /** 彩色图像才有白平衡可言：灰度图上灰度世界/白点都是恒等变换，不该出现在列表里。 */
+  rgb?: boolean
   disabled: boolean
   onMethod(value: ColorGradingMethod): void
   onClipPercent(value: number): void
@@ -80,7 +82,9 @@ export function ColorGradingPanel({ language, method, clipPercent, strength, gai
 }) {
   const copy = COPY[language] ?? COPY.en
   const hintKey = `${METHOD_LABELS[method]}Hint` as keyof typeof copy
-  const channels: readonly (keyof typeof copy)[] = ['red', 'green', 'blue']
+  const channels: readonly (keyof typeof copy)[] = ['red', 'green', 'blue']
+  // 灰度图上灰度世界/白点是恒等变换，直接不列出来，省得用户以为坏了。
+  const methods = rgb ? COLOR_GRADING_METHODS : COLOR_GRADING_METHODS.filter((value) => value !== 'grayWorld' && value !== 'whitePatch')
   return <section className="mt-1">
     <div className="grid gap-2">
       <div className="grid gap-1">
@@ -88,7 +92,7 @@ export function ColorGradingPanel({ language, method, clipPercent, strength, gai
         <Select value={method} onValueChange={(value) => onMethod(value as ColorGradingMethod)} disabled={disabled}>
           <SelectTrigger id="imagej-grading-method" className="w-full" size="sm" aria-label={copy.method}><SelectValue /></SelectTrigger>
           <SelectContent>
-            {COLOR_GRADING_METHODS.map((value) => <SelectItem key={value} value={value}>{copy[METHOD_LABELS[value]]}</SelectItem>)}
+            {methods.map((value) => <SelectItem key={value} value={value}>{copy[METHOD_LABELS[value]]}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
