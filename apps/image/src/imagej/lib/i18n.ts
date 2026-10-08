@@ -7,6 +7,8 @@ export interface ImagejCopy {
   subtitle: string
   localNote: string
   openImage: string
+  /** 顶栏「文件」下拉的标题。 */
+  fileMenu: string
   dropHint: string
   emptyTitle: string
   emptyDescription: string
@@ -310,6 +312,7 @@ const zhCN: ImagejCopy = {
   subtitle: '8 位灰度 · ImageJ 风格处理流程',
   localNote: '图片仅在浏览器本地解码与处理，不会上传到服务器。',
   openImage: '打开图片',
+  fileMenu: '文件',
   dropHint: '也可以把图片拖到这里',
   emptyTitle: '还没有图片',
   emptyDescription: '上传 PNG / JPEG / WebP / FITS 等本地图片，即可开始阈值、滤波与测量。',
@@ -601,6 +604,7 @@ const en: ImagejCopy = {
   subtitle: '8-bit grayscale · ImageJ-style processing',
   localNote: 'Images are decoded and processed in your browser — nothing is uploaded.',
   openImage: 'Open image',
+  fileMenu: 'File',
   dropHint: 'or drop an image here',
   emptyTitle: 'No image yet',
   emptyDescription: 'Load a local PNG / JPEG / WebP / FITS image to start thresholding, filtering and measuring.',
@@ -892,6 +896,7 @@ const jaJP: ImagejCopy = {
   subtitle: '8bit グレースケール · ImageJ 風の処理フロー',
   localNote: '画像はブラウザ内でのみ処理され、サーバーにはアップロードされません。',
   openImage: '画像を開く',
+  fileMenu: 'ファイル',
   dropHint: 'またはここにドロップ',
   emptyTitle: '画像がありません',
   emptyDescription: 'PNG / JPEG / WebP / FITS などのローカル画像を読み込んで、二値化・フィルタ・測定を始めましょう。',
@@ -1187,6 +1192,7 @@ const COPIES: Record<ImagejLanguage, ImagejCopy> = {
 export function createImagejCopy(language: ImagejLanguage): ImagejCopy {
   return COPIES[language] ?? COPIES.en
 }
+
 
 
 

@@ -2149,16 +2149,30 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               className="hidden"
               onChange={onFileInput}
             />
-            {/* ① 主操作：整个顶栏唯一的实心按钮。 */}
-            <Button
-              type="button"
-              size="sm"
-              className="shrink-0 font-semibold"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <ImageIcon size={14} strokeWidth={2.2} />
-              {copy.openImage}
-            </Button>
+            {/* ① 主操作：整个顶栏唯一的实心按钮，现在是「文件」下拉——
+                打开 / 打开文件夹 / 导出 PNG / 导出 TIFF 都归到这一处。 */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" size="sm" className="shrink-0 font-semibold">
+                  <ImageIcon size={14} strokeWidth={2.2} />
+                  {copy.fileMenu}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-52">
+                <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>{copy.openImage}</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem disabled={!hasImage || busy} onSelect={() => void exportPng()}>
+                  <Download size={14} />
+                  {copy.exportPng}
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={!hasImage || busy} onSelect={() => downloadTiff(false)}>
+                  {copy.stack.exportCurrent}
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={busy || !stack || stack.length < 2} onSelect={() => downloadTiff(true)}>
+                  {copy.stack.exportAll}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             {/* ② 工具（图标语汇）：对齐 ImageJ 的工具栏。一个图标是一个"工具族"，
                 双击在族内切换子类型（直线 line/arrow、点 point/multipoint）；
@@ -2456,19 +2470,6 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-2">{viewCards}</div>
-
-          <footer className="shrink-0 border-t border-base-300 px-2 py-1.5">
-            <div className="grid gap-1.5">
-              <Button type="button" variant="outline" size="sm" className="h-8" disabled={!hasImage || busy} onClick={exportPng}>
-                <Download size={14} />
-                {copy.exportPng}
-              </Button>
-              <div className="grid grid-cols-2 gap-1.5">
-                <Button type="button" variant="outline" size="sm" className="h-8" disabled={!hasImage || busy} onClick={() => downloadTiff(false)}>{copy.stack.exportCurrent}</Button>
-                <Button type="button" variant="outline" size="sm" className="h-8" disabled={busy || !stack || stack.length < 2} onClick={() => downloadTiff(true)}>{copy.stack.exportAll}</Button>
-              </div>
-            </div>
-          </footer>
         </aside>
       </div>
     </div>
@@ -3001,6 +3002,8 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
+
 
 
 
