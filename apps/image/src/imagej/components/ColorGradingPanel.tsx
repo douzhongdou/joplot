@@ -59,7 +59,7 @@ const METHOD_LABELS: Record<ColorGradingMethod, keyof (typeof COPY)['zh-CN']> = 
   manual: 'manual',
 }
 
-export function ColorGradingPanel({ language, method, clipPercent, strength, gains, preview, rgb = true, diag = '', disabled, onMethod, onClipPercent, onStrength, onGain, onPreview, onApply }: {
+export function ColorGradingPanel({ language, method, clipPercent, strength, gains, preview, rgb = true, disabled, onMethod, onClipPercent, onStrength, onGain, onPreview, onApply }: {
   language: keyof typeof COPY
   method: ColorGradingMethod
   /** 自动色阶两端各裁掉的像素比例（%）。 */
@@ -123,8 +123,7 @@ export function ColorGradingPanel({ language, method, clipPercent, strength, gai
           <Input id={`imagej-grading-gain-${index}`} type="number" min={0} max={4} step={0.05} value={gains[index] ?? 1} disabled={disabled}
             onChange={(event) => onGain(index, Math.max(0, Math.min(4, Number(event.target.value) || 0)))} className="h-7 px-2 text-xs" />
         </div>)}
-      </div> : null}
-      {diag ? <p className="break-all font-mono text-xs text-warning">{diag}</p> : null}
+      </div> : null}
       <Button size="sm" className="h-8" disabled={disabled} onClick={onApply}>{copy.apply}</Button>
     </div>
   </section>

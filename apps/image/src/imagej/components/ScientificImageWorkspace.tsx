@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
-import { Check, ChevronLeft, ChevronRight, Download, Image as ImageIcon, Plus, Redo2, RefreshCw, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, Image as ImageIcon, Plus, Redo2, RefreshCw, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { AppNavbar } from '../../components/AppNavbar'
 import { useI18n } from '../../i18n'
 import { Button } from '@joplot/ui/button'
@@ -284,10 +284,6 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
 
   const [gradingPreview, setGradingPreview] = useState(true)
 
-  /** 临时诊断：把预览 effect 的判定结果摊到面板上（定位完就删）。 */
-
-  const [gradingDiag, setGradingDiag] = useState('')
-
   const [colorSession, setColorSession] = useState(0)
   /** 展开中的 Z 投影命令（`Z Project...` / `Grouped Z Project...`）；与算子参数面板互斥。 */
   const [projectCommand, setProjectCommand] = useState<ProjectCommand | null>(null)
@@ -357,9 +353,6 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   useEffect(() => {
     if (!isRgb && (gradingMethod === 'grayWorld' || gradingMethod === 'whitePatch')) setGradingMethod('autoLevels')
   }, [isRgb, gradingMethod])
-  useEffect(() => {
-    setGradingDiag(`method=${gradingMethod} isRgb=${isRgb} axes=${image ? image.axes.join('') : '-'} cmd=${paramCommand ?? '-'} pv=${gradingPreview} img=${Boolean(image)} busy=${busy}`)
-  }, [gradingMethod, isRgb, image, paramCommand, gradingPreview, busy])
   /**
    * 白平衡预览：参数一变就把效果作为**临时步骤**刷进处理链；面板收起或切到别的命令时撤掉它。
    * 点「应用」只是停止跟踪该步骤，它就留在链里变成正式一步。
@@ -461,12 +454,14 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
    * 点刷新才拉当前切片——用于边翻边对照某一页的分布。
    */
   const liveHistogram = useMemo(() => displayBlock ? fastHistogram(displayBlock, analysisChannel ?? 'all') : null, [displayBlock, analysisChannel])
-  const [histLive, setHistLive] = useState(true)
-  const [histFrozen, setHistFrozen] = useState<{ counts: Uint32Array; min: number; max: number } | null>(null)
   const currentHistogram = liveHistogram ? { counts: liveHistogram.counts, min: liveHistogram.histogramMin, max: liveHistogram.histogramMax } : null
-  const refreshHistogram = () => setHistFrozen(currentHistogram)
-  const toggleHistLive = (on: boolean) => { setHistLive(on); if (!on) setHistFrozen(currentHistogram) }
-  const histogramData = histLive ? currentHistogram : (histFrozen ?? currentHistogram)
+  // Live 与冻结值都按卡片 id 记录：多个直方图卡片各自独立，才能一个跟随当前切片、一个冻在原地对照。
+  const [histLive, setHistLive] = useState<Record<number, boolean>>({})
+  const [histFrozen, setHistFrozen] = useState<Record<number, { counts: Uint32Array; min: number; max: number }>>({})
+  const isHistLive = (id: number) => histLive[id] !== false
+  const histogramFor = (id: number) => isHistLive(id) ? currentHistogram : (histFrozen[id] ?? currentHistogram)
+  const refreshHistogram = (id: number) => { if (currentHistogram) setHistFrozen((frozen) => ({ ...frozen, [id]: currentHistogram })) }
+  const toggleHistLive = (id: number, on: boolean) => { setHistLive((live) => ({ ...live, [id]: on })); if (!on) refreshHistogram(id) }
   const baselineWindow = useMemo(() => {
     if (!displayBlock) return { window: 255, level: 127.5 }
     return displayBlock.dtype === 'uint8' ? { window: 255, level: 127.5 } : computeWindowLevel(displayBlock)
@@ -1291,7 +1286,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     if (!view) return
     if (sliceCount < 2) { setError(copy.stackOps.needsStack); return }
     setError('')
-    setViews((cards) => cards.some((card) => card.type === view) ? cards : [...cards, { id: viewsIdRef.current++, type: view }])
+    setViews((cards) => [...cards, { id: viewsIdRef.current++, type: view }])
     // Plot XY Profile 取逐页剖面（线选区沿线采样）；其余三个共用一次整栈统计。
     if (command === 'plot-xy-profile') {
       void runtime.loadStackProfiles({ roi: roiRegion(roi), line: lineSamplePoints(roi) })
@@ -1382,9 +1377,10 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const zoomByStep = (direction: 1 | -1) => viewportRef.current?.zoomBy(direction > 0 ? 1.25 : 0.8)
   const fitToWindow = () => viewportRef.current?.fit()
   const showActualSize = () => viewportRef.current?.actualSize()
-  const analyzeCurrentParticles = () => setViews((cards) => cards.some((card) => card.type === 'particles') ? cards : [...cards, { id: viewsIdRef.current++, type: 'particles' }])
+  const analyzeCurrentParticles = () => setViews((cards) => [...cards, { id: viewsIdRef.current++, type: 'particles' }])
   const viewTitle = (type: ViewType) => type === 'particles' && particles ? `${copy.views.particles} · ${particles.length}` : copy.views[type]
-  const addView = (type: ViewType) => setViews((cards) => cards.some((card) => card.type === type) ? cards : [...cards, { id: viewsIdRef.current++, type }])
+  // 不再去重：同一种视图允许并存（配合各自的 Live 状态做对照）。
+  const addView = (type: ViewType) => setViews((cards) => [...cards, { id: viewsIdRef.current++, type }])
   const removeView = (id: number) => setViews((cards) => cards.filter((card) => card.id !== id))
   const exportParticlesCsv = () => {
     if (!particles) return
@@ -1763,8 +1759,6 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
         preview={gradingPreview}
 
         rgb={isRgb}
-
-        diag={gradingDiag}
         disabled={!hasImage || busy}
         onMethod={setGradingMethod}
         onClipPercent={setGradingClip}
@@ -1847,19 +1841,19 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
           {card.type === 'histogram' ? (
             <>
               <HistogramChart
-                data={histogramData}
+                data={histogramFor(card.id)}
                 height={96}
                 color="var(--foreground)"
-                labels={{ count: copy.stats.pixel, cumulative: copy.stats.cumulative, level: copy.stats.level, frequency: copy.stats.frequency, empty: histogramData ? '' : copy.status.loading }}
+                labels={{ count: copy.stats.pixel, cumulative: copy.stats.cumulative, level: copy.stats.level, frequency: copy.stats.frequency, empty: currentHistogram ? '' : copy.status.loading }}
                 ariaLabel={copy.views.histogram}
               />
-              {/* 对齐 ImageJ 直方图窗口：Live 决定是否跟随当前切片，刷新拉一次。 */}
+              {/* 对齐 ImageJ 直方图窗口：Live 决定是否跟随当前切片，刷新拉一次。每张卡片独立。 */}
               <div className="mt-1 flex items-center justify-between gap-2 text-xs">
                 <label className="flex items-center gap-1.5 text-base-content/70">
-                  <Checkbox checked={histLive} onCheckedChange={(value) => toggleHistLive(value === true)} />
+                  <Checkbox checked={isHistLive(card.id)} onCheckedChange={(value) => toggleHistLive(card.id, value === true)} />
                   {copy.stats.live}
                 </label>
-                <Button type="button" size="sm" variant="ghost" className="h-5 px-1.5" disabled={busy || histLive || !liveHistogram} onClick={refreshHistogram}>
+                <Button type="button" size="sm" variant="ghost" className="h-5 px-1.5" disabled={busy || isHistLive(card.id) || !currentHistogram} onClick={() => refreshHistogram(card.id)}>
                   <RefreshCw size={12} />
                   <span className="ml-1">{copy.stats.refresh}</span>
                 </Button>
@@ -2298,12 +2292,14 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
+                {/* 同一种视图可以加多个：一个开 Live 跟随当前切片，另一个关掉 Live 冻在原地，
+                    这样就能并排比较两幅图的分布。已添加的类型显示数量，而不是禁用。 */}
                 {VIEW_TYPES.map((type) => {
-                  const added = views.some((card) => card.type === type)
+                  const count = views.filter((card) => card.type === type).length
                   return (
-                    <DropdownMenuItem key={type} disabled={!hasImage || added} onSelect={() => addView(type)}>
+                    <DropdownMenuItem key={type} disabled={!hasImage} onSelect={() => addView(type)}>
                       <span className="flex-1">{viewTitle(type)}</span>
-                      {added ? <Check size={14} /> : null}
+                      {count > 0 ? <span className="font-mono text-xs text-base-content/50">{count}</span> : null}
                     </DropdownMenuItem>
                   )
                 })}

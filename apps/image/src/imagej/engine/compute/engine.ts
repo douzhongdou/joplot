@@ -260,7 +260,8 @@ export class PureComputeEngine implements ComputeEngine {
     const params = step.params as Record<string, number>
     if (isMultiChannel(block) && step.op !== 'grayscale') {
       if (capability.input.channels !== 'any') throw new ops.ComputeError('unsupported', '该算子需要单通道图像，请先添加 grayscale 步骤')
-      if (step.op !== 'levels' && step.op !== 'invert') return this.applyRgbStep(step, capability, block, context)
+      // 逐通道拆开只适合「每个通道独立算」的算子；调色（levels / colorGrading）需要跨通道统计，必须整块处理。
+        if (step.op !== 'levels' && step.op !== 'invert' && step.op !== 'colorGrading') return this.applyRgbStep(step, capability, block, context)
     }
     switch (step.op) {
       case 'grayscale': return { image: this.grayscale(block) }
