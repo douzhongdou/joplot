@@ -65,7 +65,7 @@ export function AppNavbar({
     >
       {/* 品牌标识与 plot 同一形态：横版图里已经带图标与名字，因此不再另渲染文字。 */}
       <span className="block h-6 shrink-0 overflow-hidden sm:h-7">
-        <img src="/navbar-icon.webp" alt="jo image" className="block h-full w-auto" />
+        <img src="/navbar-icon.webp" alt="joimage" className="block h-full w-auto" />
       </span>
     </Link>
   )

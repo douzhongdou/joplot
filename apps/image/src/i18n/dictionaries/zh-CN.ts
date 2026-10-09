@@ -1,9 +1,9 @@
 export const zhCN = {
   chrome: {
-    brand: 'joplot imagej',
+    brand: 'joimage',
     workspace: '图像工作台',
     language: '语言',
-    plotApp: 'jo plot',
+    plotApp: 'joplot',
   },
   errorBoundary: {
     title: '页面出错了',

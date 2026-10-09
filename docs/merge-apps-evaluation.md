@@ -1,4 +1,4 @@
-# 评估：把 jo image 并入 jo plot，回到单应用
+# 评估：把 joimage 并入 joplot，回到单应用
 
 > 结论先说：**技术上没有硬障碍，建议合并**，而且建议分两步——第一步纯搬运（对外行为完全不变），第二步才是门户页与路径改名。理由、冲突清单、风险、验证方式都在下面。
 
@@ -10,7 +10,7 @@
 55d93654  refactor: split into pnpm monorepo (apps/plot, apps/image, packages/ui, packages/i18n)
 ```
 
-`origin/main` 上**没有 jo image 的代码**——main 是更早的纯 CSV 绘图单应用。也就是说 image 是那个分支上新增的第二个应用，拆分与新增同时发生。
+`origin/main` 上**没有 joimage 的代码**——main 是更早的纯 CSV 绘图单应用。也就是说 image 是那个分支上新增的第二个应用，拆分与新增同时发生。
 
 ## 2. 现状盘点
 
@@ -48,7 +48,7 @@
 | 3 | `i18n/config.ts`、`i18n/index.tsx` | 两份 `createI18n` | **必须合并成一套**：Next 的根 layout 只能有一个 `I18nProvider` | 中 |
 | 4 | `i18n/dictionaries/*.ts` | plot 285 行/语言；image 仅 12 行/语言 | image 的条目并入 plot 字典（新增命名空间） | 低（体量小） |
 | 5 | `lib/routeLanguage.ts` | 两份几乎相同 | 去重成一份（放 `src/lib/`） | 低 |
-| 6 | `public/navbar-icon.webp` | **同名但内容不同**（MD5 不同：jo plot 版 vs jo image 版） | **必须重命名**（如 `navbar-icon-plot.webp` / `navbar-icon-image.webp`）并改引用 | 中（漏改会串图） |
+| 6 | `public/navbar-icon.webp` | **同名但内容不同**（MD5 不同：joplot 版 vs joimage 版） | **必须重命名**（如 `navbar-icon-plot.webp` / `navbar-icon-image.webp`）并改引用 | 中（漏改会串图） |
 | 7 | `app/favicon.ico` vs `public/favicon.ico` | image 在 `app/` 下有 favicon.ico、icon.png、apple-icon.png；plot 的图标在 `public/` | 决定保留哪个 favicon；`app/` 下的文件路由优先级高于 `public/`，不处理会悄悄换掉 plot 的站点图标 | 中 |
 | 8 | 双份 Tailwind 入口 | plot 的 `app/globals.css` 只有一行 `@import "../src/index.css"`；image 的 globals.css 自带完整 `@import "tailwindcss"` + `@source` + **`@custom-variant dark`** + 深色主题样式 | 把 image 的 `@custom-variant dark` 与深色样式并入 `apps/plot/src/index.css`（`@custom-variant` 是全局编译指令，**必须**在同一个 Tailwind 入口里，不能各留一份） | **高**（最容易出样式回归） |
 
@@ -65,7 +65,7 @@ apps/plot/
     function/page.tsx
     science/page.tsx
     super-plot/page.tsx
-    image/page.tsx           ← jo image 图像工作台（第一步先保持 /imagej）
+    image/page.tsx           ← joimage 图像工作台（第一步先保持 /imagej）
     image/classic/page.tsx   ← 旧版 ImageJ
   src/
     ...（现有 plot 代码不动）
@@ -90,7 +90,7 @@ packages/ui, packages/i18n   保留（成本低，是未来的扩展点）
 
 ### 第二步：门户页与路径（产品决策，会动 URL 与 canonical）
 
-1. 新增 `[lang]/page.tsx` 门户（数据驱动卡片列表：jo plot → `/plot`，jo image → `/image`）
+1. 新增 `[lang]/page.tsx` 门户（数据驱动卡片列表：joplot → `/plot`，joimage → `/image`）
 2. CSV 工作台从 `/` 挪到 `/plot`（`/` 本身不消失，只是换了内容，因此**不产生断链**）
 3. `/imagej` → `/image` 改名；`IMAGEJ_PATH` 常量、导航、测试、canonical 同步
 4. 更新 `sitemap.ts`、`siteMetadata.ts` 的 canonical、`robots.ts`
@@ -101,7 +101,7 @@ packages/ui, packages/i18n   保留（成本低，是未来的扩展点）
 
 | 风险 | 影响 | 验证方式 |
 | --- | --- | --- |
-| 样式回归（#8） | jo image 的深色主题、`dark:` 变体或 Tailwind 扫描失效 | 生产模式打开 `/imagej` 与 `/plot`，肉眼比对深浅主题与布局；检查构建产物 CSS 是否含两套样式 |
+| 样式回归（#8） | joimage 的深色主题、`dark:` 变体或 Tailwind 扫描失效 | 生产模式打开 `/imagej` 与 `/plot`，肉眼比对深浅主题与布局；检查构建产物 CSS 是否含两套样式 |
 | itk-wasm alias 影响 plot 构建 | plot 页面构建失败或解析异常 | 合并后立刻 `next build`，再看 CSV 工作台能否正常绘图 |
 | 字典/Provider 合并（#3） | 语言切换失效或文案缺失 | 三种语言各访问一次两个工具，切换语言后文案与 `<html lang>` 正确 |
 | 图标串图（#6、#7） | 顶栏或 favicon 张冠李戴 | 断言两张 navbar 图的引用路径不同；`curl -I /favicon.ico` 与浏览器实际显示 |

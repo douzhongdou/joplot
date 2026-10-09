@@ -1,9 +1,9 @@
 export const jaJP = {
   chrome: {
-    brand: 'joplot imagej',
+    brand: 'joimage',
     workspace: '画像ワークベンチ',
     language: '言語',
-    plotApp: 'jo plot',
+    plotApp: 'joplot',
   },
   errorBoundary: {
     title: 'エラーが発生しました',

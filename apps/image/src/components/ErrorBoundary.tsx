@@ -39,7 +39,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('[joplot imagej] Unhandled render error', error, info.componentStack)
+    console.error('[joimage] Unhandled render error', error, info.componentStack)
   }
 
   render() {

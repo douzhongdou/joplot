@@ -1,9 +1,9 @@
 export const en = {
   chrome: {
-    brand: 'joplot imagej',
+    brand: 'joimage',
     workspace: 'Image workspace',
     language: 'Language',
-    plotApp: 'jo plot',
+    plotApp: 'joplot',
   },
   errorBoundary: {
     title: 'Something went wrong',
