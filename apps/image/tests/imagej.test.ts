@@ -483,6 +483,6 @@ test('中英日文案结构完全一致', () => {
   assert.equal(createImagejCopy('fr-FR' as unknown as Parameters<typeof createImagejCopy>[0]).title, en.title)
 })
 
-test('图像工作台使用不含语言的静态路径', () => {
-  assert.equal(IMAGEJ_PATH, '/imagej')
+test('图像工作台就在根路径上', () => {
+  assert.equal(IMAGEJ_PATH, '/')
 })

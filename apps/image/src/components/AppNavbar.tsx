@@ -2,11 +2,12 @@
 
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { ChevronDown, Languages } from 'lucide-react'
+import { ChevronDown, Languages, TableProperties } from 'lucide-react'
 import { Button } from '@joplot/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -16,6 +17,8 @@ import {
   DropdownMenuTrigger,
 } from '@joplot/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@joplot/ui/select'
+import { crossDomainUrl } from '@joplot/i18n/routing'
+import { plotAppUrl } from '../lib/externalApps'
 import {
   IMAGEJ_PATH,
   SUPPORTED_LANGUAGES,
@@ -49,6 +52,10 @@ export function AppNavbar({
   logoMenu?: ReactNode
 } = {}) {
   const { language, setLanguage, t } = useI18n()
+
+  // 绘图工作台在另一个域名上：语言 cookie 带不过去，所以链接里带上当前语言。
+  const plotBaseUrl = plotAppUrl()
+  const plotAppHref = plotBaseUrl ? crossDomainUrl(plotBaseUrl, language) : null
 
   const logoImage = (
     <Link
@@ -99,6 +106,14 @@ export function AppNavbar({
           <DropdownMenuContent align="start" className="min-w-52">
             {logoMenu}
             <DropdownMenuSeparator />
+            {plotAppHref ? (
+              <DropdownMenuItem asChild>
+                <a href={plotAppHref}>
+                  <TableProperties size={15} aria-hidden="true" />
+                  {t('chrome.plotApp')}
+                </a>
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <Languages size={15} aria-hidden="true" />

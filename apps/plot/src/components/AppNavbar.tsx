@@ -19,10 +19,11 @@ import {
   DropdownMenuTrigger,
 } from '@joplot/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { crossDomainUrl } from '@joplot/i18n/routing'
+import { imageAppUrl } from '../lib/externalApps'
 import {
   FUNCTION_STUDIO_PATH,
   HOME_PATH,
-  IMAGEJ_PATH,
   SCIENCE_PATH,
   SUPER_PLOT_PATH,
   SUPPORTED_LANGUAGES,
@@ -64,6 +65,10 @@ export function AppNavbar({
 }: Props) {
   const { language, setLanguage, t } = useI18n()
   const [helpOpen, setHelpOpen] = useState(false)
+
+  // 图像工作台在另一个域名上：语言 cookie 带不过去，所以链接里带上当前语言。
+  const imageBaseUrl = imageAppUrl()
+  const imageAppHref = imageBaseUrl ? crossDomainUrl(imageBaseUrl, language) : null
 
   const languageOptions = SUPPORTED_LANGUAGES.map((option) => ({
     value: option,
@@ -183,14 +188,12 @@ export function AppNavbar({
             <FlaskConical size={15} strokeWidth={2.1} aria-hidden="true" />
             <span>{t('nav.science')}</span>
           </Link>
-          <Link
-            href={IMAGEJ_PATH}
-            aria-current={section === 'imagej' ? 'page' : undefined}
-            className={sectionLinkClass(section === 'imagej')}
-          >
-            <ImageIcon size={15} strokeWidth={2.1} aria-hidden="true" />
-            <span>{t('nav.imagej')}</span>
-          </Link>
+          {imageAppHref ? (
+            <a href={imageAppHref} className={sectionLinkClass(false)}>
+              <ImageIcon size={15} strokeWidth={2.1} aria-hidden="true" />
+              <span>{t('nav.imagej')}</span>
+            </a>
+          ) : null}
           </nav>
         ) : null}
 

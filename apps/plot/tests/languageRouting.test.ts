@@ -36,18 +36,33 @@ test('pickLanguageFromAcceptLanguage skips explicitly rejected languages', () =>
 test('resolveRequestLanguage prefers an explicit cookie over the browser header', () => {
   assert.deepEqual(
     resolveRequestLanguage({ cookieLanguage: 'ja-JP', acceptLanguage: 'zh-CN' }),
-    { language: 'ja-JP', fromCookie: true },
+    { language: 'ja-JP', explicit: true },
   )
 })
 
-test('resolveRequestLanguage ignores unusable cookies and uses Accept-Language', () => {
+test('resolveRequestLanguage lets the cross-domain language param win over the cookie', () => {
+  assert.deepEqual(
+    resolveRequestLanguage({ queryLanguage: 'zh-CN', cookieLanguage: 'en', acceptLanguage: 'ja-JP' }),
+    { language: 'zh-CN', explicit: true },
+  )
+  assert.deepEqual(
+    resolveRequestLanguage({ queryLanguage: 'ja-JP', acceptLanguage: 'zh-CN' }),
+    { language: 'ja-JP', explicit: true },
+  )
+})
+
+test('resolveRequestLanguage ignores unusable explicit values and uses Accept-Language', () => {
   assert.deepEqual(
     resolveRequestLanguage({ cookieLanguage: 'fr-FR', acceptLanguage: 'zh-CN' }),
-    { language: 'zh-CN', fromCookie: false },
+    { language: 'zh-CN', explicit: false },
+  )
+  assert.deepEqual(
+    resolveRequestLanguage({ queryLanguage: 'de', cookieLanguage: '', acceptLanguage: 'ja' }),
+    { language: 'ja-JP', explicit: false },
   )
   assert.deepEqual(
     resolveRequestLanguage({ cookieLanguage: '', acceptLanguage: 'ja' }),
-    { language: 'ja-JP', fromCookie: false },
+    { language: 'ja-JP', explicit: false },
   )
-  assert.deepEqual(resolveRequestLanguage(), { language: 'en', fromCookie: false })
+  assert.deepEqual(resolveRequestLanguage(), { language: 'en', explicit: false })
 })

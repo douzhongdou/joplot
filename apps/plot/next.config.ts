@@ -1,47 +1,31 @@
 import type { NextConfig } from 'next'
 
 /**
- * 同域多 zone：绘图工作台是主应用（域名根），图像工作台挂在 /imagej。
- *
- * 部署时把 IMAGE_APP_ORIGIN 指向图像应用的部署源（例如 https://joplot-image.vercel.app），
- * 这里会把 /imagej* 以及图像应用的静态资源前缀 /imagej-assets* 反代过去；本地不配则走各自的
- * dev server。图像应用构建时需设置 IMAGE_ASSET_PREFIX=/imagej-assets（见该应用的 next.config.ts）。
+ * 绘图工作台独占自己的域名，图像工作台部署在另一个域名上：两个应用之间不再互相反代。
+ * 跨域入口（去图像工作台）通过 `NEXT_PUBLIC_IMAGE_APP_URL` 配置，见 README 的部署一节。
  */
-const imageAppOrigin = process.env.IMAGE_APP_ORIGIN?.replace(/\/+$/, '')
-
-/** 图像应用静态资源的同源前缀，必须与 apps/image 的 IMAGE_ASSET_PREFIX 保持一致。 */
-const IMAGE_ASSET_PATH = '/imagej-assets'
+const imageAppUrl = process.env.NEXT_PUBLIC_IMAGE_APP_URL?.replace(/\/+$/, '')
 
 const nextConfig: NextConfig = {
   transpilePackages: ['@joplot/ui', '@joplot/i18n'],
   async redirects() {
-    // 语言不进入对外 URL：既接住历史的 /zh、/en/function，也挡住 proxy 内部 rewrite 用的
-    // /zh-CN、/ja-JP 语言段——保证每个语言只有一份可索引的对外地址。
-    return [
+    const redirects = [
+      // 语言不进入对外 URL：既接住历史的 /zh、/en/function，也挡住 proxy 内部 rewrite 用的
+      // /zh-CN、/ja-JP 语言段——保证每个语言只有一份可索引的对外地址。
       { source: '/:lang(zh-CN|zh|en|ja-JP|ja)', destination: '/', permanent: true },
       { source: '/:lang(zh-CN|zh|en|ja-JP|ja)/:path*', destination: '/:path*', permanent: true },
     ]
-  },
-  async rewrites() {
-    if (!imageAppOrigin) {
-      return []
+
+    // 图像工作台曾经反代在同一域名的 /imagej 下；域名拆开后把老地址永久导向新站点，
+    // 免得外链和搜索结果断掉。没配该变量（例如本地开发）时不生成这条规则。
+    if (imageAppUrl) {
+      redirects.push(
+        { source: '/imagej', destination: imageAppUrl, permanent: true },
+        { source: '/imagej/:path*', destination: `${imageAppUrl}/:path*`, permanent: true },
+      )
     }
 
-    return [
-      {
-        source: '/imagej',
-        destination: `${imageAppOrigin}/imagej`,
-      },
-      {
-        source: '/imagej/:path*',
-        destination: `${imageAppOrigin}/imagej/:path*`,
-      },
-      {
-        // 图像应用的 /_next/static 等资源：浏览器请求同源的 /imagej-assets/*，这里转发到该应用。
-        source: `${IMAGE_ASSET_PATH}/:path*`,
-        destination: `${imageAppOrigin}/:path*`,
-      },
-    ]
+    return redirects
   },
 }
 

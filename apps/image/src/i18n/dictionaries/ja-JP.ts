@@ -3,6 +3,7 @@ export const jaJP = {
     brand: 'joplot imagej',
     workspace: '画像ワークベンチ',
     language: '言語',
+    plotApp: 'jo plot',
   },
   errorBoundary: {
     title: 'エラーが発生しました',

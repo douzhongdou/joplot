@@ -1,7 +1,6 @@
-import { redirect } from 'next/navigation'
-import { IMAGEJ_PATH } from '../../src/i18n/config'
+import { ScientificImageWorkspace } from '../../src/imagej/components/ScientificImageWorkspace'
 
-/** 图像工作台只有一个板块：根路径直接进入 /imagej。 */
-export default function ImagejHomePage() {
-  redirect(IMAGEJ_PATH)
+/** 图像工作台：本应用的根路径就是工作台本身。 */
+export default function ImagejPage() {
+  return <ScientificImageWorkspace />
 }

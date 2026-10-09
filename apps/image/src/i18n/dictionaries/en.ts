@@ -3,6 +3,7 @@ export const en = {
     brand: 'joplot imagej',
     workspace: 'Image workspace',
     language: 'Language',
+    plotApp: 'jo plot',
   },
   errorBoundary: {
     title: 'Something went wrong',

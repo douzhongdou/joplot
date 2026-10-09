@@ -3,6 +3,7 @@ export const zhCN = {
     brand: 'joplot imagej',
     workspace: '图像工作台',
     language: '语言',
+    plotApp: 'jo plot',
   },
   errorBoundary: {
     title: '页面出错了',

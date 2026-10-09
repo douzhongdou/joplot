@@ -1,6 +1,6 @@
 # 科学图像工作台
 
-`/imagej` 是主工作台，使用 Dataset / Storage / Recipe 引擎和 ITK-Wasm 图像 I/O。Classic 的三栏布局、命令搜索、参数面板、ROI、统计图表与 Stack 控件已迁入主工作台。`/imagej/classic` 保留原来的 8 位实现。
+工作台就在域名根路径上，使用 Dataset / Storage / Recipe 引擎和 ITK-Wasm 图像 I/O。三栏布局、命令搜索、参数面板、ROI、统计图表与 Stack 控件都在这个工作台里；早期那套独立的 8 位实现（`/imagej/classic`）已删除。
 
 二维显示使用视口尺寸的 Canvas：直接从原始 TypedArray 采样，按窗宽窗位映射屏幕颜色。缩放、平移和像素探查不会降低处理数据的精度，也不会创建与源图一样大的 Canvas。VTK.js 及其 GLSL loader 已移除。
 
@@ -42,8 +42,7 @@
 | `src/imagej/engine/stackStats.ts` | 整栈逐页统计内核（Measure Stack / Statistics / Plot Z-axis Profile 共用） |
 | `src/imagej/engine/stackProject.ts` | Z 投影内核（六种方法与输出 dtype 规则） |
 | `src/imagej/engine/` | Dataset、Storage、Recipe、调度、计算、I/O、TIFF / FITS / RAW / 原生位图解码、debayer 与渲染映射 |
-| `src/imagej/lib/` | Classic 算法、共享 8 位内核、高斯行缓存与三语文案 |
-| `src/imagej/components/ImageJApp.tsx` | Classic 入口 |
+| `src/imagej/lib/` | 共享的 8 位内核与算法、高斯行缓存与三语文案 |
 | `tests/imagej*.test.ts` | 科学图像、Stack、算法、缓存、历史与编码回归 |
 
 详细实现和已验证范围见 [实现说明](docs/scientific-image-engine-implementation.md)。[架构方案](docs/scientific-image-engine-design.md) 记录长期方向，其二维显示章节已更新为当前方案。
@@ -77,7 +76,7 @@ FITS 暂只载入第一个图像 HDU（NAXIS ≤ 3，第 3 维按 z 轴）；文
 
 RAW 走自研路线，仅覆盖 TIFF 容器（DNG / CR2 / NEF / ARW / ORF / RW2 等）且要求 strip 布局与未压缩 / Deflate 压缩；JPEG、LZW、厂商私有压缩（Sony ARW、Nikon 压缩等）与 CR3 / X3F / RAF 等非 TIFF 容器会明确报错。导入只取第一个 CFA 数据页，暂不裁剪 ActiveArea，也不读取相机色彩矩阵与白平衡；debayer 的滤镜序列优先取 DNG 的 `CFAPattern`，缺失时默认 RGGB，可在算子参数中手动指定。
 
-Classic 保留原来的 Canvas 导入边长限制、8 位历史快照与简单 TIFF 解码器；共享 8 位单缓冲分配预算为 512 MiB。主工作台的原精度数据路径不使用 Classic 的 Canvas 导入限制。菜单里原先未实现的 Z 投影、虚拟栈、16 / 32 位转换等命令仍禁用；迁移现有交互不代表完整复刻 ImageJ。
+共享的 8 位单缓冲分配预算为 512 MiB；工作台的原精度数据路径不受早期 Canvas 导入边长限制的约束。菜单里未实现的虚拟栈、16 / 32 位转换等命令仍禁用；迁移现有交互不代表完整复刻 ImageJ。
 
 矩形 ROI 是当前唯一选区类型。科学算子的边界与数值行为由回归测试约束，尚未用 Java ImageJ 的完整黄金样例逐项验证。
 
