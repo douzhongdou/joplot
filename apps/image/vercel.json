@@ -5,7 +5,7 @@
   "buildCommand": "pnpm build",
   "headers": [
     {
-      "source": "/((?!_next|imagej).*)",
+      "source": "/((?!_next).*)",
       "headers": [{ "key": "Vary", "value": "Accept-Language" }]
     }
   ]

@@ -1,11 +1,10 @@
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
-import type { SupportedLanguage } from '@joplot/i18n/config'
-import { ErrorBoundary } from '../src/components/ErrorBoundary'
-import { I18nProvider } from '../src/i18n'
-import { LANGUAGE_HTML_LANG } from '../src/i18n/config'
-import { getRequestLanguage } from '../src/lib/requestLanguage'
-import './globals.css'
+import { ErrorBoundary } from '../../src/components/ErrorBoundary'
+import { I18nProvider } from '../../src/i18n'
+import { LANGUAGE_HTML_LANG, SUPPORTED_LANGUAGES, type SupportedLanguage } from '../../src/i18n/config'
+import { resolveRouteLanguage } from '../../src/lib/routeLanguage'
+import '../globals.css'
 
 const LOCALIZED_METADATA: Record<SupportedLanguage, { title: string; description: string }> = {
   'zh-CN': {
@@ -22,8 +21,23 @@ const LOCALIZED_METADATA: Record<SupportedLanguage, { title: string; description
   },
 }
 
-export async function generateMetadata(): Promise<Metadata> {
-  const localized = LOCALIZED_METADATA[await getRequestLanguage()]
+interface LanguageRouteProps {
+  params: Promise<{ lang: string }>
+}
+
+/**
+ * 语言取自路由段而不是 cookie，所以每个语言都能在构建时生成一份静态 HTML——HTML 由此可进
+ * CDN；对外地址由 proxy.ts 分发到对应语言。
+ */
+export const dynamicParams = false
+
+export function generateStaticParams() {
+  return SUPPORTED_LANGUAGES.map((language) => ({ lang: language }))
+}
+
+export async function generateMetadata({ params }: LanguageRouteProps): Promise<Metadata> {
+  const { lang } = await params
+  const localized = LOCALIZED_METADATA[resolveRouteLanguage(lang)]
 
   return {
     title: localized.title,
@@ -34,10 +48,12 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function RootLayout({
   children,
-}: {
+  params,
+}: LanguageRouteProps & {
   children: ReactNode
 }) {
-  const language = await getRequestLanguage()
+  const { lang } = await params
+  const language = resolveRouteLanguage(lang)
 
   return (
     <html lang={LANGUAGE_HTML_LANG[language]} data-theme="dark" data-app="imagej" suppressHydrationWarning>

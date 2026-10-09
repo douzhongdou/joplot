@@ -1,8 +1,8 @@
 import type { Metadata } from 'next'
-import type { SupportedLanguage } from '../../src/i18n/config'
-import { getRequestLanguage } from '../../src/lib/requestLanguage'
-import { ScienceApp } from '../../src/science/components/ScienceApp'
-import { resolveScienceLanguage } from '../../src/science/lib/i18n'
+import type { SupportedLanguage } from '../../../src/i18n/config'
+import { resolveRouteLanguage } from '../../../src/lib/routeLanguage'
+import { ScienceApp } from '../../../src/science/components/ScienceApp'
+import { resolveScienceLanguage } from '../../../src/science/lib/i18n'
 
 const LOCALIZED_METADATA: Record<SupportedLanguage, { title: string; description: string }> = {
   'zh-CN': {
@@ -19,8 +19,13 @@ const LOCALIZED_METADATA: Record<SupportedLanguage, { title: string; description
   },
 }
 
-export async function generateMetadata(): Promise<Metadata> {
-  const localized = LOCALIZED_METADATA[await getRequestLanguage()]
+interface LanguageRouteProps {
+  params: Promise<{ lang: string }>
+}
+
+export async function generateMetadata({ params }: LanguageRouteProps): Promise<Metadata> {
+  const { lang } = await params
+  const localized = LOCALIZED_METADATA[resolveRouteLanguage(lang)]
 
   return {
     title: localized.title,
@@ -29,8 +34,8 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 }
 
-export default async function SciencePage() {
-  const language = await getRequestLanguage()
+export default async function SciencePage({ params }: LanguageRouteProps) {
+  const { lang } = await params
 
-  return <ScienceApp language={resolveScienceLanguage(language)} />
+  return <ScienceApp language={resolveScienceLanguage(resolveRouteLanguage(lang))} />
 }

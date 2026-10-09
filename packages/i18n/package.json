@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./config": "./src/config.ts",
+    "./routing": "./src/routing.ts",
     "./types": "./src/types.ts"
   },
   "peerDependencies": {

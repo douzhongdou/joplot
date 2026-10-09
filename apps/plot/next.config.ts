@@ -15,10 +15,11 @@ const IMAGE_ASSET_PATH = '/imagej-assets'
 const nextConfig: NextConfig = {
   transpilePackages: ['@joplot/ui', '@joplot/i18n'],
   async redirects() {
-    // 语言不再进入 URL：把历史 /zh、/en/function 之类的路径永久重定向到去掉语言前缀的地址。
+    // 语言不进入对外 URL：既接住历史的 /zh、/en/function，也挡住 proxy 内部 rewrite 用的
+    // /zh-CN、/ja-JP 语言段——保证每个语言只有一份可索引的对外地址。
     return [
-      { source: '/:lang(zh|en|ja)', destination: '/', permanent: true },
-      { source: '/:lang(zh|en|ja)/:path*', destination: '/:path*', permanent: true },
+      { source: '/:lang(zh-CN|zh|en|ja-JP|ja)', destination: '/', permanent: true },
+      { source: '/:lang(zh-CN|zh|en|ja-JP|ja)/:path*', destination: '/:path*', permanent: true },
     ]
   },
   async rewrites() {

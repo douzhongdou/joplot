@@ -1,4 +1,4 @@
-import { ScientificImageWorkspace } from '../../src/imagej/components/ScientificImageWorkspace'
+import { ScientificImageWorkspace } from '../../../src/imagej/components/ScientificImageWorkspace'
 
 /**
  * 科学图像工作台（新计算引擎）。

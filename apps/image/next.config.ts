@@ -12,6 +12,14 @@ const assetPrefix = process.env.IMAGE_ASSET_PREFIX?.replace(/\/+$/, '')
 const nextConfig: NextConfig = {
   transpilePackages: ['@joplot/ui', '@joplot/i18n'],
   assetPrefix: assetPrefix || undefined,
+  async redirects() {
+    // 语言不进入对外 URL：既接住历史的 /zh、/ja，也挡住 proxy 内部 rewrite 用的
+    // /zh-CN、/ja-JP 语言段——保证每个语言只有一份对外地址。
+    return [
+      { source: '/:lang(zh-CN|zh|en|ja-JP|ja)', destination: '/imagej', permanent: true },
+      { source: '/:lang(zh-CN|zh|en|ja-JP|ja)/:path*', destination: '/:path*', permanent: true },
+    ]
+  },
   turbopack: {
     resolveAlias: {
       // these packages' `exports` map has no `import` condition; Turbopack needs the concrete

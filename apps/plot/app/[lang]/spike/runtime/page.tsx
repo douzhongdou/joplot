@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { SpikeRuntime } from '../../../src/spike/SpikeRuntime'
+import { SpikeRuntime } from '../../../../src/spike/SpikeRuntime'
 
 export const metadata: Metadata = {
   title: 'spike · data-model runtime probe',

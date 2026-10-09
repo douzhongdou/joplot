@@ -33,9 +33,17 @@ pnpm dev:image        # 启动图像工作台
 
 ## 多语言
 
-语言**不进入 URL**：由 cookie `joplot-language` 决定，首次访问按浏览器语言回退，默认英文。服务端在 layout 里读 cookie 决定 `<html lang>` 与 metadata，客户端切换只写 cookie 并就地重渲染，不跳转、不刷新。因此每种语言没有独立的可索引 URL（`sitemap` 只列静态页面，没有 hreflang）。
+语言**不进入对外 URL**，但每种语言各有**一份静态生成的 HTML**——语言是 `app/[lang]` 的路由段，`generateStaticParams` 为三种语言各生成一页，HTML 因此能进 CDN（而不是每个请求都跑一次 SSR）。对外地址由各应用的 `proxy.ts`（Next 16 里 Middleware 的新名字）分发：
 
-历史路径 `/zh`、`/en/function` 等会在 `apps/plot/next.config.ts` 里被 308 重定向到去掉语言前缀的地址。
+1. 读 cookie `joplot-language`（用户显式选择过语言）或 `Accept-Language`（浏览器偏好），**cookie 优先**；
+2. 把请求内部 rewrite 到 `/<lang>` 前缀的静态路由，浏览器地址栏不变。
+
+于是：
+
+- 首次访问的中文 / 日文用户直接看到对应语言，不需要手动切换一次才生效；
+- 客户端切换语言仍然只写 cookie 并就地重渲染，不跳转、不刷新；下次整页加载时由 proxy 生效；
+- 语言来自 cookie 的响应对每个人不同，显式声明 `Cache-Control: private, no-store`；按 `Accept-Language` 分发的响应则是共享静态页（`s-maxage=31536000`），靠平台层的 `Vary: Accept-Language` 让 CDN 按语言分缓存。**App Router 页面会覆盖 Next 配置层与 `proxy.ts` 里设置的 Vary，所以这条只能在 `vercel.json` 声明**（见下）；
+- 内部语言路径（`/zh-CN`、`/ja-JP/...`）会被各应用 `next.config.ts` 的 redirects 308 回对外地址，历史路径 `/zh`、`/en/function` 同理，保证每种语言只有一份可索引 URL（`sitemap` 只列静态页面，没有 hreflang）。
 
 ## 部署：同一域名、按路径拆分
 
@@ -54,6 +62,15 @@ pnpm dev:image        # 启动图像工作台
 2. 主应用（`apps/plot`）设置 `IMAGE_APP_ORIGIN=<图像应用部署源>`，`next.config.ts` 的
    `rewrites` 会把 `/imagej*` 和 `/imagej-assets/*` 一起反代到图像应用。
 3. 顶部导航里的「图像」入口指向 `/imagej`，因此无需改成外链。
+4. 两个应用在 Vercel 上各建一个 Project，Root Directory 分别是 `apps/plot` 与 `apps/image`；
+   环境变量见 `.env.example`（绘图工作台还要 `IMAGE_APP_ORIGIN`）。两个 `vercel.json` 里都
+   声明了 `Vary: Accept-Language`：HTML 随 `Accept-Language` 变化，而 App Router 页面会覆盖
+   Next 配置层与 `proxy.ts` 里设置的 Vary，只有平台层能盖回去，否则 CDN 会把最先缓存的那个
+   语言发给所有人。部署后用下面的命令确认这条头真的生效了：
+
+   ```bash
+   curl -sI -H 'Accept-Language: zh-CN' https://joplot.com/ | grep -i '^vary'
+   ```
 
 本地同时开发两个应用（反代时也要带上资源前缀，否则 `/imagej` 页面加载不出样式脚本）：
 
