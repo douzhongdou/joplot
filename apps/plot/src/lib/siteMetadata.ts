@@ -89,7 +89,7 @@ export function getLanguageMetadata(language: SupportedLanguage): Metadata {
     },
     manifest: '/manifest.webmanifest',
     other: {
-      'theme-color': '#155eef',
+      'theme-color': '#ff57e3',
       'apple-mobile-web-app-title': 'joplot',
     },
   }
