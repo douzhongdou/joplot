@@ -80,7 +80,7 @@ export function AppNavbar({
   }
 
   const logoImage = (
-    <div className={cn('shrink-0 overflow-hidden rounded-lg', section === 'science' ? 'h-5 sm:h-7' : 'h-7 sm:h-9 sm:rounded-xl')}>
+    <div className={cn('shrink-0 overflow-hidden', section === 'science' ? 'h-5 sm:h-7' : 'h-7 sm:h-9')}>
       <img src="/navbar-icon.webp" alt="jo plot" className="block size-full object-contain" />
     </div>
   )
