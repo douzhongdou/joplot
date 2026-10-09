@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode, useSyncExternalStore } from 'react'
-import { ChevronLeft, ChevronRight, Download, Ellipsis, File as FileIcon, Image as ImageIcon, SquarePen as EditIcon, Maximize, Plus, Redo2, RefreshCw, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, Ellipsis, Image as ImageIcon, Maximize, Plus, Redo2, RefreshCw, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { AppNavbar } from '../../components/AppNavbar'
 import { useI18n } from '../../i18n'
 import { Button } from '@joplot/ui/button'
@@ -16,7 +16,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@joplot/ui/tabs'
 import { ToggleGroup, ToggleGroupItem } from '@joplot/ui/toggle-group'
 import { Label } from '@joplot/ui/label'
-import { Separator } from '@joplot/ui/separator'
 import { Slider } from '@joplot/ui/slider'
 import { createImagejCopy } from '../lib/i18n'
 import { readDroppedContent } from '../lib/dropFiles'
@@ -2141,6 +2140,37 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     <div className="grid h-full grid-rows-[var(--navbar-height)_minmax(0,1fr)] bg-base-100">
       <AppNavbar
         section="imagej"
+        logoMenu={
+          <>
+            {/* 文件：打开与三个导出。 */}
+            <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
+              <ImageIcon size={14} />
+              {copy.openImage}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!hasImage || busy} onSelect={() => void exportPng()}>
+              <Download size={14} />
+              {copy.exportPng}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!hasImage || busy} onSelect={() => downloadTiff(false)}>
+              <Download size={14} />
+              {copy.stack.exportCurrent}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={busy || !stack || stack.length < 2} onSelect={() => downloadTiff(true)}>
+              <Download size={14} />
+              {copy.stack.exportAll}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {/* 编辑：撤销 / 重做，之后还能继续塞编辑类操作。 */}
+            <DropdownMenuItem disabled={busy || !historyFlags.canUndo} onSelect={() => void undo()}>
+              <Undo2 size={14} />
+              {copy.history.undo}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={busy || !historyFlags.canRedo} onSelect={() => void redo()}>
+              <Redo2 size={14} />
+              {copy.history.redo}
+            </DropdownMenuItem>
+          </>
+        }
         toolbar={
           <>
             <input
@@ -2150,57 +2180,6 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               className="hidden"
               onChange={onFileInput}
             />
-            {/* 「文件」下拉：打开 / 导出都归到这一处。
-                用 ghost，不再一上来就实心高亮——那是原来「打开图片」主按钮的做法，
-                但菜单本身不需要抢这个视觉焦点。 */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" variant="ghost" size="sm" className="shrink-0 font-medium">
-                  <FileIcon size={14} strokeWidth={2.2} />
-                  {copy.fileMenu}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-52">
-                <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}><ImageIcon size={14} />{copy.openImage}</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem disabled={!hasImage || busy} onSelect={() => void exportPng()}>
-                  <Download size={14} />
-                  {copy.exportPng}
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled={!hasImage || busy} onSelect={() => downloadTiff(false)}>
-                  <Download size={14} />
-                  {copy.stack.exportCurrent}
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled={busy || !stack || stack.length < 2} onSelect={() => downloadTiff(true)}>
-                  <Download size={14} />
-                  {copy.stack.exportAll}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {/* 「编辑」与「文件」并列成一组：撤销 / 重做归到这里，之后还能继续塞编辑类操作。 */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" variant="ghost" size="sm" className="shrink-0 font-medium">
-                  <EditIcon size={14} strokeWidth={2.2} />
-                  {copy.editMenu}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-52">
-                <DropdownMenuItem disabled={busy || !historyFlags.canUndo} onSelect={() => void undo()}>
-                  <Undo2 size={14} />
-                  {copy.history.undo}
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled={busy || !historyFlags.canRedo} onSelect={() => void redo()}>
-                  <Redo2 size={14} />
-                  {copy.history.redo}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {/* 菜单组与工具组是两类东西，中间用一条竖线隔开：
-                顶栏容器的 gap 是统一值，不加这条线两组会贴着，亲密性就错了。 */}
-            <Separator orientation="vertical" className="mx-0.5 h-4 shrink-0" />
 
             {/* ② 工具（图标语汇）：对齐 ImageJ 的工具栏。一个图标是一个"工具族"，
                 双击在族内切换子类型（直线 line/arrow、点 point/multipoint）；
@@ -3023,6 +3002,7 @@ export function ScientificImageWorkspace() {
     </Tabs>
   )
 }
+
 
 
 
