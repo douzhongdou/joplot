@@ -6,18 +6,24 @@ import { LANGUAGE_HTML_LANG, SUPPORTED_LANGUAGES, type SupportedLanguage } from 
 import { resolveRouteLanguage } from '../../src/lib/routeLanguage'
 import '../globals.css'
 
-const LOCALIZED_METADATA: Record<SupportedLanguage, { title: string; description: string }> = {
+/** 本应用的站点地址，canonical 与 OpenGraph 都用它；换域名时改这一处。 */
+const siteUrl = 'https://joimage.com'
+
+const LOCALIZED_METADATA: Record<SupportedLanguage, { title: string; description: string; locale: string }> = {
   'zh-CN': {
     title: 'joimage · 浏览器图像工作台',
     description: '纯本地的 8 位灰度图像处理：阈值与 Otsu 自动阈值、3×3 滤波、裁剪翻转、直方图与 ROI 测量。',
+    locale: 'zh_CN',
   },
   en: {
     title: 'joimage · in-browser image workspace',
     description: 'Local-only 8-bit grayscale image processing: threshold and Otsu, 3x3 filters, crop and flips, histogram and ROI measurements.',
+    locale: 'en_US',
   },
   'ja-JP': {
     title: 'joimage · ブラウザ画像ワークベンチ',
     description: 'ローカル完結の 8bit グレースケール画像処理：しきい値と Otsu、3×3 フィルタ、切り抜き・反転、ヒストグラムと ROI 測定。',
+    locale: 'ja_JP',
   },
 }
 
@@ -42,7 +48,35 @@ export async function generateMetadata({ params }: LanguageRouteProps): Promise<
   return {
     title: localized.title,
     description: localized.description,
-    robots: { index: false, follow: false },
+    applicationName: 'joimage',
+    // 语言不进 URL：三种语言共用同一个 canonical，与 sitemap 一致。
+    alternates: { canonical: `${siteUrl}/` },
+    openGraph: {
+      type: 'website',
+      locale: localized.locale,
+      siteName: 'joimage',
+      url: `${siteUrl}/`,
+      title: localized.title,
+      description: localized.description,
+      images: [{ url: `${siteUrl}/icon.png`, alt: 'joimage' }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: localized.title,
+      description: localized.description,
+      images: [`${siteUrl}/icon.png`],
+    },
+    robots: {
+      index: true,
+      follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+        'max-image-preview': 'large',
+        'max-snippet': -1,
+        'max-video-preview': -1,
+      },
+    },
   }
 }
 

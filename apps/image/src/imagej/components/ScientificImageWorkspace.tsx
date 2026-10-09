@@ -32,6 +32,7 @@ import { displayBlock as toDisplayBlock } from '../engine/render/display'
 import type { Dataset } from '../engine/dataset'
 import type { ImageBlock } from '../engine/types'
 import { encodeTiffStack } from '../engine/tiff'
+import { HomeHero } from './HomeHero'
 import { ImageJSidebar } from './ImageJSidebar'
 import { createDocumentRuntime, createWorkspaceEngine, useRuntimeState, type ImageWorkspaceEngine } from './useImageRuntime'
 import type { ImageRuntime } from '../engine/runtime'
@@ -2938,17 +2939,10 @@ export function ScientificImageWorkspace() {
       <input ref={fileInputRef} type="file" multiple accept="image/*,.tif,.tiff,.webp,.fits,.fit,.fts,.dng,.cr2,.nef,.arw,.orf,.rw2,.raf,.raw" className="hidden" onChange={onFileInput} />
       <div className="relative min-h-0 flex-1">
         {documents.length === 0 ? (
-          <div className="grid h-full place-items-center p-8 text-center">
-            <div className="grid gap-2 justify-items-center">
-              <ImageIcon size={34} className="text-base-content/35" aria-hidden="true" />
-              <strong className="text-base-content">{copy.emptyTitle}</strong>
-              <p className="max-w-md text-sm text-base-content/60">{copy.emptyDescription}</p>
-              <p className="text-xs text-base-content/45">{copy.localNote}</p>
-              <Button type="button" size="sm" onClick={() => fileInputRef.current?.click()}>
-                <ImageIcon size={14} strokeWidth={2.2} />
-                {copy.openImage}
-              </Button>
-            </div>
+          <div className="grid h-full grid-rows-[var(--navbar-height)_minmax(0,1fr)] bg-base-100">
+            {/* 还没有任何文档：给一屏引导，而不是一个空的工作台骨架。 */}
+            <AppNavbar section="imagej" />
+            <HomeHero copy={copy} onOpenFile={() => fileInputRef.current?.click()} />
           </div>
         ) : documents.map((doc) => (
           <TabsContent key={doc.id} value={doc.id} forceMount className="m-0 h-full outline-none data-[state=inactive]:hidden">

@@ -71,6 +71,10 @@ pnpm dev:image        # 启动图像工作台
   curl -sI -H 'Accept-Language: zh-CN' https://joplot.com/ | grep -i '^vary'
   ```
 
+### 站点地址写在哪
+
+两个应用的站点地址目前是各自 metadata 里的常量：绘图工作台在 `apps/plot/src/lib/siteMetadata.ts` 的 `siteUrl`；图像工作台在 `apps/image/app/[lang]/layout.tsx`、`app/robots.ts`、`app/sitemap.ts` 的 `siteUrl`（canonical、OpenGraph 与 sitemap 都用它）。换域名时改这几处。
+
 ### 本地一起开发
 
 两个应用互不依赖，各自启动即可（默认 3000 / 3001）：
