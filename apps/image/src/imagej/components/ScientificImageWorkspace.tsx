@@ -3049,7 +3049,7 @@ export function ScientificImageWorkspace() {
           <div className="grid h-full grid-rows-[var(--navbar-height)_minmax(0,1fr)] bg-base-100">
             {/* 还没有任何文档：给一屏引导，而不是一个空的工作台骨架。 */}
             <AppNavbar section="imagej" />
-            <HomeHero copy={copy} onOpenFile={() => fileInputRef.current?.click()} />
+            <HomeHero copy={copy} onOpenFile={() => fileInputRef.current?.click()} onOpenFolder={pickFolder} />
           </div>
         ) : documents.map((doc) => (
           <TabsContent key={doc.id} value={doc.id} forceMount className="m-0 h-full outline-none data-[state=inactive]:hidden">

@@ -1,0 +1,15 @@
+.home { min-height: 0; display: flex; flex-direction: column; align-items: center; overflow-y: auto; padding: 40px 24px 24px; background: var(--background); color: var(--foreground); }
+.start { width: 100%; max-width: 720px; margin-block: auto; padding-block: 48px 80px; text-align: center; }
+.icon { margin: 0 auto 22px; color: var(--primary); }
+.start h1 { font-size: 32px; font-weight: 550; letter-spacing: -.035em; line-height: 1.3; text-wrap: balance; }
+.actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+.actions .openButton, .actions .folderButton { height: 40px; gap: 8px; padding-inline: 18px; border-radius: var(--radius-field); font-size: 13px; }
+.home button:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
+.dropHint { margin-top: 18px; color: var(--muted-foreground); font-size: 12px; }
+.formats { margin-top: 10px; color: var(--muted-foreground); font: 10px monospace; letter-spacing: .03em; }
+@media (max-width: 480px) {
+  .home { padding-inline: 20px; }
+  .start h1 { font-size: 28px; }
+  .actions { gap: 8px; }
+  .actions .openButton, .actions .folderButton { padding-inline: 14px; font-size: 12px; }
+}
