@@ -221,20 +221,32 @@ export class ImageRuntime {
 
   /** 打开单个文件；无头传感器裸数据需要 `options`（宽高、像素类型等无法从文件推断）。 */
   async openFile(file: File, options?: RawSensorOptions): Promise<void> {
-    return this.openWith(() => this.client.import(file, options))
+    await this.openWith(() => this.client.import(file, options))
   }
 
-  /** 把多个文件作为一个 Stack 打开（文件夹导入 / 合并 tab）。 */
+  /**
+   * 把多个文件作为一个 Stack 打开（文件夹导入 / 合并 tab）。
+   *
+   * 导入成功后把每个源文件名写成该页的默认标签：多文件 Stack 的页序就是文件序
+   * （见 `importImageStack`），没有标签的话界面只有 `i / n`，翻页时看不出这一页
+   * 来自哪个文件——这也正是 ImageJ 用文件名标注 image sequence 的做法。
+   */
   async openStack(files: readonly File[], options?: ReadonlyMap<string, RawSensorOptions>): Promise<void> {
-    return this.openWith(() => this.client.importStack([...files], options))
+    const imported = await this.openWith(() => this.client.importStack([...files], options))
+    // 只有真的导入成功才写标签：失败时原 Stack 还在，不能把它标成这批文件名。
+    // 页数与文件数不一致时也不写——那种页不是「一个文件一页」，标了就是错位。
+    if (imported && this.pageCount() === files.length) this.setSliceLabels(files.map((file) => file.name))
   }
 
-  private async openWith(importer: () => Promise<Dataset>): Promise<void> {
+  /** 跑一次导入并接管数据集；返回是否成功（失败时保留原数据集，只报错）。 */
+  private async openWith(importer: () => Promise<Dataset>): Promise<boolean> {
     this.emit({ status: 'importing', error: undefined, warnings: [] })
     try {
       await this.adoptDataset(await importer())
+      return true
     } catch (error) {
       this.emit({ status: 'error', error: error instanceof Error ? error.message : String(error) })
+      return false
     }
   }
 
@@ -398,6 +410,18 @@ export class ImageRuntime {
     while (labels.length < count) labels.push('')
     labels[index] = label
     this.emit({ sliceLabels: labels })
+  }
+
+  /**
+   * 批量设置页标签（导入多文件 Stack 时用文件名做默认值）。
+   *
+   * 与 `setSliceLabel` 一样只影响显示与导出，但一次 `emit` 写完所有页：
+   * 逐页调用会触发 N 次界面更新。
+   */
+  setSliceLabels(labels: readonly string[]): void {
+    const count = this.pageCount()
+    if (!count) return
+    this.emit({ sliceLabels: Array.from({ length: count }, (_, index) => labels[index] ?? '') })
   }
 
   /** 清空所有页标签（ImageJ 的 `Remove Slice Labels`）。 */

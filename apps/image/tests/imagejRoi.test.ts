@@ -20,6 +20,9 @@ import {
   roiIsFilled,
   roiIsStroke,
   pointInPolygon,
+  roiLineMetrics,
+  roiAngleDegrees,
+  describeRoi,
 } from '../src/imagej/lib/roi.ts'
 
 test('矩形：包围盒、面积与掩码全覆盖', () => {
@@ -165,4 +168,23 @@ test('命中测试比掩码宽松：细图形也点得中', () => {
   assert.equal(roiHit(box, 10, 10), true)
   assert.equal(roiHit(box, 20, 11), true, '轮廓附近算命中，便于抓住选区')
   assert.equal(roiHit(box, 40, 40), false)
+})
+
+test('直线测量：长度按像素位移算，倾角以向右上为正', () => {
+  const downRight = roiLineMetrics(lineRoi(0, 0, 499, 499))!
+  assert.equal(downRight.length.toFixed(1), '705.7', '500×500 的包围盒对应 499 像素对角位移，√2×499')
+  assert.equal(downRight.angle.toFixed(1), '-45.0', '图像 y 轴向下，向右下为负角')
+  assert.equal(roiLineMetrics(lineRoi(0, 499, 499, 0))!.angle.toFixed(1), '45.0')
+  assert.equal(roiLineMetrics(lineRoi(10, 10, 10, 10))!.length, 0)
+  assert.equal(roiLineMetrics(rectangleRoi(0, 0, 4, 4)), null, '非直线不产生长度读数')
+  assert.equal(roiAngleDegrees(pointsRoi('angle', [0, 100, 0, 0, 100, 0]))!.toFixed(1), '90.0')
+  assert.equal(roiAngleDegrees(pointsRoi('polyline', [0, 0, 5, 5])), null, '顶点不足三个没有夹角')
+})
+
+test('状态栏读数：直线给长度与倾角，其余类型给包围盒', () => {
+  assert.equal(describeRoi(lineRoi(0, 499, 499, 0)), '705.7 px · 45.0°')
+  assert.equal(describeRoi(rectangleRoi(2, 3, 4, 5)), '4×5 @ (2, 3)')
+  assert.equal(describeRoi(rectangleRoi(2, 3, 4, 5), 20), '4×5 @ (2, 3) · 20 px')
+  assert.equal(describeRoi(pointsRoi('polyline', [0, 0, 5, 5]), 7), '6×6 @ (0, 0)', '描边类没有面积可言')
+  assert.equal(describeRoi(pointsRoi('angle', [0, 100, 0, 0, 100, 0])), '90.0°')
 })

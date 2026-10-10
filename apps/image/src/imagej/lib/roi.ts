@@ -355,6 +355,26 @@ export function roiArea(roi: Roi, width: number, height: number): number {
   return count
 }
 
+/**
+ * 直线的长度（像素）与倾角（度）。
+ *
+ * 图像坐标 y 轴向下，这里取 `-dy` 让"向右上"为正角，与 ImageJ 状态栏的读数一致。
+ */
+export function roiLineMetrics(roi: Roi): { length: number; angle: number } | null {
+  if (roi.kind !== 'line') return null
+  const dx = roi.x2 - roi.x1, dy = roi.y2 - roi.y1
+  return { length: Math.hypot(dx, dy), angle: Math.atan2(-dy, dx) * 180 / Math.PI }
+}
+
+/** 角度 ROI 在中间顶点处的夹角（度）；顶点不足三个时返回 null。 */
+export function roiAngleDegrees(roi: Roi): number | null {
+  if (roi.kind !== 'angle' || roi.points.length < 6) return null
+  const [ax = 0, ay = 0, bx = 0, by = 0, cx = 0, cy = 0] = roi.points
+  const v1x = ax - bx, v1y = ay - by, v2x = cx - bx, v2y = cy - by
+  const denominator = (Math.hypot(v1x, v1y) || 1) * (Math.hypot(v2x, v2y) || 1)
+  return Math.acos(Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / denominator))) * 180 / Math.PI
+}
+
 /** 平移整个 ROI（拖拽用）；坐标不取整，保持连续拖拽的精度。 */
 export function roiTranslate(roi: Roi, dx: number, dy: number): Roi {
   if (roi.kind === 'rectangle' || roi.kind === 'oval') return { ...roi, x: roi.x + dx, y: roi.y + dy }
@@ -440,12 +460,21 @@ export function clampRoi(roi: Roi, width: number, height: number): Roi {
   return dx || dy ? roiTranslate(roi, dx, dy) : roi
 }
 
-/** ROI 的简短描述（状态栏显示）。 */
-export function describeRoi(roi: Roi, area: number): string {
+/**
+ * 状态栏几何读数（工具名由调用方按语言拼接在自己的前缀里）。
+ *
+ * 直线按 ImageJ 状态栏的习惯给长度与倾角，角度工具给顶点夹角，其余类型给包围盒；
+ * `area` 只对填充类 ROI 生效——描边类没有"面积"可言。
+ */
+export function describeRoi(roi: Roi, area?: number): string {
+  const metrics = roiLineMetrics(roi)
+  if (metrics) return `${metrics.length.toFixed(1)} px · ${metrics.angle.toFixed(1)}°`
+  const angle = roiAngleDegrees(roi)
+  if (angle !== null) return `${angle.toFixed(1)}°`
   const bounds = roiBounds(roi)
   const geometry = `${bounds.width}×${bounds.height} @ (${bounds.x}, ${bounds.y})`
-  if (roiIsStroke(roi)) return `${roi.kind} · ${geometry}`
-  return `${roi.kind} · ${geometry} · ${area} px`
+  if (area === undefined || roiIsStroke(roi)) return geometry
+  return `${geometry} · ${area} px`
 }
 
 /**

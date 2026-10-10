@@ -1,12 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { importMemory } from '../src/imagej/engine/importer.ts'
+import { importFile, importMemory } from '../src/imagej/engine/importer.ts'
 import { PureComputeEngine } from '../src/imagej/engine/compute/engine.ts'
 import { createRecipe, makeStep } from '../src/imagej/engine/recipe.ts'
 import { blockToRgba } from '../src/imagej/engine/render/rgba.ts'
 import { levels } from '../src/imagej/engine/compute/pureOps.ts'
 import { displayBlock } from '../src/imagej/engine/render/display.ts'
 import { rasterizeViewport } from '../src/imagej/engine/render/raster.ts'
+import type { Image as ItkImage } from 'itk-wasm'
 import type { ImageBlock, PixelArray } from '../src/imagej/engine/types.ts'
 
 function rgbBlock(): ImageBlock {
@@ -159,4 +160,43 @@ test('RGB 栈转灰度、旋转后只保留当前切片的尺寸', async () => {
   assert.deepEqual(result.image!.axes, ['c', 'z', 'y', 'x'])
   assert.deepEqual(result.image!.shape, [1, 1, 2, 1])
   assert.deepEqual([...result.image!.data], [204, 194])
+})
+
+/**
+ * 16 位彩色（相机 / 天文导出的 16-bit RGB PNG）必须按原精度导入。
+ *
+ * 回归的是真实故障：ITK 报 `componentType: 'uint16'`、`components: 3`、数据为交织的
+ * Uint16Array 时，导入层曾固定分配 Uint8Array，把每个样本截成低 8 位 —— 画面成为纯噪声，
+ * 直方图也退化成 0..255 的均匀分布。
+ */
+test('16 位彩色按原精度导入为平面三通道，且显示映射不再截成低 8 位', async () => {
+  // ITK 的 RGB 数据逐像素交织：第 1 行 (0,0)、(1,0)，第 2 行 (0,1)、(1,1)。
+  const interleaved = Uint16Array.from([
+    1000, 2000, 3000, 4000, 5000, 6000,
+    7000, 8000, 9000, 10000, 11000, 12000,
+  ])
+  const image = {
+    imageType: { dimension: 2, componentType: 'uint16', pixelType: 'RGB', components: 3 },
+    size: [2, 2], spacing: [1, 1], origin: [0, 0], direction: new Float64Array([1, 0, 0, 1]),
+    data: interleaved,
+  } as unknown as ItkImage
+  const imported = await importFile(
+    new File([new Uint8Array(8)], 'stacked-16.png', { type: 'image/png' }),
+    async () => image,
+  )
+  assert.equal(imported.dataset.dtype, 'uint16')
+  assert.equal(imported.dataset.componentKind, 'rgb')
+  assert.deepEqual(imported.dataset.axes, ['c', 'y', 'x'])
+  assert.deepEqual([...imported.dataset.shape], [3, 2, 2])
+  // 不得再出现「彩色图像按 uint8 载入」这类降位提示。
+  assert.deepEqual(imported.warnings, [])
+
+  const block = await imported.storage.readRegion({ start: [0, 0, 0], shape: [3, 2, 2] })
+  assert.equal(block.dtype, 'uint16')
+  // 交织 → 平面（R 平面、G 平面、B 平面）。
+  assert.deepEqual([...block.data], [1000, 4000, 7000, 10000, 2000, 5000, 8000, 11000, 3000, 6000, 9000, 12000])
+
+  const settings = { window: 65535, level: 32767.5 }
+  const rgba = rasterizeViewport(block, { zoom: 1, panX: 0, panY: 0, devicePixelRatio: 1, viewportWidth: 2, viewportHeight: 2 }, settings)
+  assert.deepEqual([...rgba.slice(0, 4)], [4, 8, 12, 255])
 })

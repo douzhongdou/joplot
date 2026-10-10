@@ -103,3 +103,30 @@ test('重新打开数据集会清空标签', async () => {
   await runtime.openFile(new File([], 'stack.tif'))
   assert.equal(runtime.getState().sliceLabels, undefined)
 })
+
+test('setSliceLabels 一次写完，并按页数补齐', async () => {
+  const runtime = makeRuntime()
+  await runtime.openFile(new File([], 'stack.tif'))
+  runtime.setSliceLabels(['first'])
+  assert.deepEqual(runtime.getState().sliceLabels, ['first', '', ''])
+})
+
+test('openStack 用源文件名做每页的默认标签', async () => {
+  const runtime = makeRuntime()
+  // fake client 的 importStack 固定返回 3 页，所以这里给 3 个文件。
+  await runtime.openStack([new File([], 'a.png'), new File([], 'b.png'), new File([], 'c.png')])
+  assert.deepEqual(runtime.getState().sliceLabels, ['a.png', 'b.png', 'c.png'])
+})
+
+test('页数与文件数对不上时不写默认标签，避免文件名错位', async () => {
+  const runtime = makeRuntime()
+  await runtime.openStack([new File([], 'a.png'), new File([], 'b.png')])
+  assert.equal(runtime.getState().sliceLabels, undefined)
+})
+
+test('重排 Stack 后默认标签跟着新的文件顺序（重排走 openStack 重建）', async () => {
+  const runtime = makeRuntime()
+  await runtime.openStack([new File([], 'a.png'), new File([], 'b.png'), new File([], 'c.png')])
+  await runtime.openStack([new File([], 'c.png'), new File([], 'a.png'), new File([], 'b.png')])
+  assert.deepEqual(runtime.getState().sliceLabels, ['c.png', 'a.png', 'b.png'])
+})

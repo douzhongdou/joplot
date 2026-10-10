@@ -130,21 +130,34 @@ function normalizeItkImage(image: ItkImage): DecodedImage {
   }
 
   if (components === 3 || components === 4) {
-    if (dtype !== 'uint8') warnings.push('彩色图像按 uint8 载入')
-    const data = new Uint8Array(pixels * 3)
+    /*
+     * ITK 的彩色数据逐像素交织（R,G,B[,A]），本项目彩色块按 c 轴平面存放，需要一次重排。
+     *
+     * 缓冲必须按原分量类型分配：早先这里固定用 `Uint8Array`，16 位彩色（例如相机 / 天文
+     * 导出的 16-bit RGB PNG）会被逐个截成低 8 位，画面退化成纯噪声。显示链路
+     * （`render/raster.ts`、`render/display.ts`、`lib/fastHistogram.ts`、`colorAdjustments.ts`）
+     * 早已按 dtype 取上界，导入阶段降位只会丢精度。
+     */
+    if (source.length !== pixels * components) {
+      throw new Error(`ITK 彩色数据长度 ${source.length} 与 ${pixels} 像素 × ${components} 分量不一致`)
+    }
+    const data = allocateBuffer(dtype, pixels * 3)
+    const dst = data as unknown as { [index: number]: number }
+    for (let pixel = 0, at = 0; pixel < pixels; pixel += 1, at += components) {
+      dst[pixel] = source[at]!
+      dst[pixels + pixel] = source[at + 1]!
+      dst[2 * pixels + pixel] = source[at + 2]!
+    }
+    if (components === 4) warnings.push('已丢弃 alpha 通道，仅保留 RGB')
+    if (componentTypeByteLength(componentType) !== componentTypeByteLength(dtype)) warnings.push(`已把 ${componentType} 转换为 ${dtype}`)
     const channels: ChannelInfo[] = [
       { index: 0, name: 'Red', kind: 'rgb', displayColor: [255, 0, 0] },
       { index: 1, name: 'Green', kind: 'rgb', displayColor: [0, 255, 0] },
       { index: 2, name: 'Blue', kind: 'rgb', displayColor: [0, 0, 255] },
     ]
-    for (let pixel = 0; pixel < pixels; pixel += 1) {
-      for (let c = 0; c < 3; c += 1) {
-        data[c * pixels + pixel] = source[pixel * components + c]!
-      }
-    }
     const axes: Dataset['axes'] = dimension === 3 ? ['c', 'z', 'y', 'x'] : ['c', 'y', 'x']
     const shape = dimension === 3 ? [3, depth, height, width] : [3, height, width]
-    return { dtype: 'uint8', axes, shape, channels, componentKind: 'rgb', data, spacing: spacingOf(image), origin: originOf(image), warnings }
+    return { dtype, axes, shape, channels, componentKind: 'rgb', data, spacing: spacingOf(image), origin: originOf(image), warnings }
   }
 
   throw new Error(`暂不支持 ${components} 分量图像`)

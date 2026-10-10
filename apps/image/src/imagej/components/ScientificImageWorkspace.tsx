@@ -23,7 +23,7 @@ import { analysisViews, type ViewType } from '../lib/analysisViews'
 import { fastHistogram } from '../lib/fastHistogram'
 import { toRoi, type RoiInput } from '../lib/processor'
 import { animationInterval, nextAnimationStep } from '../lib/animation'
-import { clampRoi, isRoi, roiBounds, roiPoints, type Roi } from '../lib/roi'
+import { clampRoi, describeRoi, isRoi, roiBounds, roiPoints, type Roi } from '../lib/roi'
 import { VARIANT_ICONS, groupTools, toolByShortcut, type ToolDefinition, type ToolId } from '../lib/tools'
 import { getOperator, toUiRegistry } from '../engine/operators'
 import { stepAppliesToSelection, type StepScope } from '../engine/recipe'
@@ -209,11 +209,13 @@ function parseSliceList(input: string, count: number): number[] {
  * 每个可翻的轴独占一行，因此 hyperstack（c/z/t）也只是几行矮栏，不会挤压图像。
  * 翻页在途时页码显示 `…`：架构方案第 1 节禁止"新页码配旧像素"。
  */
-function StackSliceBar({ slices, stale, disabled, pageLabel, onSelect }: {
+function StackSliceBar({ slices, stale, disabled, pageLabel, label, onSelect }: {
   slices: readonly { axis: 't' | 'c' | 'z'; length: number; index: number }[]
   stale: boolean
   disabled: boolean
   pageLabel: string
+  /** 当前页的来源文件名（多文件 Stack 才有）：翻页时回答「这一页是哪个文件」。 */
+  label?: string
   onSelect(axis: 't' | 'c' | 'z', index: number): void
 }) {
   if (!slices.length) return null
@@ -258,6 +260,13 @@ function StackSliceBar({ slices, stale, disabled, pageLabel, onSelect }: {
           </span>
         </div>
       ))}
+      {/* 来源文件名单独一行：挤进上面的轴行会被滑块压成几个字，这里能读全（过长仍截断，`title` 给全名）。 */}
+      {label ? (
+        <div className="flex h-6 min-w-0 items-center gap-1.5 border-t border-base-300/60 px-2 text-xs text-base-content/70">
+          <ImageIcon size={12} className="shrink-0 opacity-60" />
+          <span className="truncate" title={label}>{label}</span>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -613,12 +622,12 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   }, [])
 
   const roiLabel = useMemo(() => {
-    if (!roi) return '—'
-    const bounds = roiBounds(roi)
+    if (!roi) return ''
     const tools = copy.tools as Record<string, string>
     // 直线的 `arrow` 是子类型，`kind` 仍是 line，这里显示用户实际选的那个名字。
     const name = roi.kind === 'line' && roi.arrow ? tools.arrow ?? roi.kind : tools[roi.kind] ?? roi.kind
-    return `${name} · ${bounds.width}×${bounds.height} @ (${bounds.x}, ${bounds.y})`
+    // 读数口径见 `describeRoi`：直线给长度/倾角，角度给夹角，其余给包围盒。
+    return `${name} · ${describeRoi(roi)}`
   }, [roi, copy])
   /**
    * 当前展开的命令标签。
@@ -2306,9 +2315,11 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               </Button>
             ) : null}
 
-            {/* ⑦ 状态读数：靠右。分区一律用间距表达，所以这里不再挂一根左边框。 */}
+            {/* ⑦ 状态读数：靠右。分区一律用间距表达，所以这里不再挂一根左边框。
+                两段读数各自按有无拼接，中间的分隔符只在两段都在时出现——
+                没选区就没必要留一个孤零零的破折号占位。 */}
             <span className="ml-auto hidden shrink-0 truncate pl-2 font-mono text-xs text-base-content/55 md:inline">
-              {probe ? `(${probe.x}, ${probe.y}) = ${probe.value} · ` : ''}{roiLabel}
+              {[probe ? `(${probe.x}, ${probe.y}) = ${probe.value}` : '', roiLabel].filter(Boolean).join(' · ')}
             </span>
           </>
         }
@@ -2420,7 +2431,8 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
           </ContextMenu>
           {/* 切片栏紧贴图像窗口的**下方**，与 ImageJ 的 StackWindow 滚动条位置一致
               （ImageLayout 把滚动条排在画布之后），并从工具栏里移了出来。 */}
-          <StackSliceBar slices={slices} stale={stale} disabled={navBusy} pageLabel={copy.stack.page} onSelect={selectAxis} />
+          <StackSliceBar slices={slices} stale={stale} disabled={navBusy} pageLabel={copy.stack.page}
+            label={stale ? '' : state.sliceLabels?.[pageIndex] ?? ''} onSelect={selectAxis} />
         </main>
 
         {/* 右栏「分析」：卡片式视图（一个卡片一个可视化）+ 导出 */}

@@ -518,8 +518,6 @@ export function ImageViewport({ block, windowLevel, options, tool, variant, roi,
         <circle key={handle.index} cx={handle.x} cy={handle.y} r={3.5}
           fill="var(--color-base-100, #fff)" stroke="var(--color-primary, #3b82f6)" strokeWidth={1.5} />
       ))}
-      {definition.id === 'angle' && roi?.kind === 'angle' ? angleLabel(roi, camera) : null}
-      {definition.id === 'line' && roi?.kind === 'line' ? lineLabel(roi, camera) : null}
     </svg>
   </div>
 }
@@ -531,26 +529,4 @@ function pendingPreview(pending: { kind: PointsRoi['kind']; points: number[]; ho
   return pointsRoi(pending.kind, points)
 }
 
-/** 直线的长度与角度标注（对齐 ImageJ 画线时显示长度/角度的习惯）。 */
-function lineLabel(roi: Roi, camera: CameraState) {
-  if (roi.kind !== 'line') return null
-  const dx = roi.x2 - roi.x1, dy = roi.y2 - roi.y1
-  const cx = camera.panX + ((roi.x1 + roi.x2) / 2) * camera.zoom
-  const cy = camera.panY + ((roi.y1 + roi.y2) / 2) * camera.zoom
-  return <text x={cx + 6} y={cy - 6} className="fill-base-content text-xs" stroke="var(--color-base-100, #fff)" strokeWidth={3}>
-    {`${Math.hypot(dx, dy).toFixed(1)} px · ${(Math.atan2(-dy, dx) * 180 / Math.PI).toFixed(1)}°`}
-  </text>
-}
-
-/** 角度标注（ImageJ 的 angle 工具在中点显示夹角）。 */
-function angleLabel(roi: Roi, camera: CameraState) {
-  if (roi.kind !== 'angle' || roi.points.length < 6) return null
-  const [ax = 0, ay = 0, bx = 0, by = 0, cx = 0, cy = 0] = roi.points
-  const v1x = ax - bx, v1y = ay - by, v2x = cx - bx, v2y = cy - by
-  const angle = Math.acos(Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / ((Math.hypot(v1x, v1y) || 1) * (Math.hypot(v2x, v2y) || 1))))) * 180 / Math.PI
-  const screenX = camera.panX + bx * camera.zoom, screenY = camera.panY + by * camera.zoom
-  return <text x={screenX + 8} y={screenY - 8} className="fill-base-content text-xs" stroke="var(--color-base-100, #fff)" strokeWidth={3}>
-    {`${angle.toFixed(1)}°`}
-  </text>
-}
 
