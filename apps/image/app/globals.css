@@ -28,7 +28,7 @@
  * 避免工具栏和侧栏里按钮过大、大小参差。
  * 写成不进入 @layer 的规则，从而稳定覆盖 Tailwind 工具类（如 h-8 / size-8）。
  */
-[data-app='imagej'] [data-slot='button'],
+[data-app='imagej'] [data-slot='button']:not([data-home-action]),
 [data-app='imagej'] [data-slot='select-trigger'] {
   height: 1.75rem;
   padding-inline: 0.5rem;

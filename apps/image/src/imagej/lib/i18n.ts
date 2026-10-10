@@ -312,7 +312,7 @@ export interface ImagejCopy {
 }
 
 const zhCN: ImagejCopy = {
-  title: '图像工作台',
+  title: '浏览器里的图像处理和分析工具',
   subtitle: '8 位灰度 · ImageJ 风格处理流程',
   localNote: '图片仅在浏览器本地解码与处理，不会上传到服务器。',
   openImage: '打开图片',
@@ -606,7 +606,7 @@ run: '执行',
 }
 
 const en: ImagejCopy = {
-  title: 'Image workspace',
+  title: 'Image processing and analysis in your browser',
   subtitle: '8-bit grayscale · ImageJ-style processing',
   localNote: 'Images are decoded and processed in your browser — nothing is uploaded.',
   openImage: 'Open image',
@@ -900,7 +900,7 @@ run: 'Run',
 }
 
 const jaJP: ImagejCopy = {
-  title: '画像ワークベンチ',
+  title: 'ブラウザで使える画像処理・解析ツール',
   subtitle: '8bit グレースケール · ImageJ 風の処理フロー',
   localNote: '画像はブラウザ内でのみ処理され、サーバーにはアップロードされません。',
   openImage: '画像を開く',
