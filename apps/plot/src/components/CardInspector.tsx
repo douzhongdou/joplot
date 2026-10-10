@@ -1,0 +1,804 @@
+import { useMemo, useState } from 'react'
+import {
+  Copy,
+  MoreHorizontal,
+  Palette,
+  Plus,
+  Sparkles,
+  Trash2,
+} from 'lucide-react'
+import type { ChartCard, ChartSeries, CsvData, HeatmapConfig } from '../types'
+import { listAvailableSeriesYColumns, updateAggregationConfig } from '../lib/workbench'
+import { SelectMenu } from './SelectMenu'
+import { Switch } from './Switch'
+import { Button } from '@joplot/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@joplot/ui/dropdown-menu'
+import { useI18n } from '../i18n'
+import type {
+  AggregationConfig,
+  AggregationGroupMode,
+  AggregationKind,
+  AxisValueKind,
+  ChartDataMode,
+  TimeBucket,
+} from '../types'
+
+interface Props {
+  card: ChartCard | null
+  datasets: CsvData[]
+  activeDatasetId: string | null
+  onChangeCard: (patch: Partial<ChartCard>) => void
+  onAddSeries: (datasetId?: string) => void
+  onChangeSeries: (seriesId: string, patch: Partial<ChartSeries>) => void
+  onRemoveSeries: (seriesId: string) => void
+  onDuplicate: () => void
+  onRemove: () => void
+}
+
+type InspectorTab = 'base' | 'display'
+
+const fieldLabelClass = 'text-xs font-medium uppercase tracking-[0.12em] text-base-content/55'
+const inputClass = 'h-12 w-full rounded-[var(--radius-field)] border-0 bg-muted px-4 text-sm text-base-content outline-none transition placeholder:text-muted-foreground'
+
+const aggregationOptions: AggregationKind[] = [
+  'sum',
+  'mean',
+  'count',
+  'max',
+  'min',
+  'median',
+  'distinctCount',
+  'missingCount',
+  'stddev',
+  'variance',
+]
+const timeBucketOptions: TimeBucket[] = ['day', 'week', 'month', 'quarter', 'year']
+const xKindOptions: AxisValueKind[] = ['category', 'number', 'time']
+const groupModeOptions: AggregationGroupMode[] = ['file', 'field']
+
+export function CardInspector({
+  card,
+  datasets,
+  activeDatasetId,
+  onChangeCard,
+  onAddSeries,
+  onChangeSeries,
+  onRemoveSeries,
+  onDuplicate,
+  onRemove,
+}: Props) {
+  const { t, formatNumber } = useI18n()
+  const [activeTab, setActiveTab] = useState<InspectorTab>('base')
+
+  const kindOptions: Array<{ value: ChartCard['kind']; label: string }> = [
+    { value: 'line', label: t('chartKinds.line') },
+    { value: 'area', label: t('chartKinds.area') },
+    { value: 'scatter', label: t('chartKinds.scatter') },
+    { value: 'bar', label: t('chartKinds.bar') },
+    { value: 'pie', label: t('chartKinds.pie') },
+    { value: 'radar', label: t('chartKinds.radar') },
+    { value: 'heatmap', label: t('chartKinds.heatmap') },
+    { value: 'stats', label: t('chartKinds.stats') },
+  ]
+
+  const drawModeOptions: Array<{ value: NonNullable<ChartCard['drawMode']>; label: string }> = card?.kind === 'area'
+    ? [
+        { value: 'spline', label: t('drawModes.spline') },
+        { value: 'lines', label: t('drawModes.lines') },
+      ]
+    : [
+        { value: 'spline', label: t('drawModes.spline') },
+        { value: 'lines', label: t('drawModes.lines') },
+        { value: 'spline+markers', label: t('drawModes.spline+markers') },
+        { value: 'lines+markers', label: t('drawModes.lines+markers') },
+      ]
+  const dataModeOptions: Array<{ value: ChartDataMode; label: string }> = [
+    { value: 'raw', label: t('inspector.dataModes.raw') },
+    { value: 'aggregate', label: t('inspector.dataModes.aggregate') },
+  ]
+
+  const allHeaders = useMemo(
+    () => Array.from(new Set(datasets.flatMap((dataset) => dataset.headers))),
+    [datasets],
+  )
+  const datasetsById = useMemo(
+    () => Object.fromEntries(datasets.map((dataset) => [dataset.id, dataset])),
+    [datasets],
+  )
+  const selectedDatasetIds = card?.dataConfig.mode === 'aggregate'
+    ? card.dataConfig.aggregation.datasetIds
+    : []
+  const selectedDatasets = useMemo(
+    () => selectedDatasetIds
+      .map((datasetId) => datasetsById[datasetId])
+      .filter((dataset): dataset is CsvData => Boolean(dataset)),
+    [datasetsById, selectedDatasetIds],
+  )
+  const selectedHeaders = useMemo(
+    () => Array.from(new Set(selectedDatasets.flatMap((dataset) => dataset.headers))),
+    [selectedDatasets],
+  )
+  const selectedNumericColumns = useMemo(
+    () => Array.from(new Set(selectedDatasets.flatMap((dataset) => dataset.numericColumns))),
+    [selectedDatasets],
+  )
+
+  function createDefaultAggregationConfig(): AggregationConfig {
+    const fallbackDataset = (activeDatasetId ? datasetsById[activeDatasetId] : undefined) ?? datasets[0]
+    const xColumn = card?.xColumn || fallbackDataset?.headers[0] || ''
+    const metricColumn =
+      fallbackDataset?.numericColumns.find((column) => column !== xColumn)
+      ?? fallbackDataset?.numericColumns[0]
+      ?? ''
+
+    return {
+      datasetIds: fallbackDataset ? [fallbackDataset.id] : [],
+      xColumn,
+      xKind: 'category',
+      timeBucket: 'month',
+      groupMode: 'file',
+      groupColumn: null,
+      metricColumn,
+      aggregation: 'sum',
+    }
+  }
+
+  function changeDataMode(mode: ChartDataMode) {
+    if (mode === 'raw') {
+      onChangeCard({ dataConfig: { mode: 'raw' } })
+      return
+    }
+
+    onChangeCard({
+      dataConfig: {
+        mode: 'aggregate',
+        aggregation: card?.dataConfig.mode === 'aggregate'
+          ? card.dataConfig.aggregation
+          : createDefaultAggregationConfig(),
+      },
+    })
+  }
+
+  function changeAggregation(patch: Partial<AggregationConfig>) {
+    const current = card?.dataConfig.mode === 'aggregate'
+      ? card.dataConfig.aggregation
+      : createDefaultAggregationConfig()
+    const next = updateAggregationConfig(current, patch)
+
+    onChangeCard({
+      dataConfig: {
+        mode: 'aggregate',
+        aggregation: next,
+      },
+      xColumn: next.xColumn,
+    })
+  }
+
+  function toggleAggregationDataset(datasetId: string) {
+    const current = card?.dataConfig.mode === 'aggregate'
+      ? card.dataConfig.aggregation
+      : createDefaultAggregationConfig()
+    const datasetIds = current.datasetIds.includes(datasetId)
+      ? current.datasetIds.filter((id) => id !== datasetId)
+      : [...current.datasetIds, datasetId]
+
+    changeAggregation({ datasetIds: datasetIds.length > 0 ? datasetIds : current.datasetIds })
+  }
+
+  if (!card) {
+    return (
+      <section className="grid min-h-full place-items-center bg-base-100 px-5 py-14 text-center sm:px-6 sm:py-16">
+        <div className="grid max-w-xs justify-items-center gap-3">
+          <div className="inline-grid size-14 place-items-center rounded-[calc(var(--radius-box)+0.25rem)] bg-primary/10 text-primary">
+            <Sparkles size={22} strokeWidth={2.2} />
+          </div>
+          <strong className="text-lg font-semibold text-base-content">{t('inspector.emptyTitle')}</strong>
+        </div>
+      </section>
+    )
+  }
+
+  const currentKindLabel = kindOptions.find((option) => option.value === card.kind)?.label ?? t('chartKinds.fallback')
+
+  return (
+    <section className="grid min-h-full grid-cols-[minmax(0,1fr)] content-start bg-base-100">
+      <div className="flex items-start justify-between gap-3 border-base-300 px-5 py-4 sm:px-6 sm:py-5">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1">
+          <h2 className="text-xl font-semibold tracking-tight text-base-content sm:text-2xl">{currentKindLabel}</h2>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={onDuplicate} aria-label={t('inspector.duplicateCard')} title={t('inspector.duplicateCard')}>
+            <Copy size={16} strokeWidth={2.1} />
+          </Button>
+          <Button variant="ghost" size="icon" className="hover:text-destructive" onClick={onRemove} aria-label={t('inspector.deleteCard')} title={t('inspector.deleteCard')}>
+            <Trash2 size={16} strokeWidth={2.1} />
+          </Button>
+        </div>
+      </div>
+
+      <div
+        role="tablist"
+        aria-label={currentKindLabel}
+        className="flex items-center gap-5 border-b border-base-300 px-5 sm:px-6"
+        onKeyDown={(event) => {
+          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+            return
+          }
+          event.preventDefault()
+          setActiveTab((current) => (current === 'base' ? 'display' : 'base'))
+        }}
+      >
+        <button
+          type="button"
+          role="tab"
+          id="inspector-tab-basic"
+          tabIndex={activeTab === 'base' ? 0 : -1}
+          aria-selected={activeTab === 'base'}
+          aria-controls="inspector-panel-basic"
+          className={`inline-flex h-14 items-center border-b-2 text-base font-semibold transition ${
+            activeTab === 'base'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-base-content/70 hover:text-base-content'
+          }`}
+          onClick={() => setActiveTab('base')}
+        >
+          {t('inspector.baseTab')}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="inspector-tab-display"
+          tabIndex={activeTab === 'display' ? 0 : -1}
+          aria-selected={activeTab === 'display'}
+          aria-controls="inspector-panel-display"
+          className={`inline-flex h-14 items-center border-b-2 text-base font-semibold transition ${
+            activeTab === 'display'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-base-content/70 hover:text-base-content'
+          }`}
+          onClick={() => setActiveTab('display')}
+        >
+          {t('inspector.displayTab')}
+        </button>
+      </div>
+
+      <div className="px-5 pb-8 sm:px-6">
+        {activeTab === 'base' && (
+          <div role="tabpanel" id="inspector-panel-basic" aria-labelledby="inspector-tab-basic">
+            <section className="py-6">
+              <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.baseSectionTitle')}</div>
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
+                <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2 sm:col-span-2">
+                  <span className={fieldLabelClass}>{t('inspector.title')}</span>
+                  <input
+                    type="text"
+                    value={card.title}
+                    onChange={(event) => onChangeCard({ title: event.target.value })}
+                    className={inputClass}
+                  />
+                </label>
+
+                <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                  <span className={fieldLabelClass}>{t('inspector.chartKind')}</span>
+                  <SelectMenu
+                    value={card.kind}
+                    options={kindOptions}
+                    onChange={(value) => onChangeCard({
+                      kind: value,
+                      ...(value === 'pie' ? { showLegend: false } : {}),
+                    })}
+                    buttonClassName="shadow-none"
+                  />
+                </label>
+
+                {card.kind !== 'heatmap' && (
+                <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                  <span className={fieldLabelClass}>{t('inspector.dataMode')}</span>
+                  <SelectMenu
+                    value={card.dataConfig.mode}
+                    options={dataModeOptions}
+                    onChange={changeDataMode}
+                    buttonClassName="shadow-none"
+                  />
+                </label>
+                )}
+
+                {card.kind === 'heatmap' && card.heatmapConfig && (
+                  <HeatmapFields
+                    config={card.heatmapConfig}
+                    datasets={datasets}
+                    onChange={(patch) => onChangeCard({ heatmapConfig: { ...card.heatmapConfig!, ...patch } })}
+                    fieldLabelClass={fieldLabelClass}
+                  />
+                )}
+
+                {card.dataConfig.mode === 'raw' && card.kind !== 'heatmap' && (
+                <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                  <span className={fieldLabelClass}>{t('inspector.sharedXAxis')}</span>
+                  <SelectMenu
+                    value={card.xColumn}
+                    options={allHeaders.map((header) => ({
+                      value: header,
+                      label: header,
+                    }))}
+                    onChange={(value) => onChangeCard({ xColumn: value })}
+                    buttonClassName="shadow-none"
+                  />
+                </label>
+                )}
+
+                {card.dataConfig.mode === 'raw' && (card.kind === 'line' || card.kind === 'area') && (
+                  <>
+                    <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                      <span className={fieldLabelClass}>{t('inspector.drawMode')}</span>
+                      <SelectMenu
+                        value={card.drawMode}
+                        options={drawModeOptions}
+                        onChange={(value) => onChangeCard({ drawMode: value })}
+                        buttonClassName="shadow-none"
+                      />
+                    </label>
+
+                    <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                      <span className={fieldLabelClass}>{t('inspector.lineWidth')}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="6"
+                        value={card.lineWidth}
+                        onChange={(event) => onChangeCard({ lineWidth: Number(event.target.value) || 1 })}
+                        className={inputClass}
+                      />
+                    </label>
+                  </>
+                )}
+
+                {card.dataConfig.mode === 'aggregate' && (
+                  <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4 sm:col-span-2">
+                    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                      <span className={fieldLabelClass}>{t('inspector.aggregate.dataSources')}</span>
+                      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                        {datasets.map((dataset) => {
+                          const selected = card.dataConfig.mode === 'aggregate'
+                            && card.dataConfig.aggregation.datasetIds.includes(dataset.id)
+
+                          return (
+                            <button
+                              key={dataset.id}
+                              type="button"
+                              aria-pressed={selected}
+                              className={`flex min-h-12 items-center justify-between rounded-[var(--radius-field)] px-4 text-left text-sm transition ${
+                                selected
+                                  ? 'bg-accent text-accent-foreground'
+                                  : 'bg-muted text-base-content/70 hover:bg-accent hover:text-base-content'
+                              }`}
+                              onClick={() => toggleAggregationDataset(dataset.id)}
+                            >
+                              <span className="min-w-0 flex-1 truncate font-medium" title={dataset.fileName}>{dataset.fileName}</span>
+                              <span className="text-xs">{t('common.rowCount', { count: formatNumber(dataset.rowCount) })}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
+                      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                        <span className={fieldLabelClass}>{t('inspector.aggregate.xColumn')}</span>
+                        <SelectMenu
+                          value={card.dataConfig.aggregation.xColumn}
+                          options={(selectedHeaders.length > 0 ? selectedHeaders : allHeaders).map((header) => ({
+                            value: header,
+                            label: header,
+                          }))}
+                          onChange={(value) => changeAggregation({ xColumn: value })}
+                          buttonClassName="shadow-none"
+                        />
+                      </label>
+
+                      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                        <span className={fieldLabelClass}>{t('inspector.aggregate.xKind')}</span>
+                        <SelectMenu
+                          value={card.dataConfig.aggregation.xKind}
+                          options={xKindOptions.map((option) => ({
+                            value: option,
+                            label: t(`inspector.xKinds.${option}`),
+                          }))}
+                          onChange={(value) => changeAggregation({ xKind: value })}
+                          buttonClassName="shadow-none"
+                        />
+                      </label>
+
+                      {card.dataConfig.aggregation.xKind === 'time' && (
+                        <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                          <span className={fieldLabelClass}>{t('inspector.aggregate.timeBucket')}</span>
+                          <SelectMenu
+                            value={card.dataConfig.aggregation.timeBucket}
+                            options={timeBucketOptions.map((option) => ({
+                              value: option,
+                              label: t(`inspector.timeBuckets.${option}`),
+                            }))}
+                            onChange={(value) => changeAggregation({ timeBucket: value })}
+                            buttonClassName="shadow-none"
+                          />
+                        </label>
+                      )}
+
+                      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                        <span className={fieldLabelClass}>{t('inspector.aggregate.metricColumn')}</span>
+                        <SelectMenu
+                          value={card.dataConfig.aggregation.metricColumn}
+                          options={(selectedNumericColumns.length > 0 ? selectedNumericColumns : allHeaders).map((header) => ({
+                            value: header,
+                            label: header,
+                          }))}
+                          onChange={(value) => changeAggregation({ metricColumn: value })}
+                          buttonClassName="shadow-none"
+                        />
+                      </label>
+
+                      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                        <span className={fieldLabelClass}>{t('inspector.aggregate.aggregation')}</span>
+                        <SelectMenu
+                          value={card.dataConfig.aggregation.aggregation}
+                          options={aggregationOptions.map((option) => ({
+                            value: option,
+                            label: t(`inspector.aggregations.${option}`),
+                          }))}
+                          onChange={(value) => changeAggregation({ aggregation: value })}
+                          buttonClassName="shadow-none"
+                        />
+                      </label>
+
+                      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                        <span className={fieldLabelClass}>{t('inspector.aggregate.groupMode')}</span>
+                        <SelectMenu
+                          value={card.dataConfig.aggregation.groupMode}
+                          options={groupModeOptions.map((option) => ({
+                            value: option,
+                            label: t(`inspector.groupModes.${option}`),
+                          }))}
+                          onChange={(value) => changeAggregation({
+                            groupMode: value,
+                          })}
+                          buttonClassName="shadow-none"
+                        />
+                      </label>
+
+                      {card.dataConfig.aggregation.groupMode === 'field' && (
+                        <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                          <span className={fieldLabelClass}>{t('inspector.aggregate.groupColumn')}</span>
+                          <SelectMenu
+                            value={card.dataConfig.aggregation.groupColumn}
+                            options={(selectedHeaders.length > 0 ? selectedHeaders : allHeaders).map((header) => ({
+                              value: header,
+                              label: header,
+                            }))}
+                            onChange={(value) => changeAggregation({ groupColumn: value })}
+                            placeholder={t('inspector.chooseField')}
+                            buttonClassName="shadow-none"
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {card.dataConfig.mode === 'raw' && card.kind !== 'heatmap' && (
+            <section className="py-6">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="text-lg font-semibold text-base-content">{t('inspector.seriesSectionTitle')}</div>
+                {card.kind !== 'stats' && (
+                  <button
+                    type="button"
+                    className="inline-grid size-11 place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-primary transition hover:bg-transparent hover:text-primary/80 focus-visible:outline-none"
+                    onClick={() => onAddSeries(activeDatasetId ?? undefined)}
+                    aria-label={t('inspector.addSeries')}
+                    title={t('inspector.addSeries')}
+                  >
+                    <Plus size={18} strokeWidth={2.2} />
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-[minmax(0,1fr)]">
+                {card.series.map((series) => {
+                  const dataset = datasetsById[series.datasetId]
+                  const numericOptions = dataset
+                    ? listAvailableSeriesYColumns(card, dataset, { excludeSeriesId: series.id })
+                    : []
+                  const supportsX = dataset ? dataset.headers.includes(card.xColumn) : false
+                  const datasetOptions = datasets
+                    .filter((option) => (
+                      option.id === series.datasetId
+                      || (
+                        option.headers.includes(card.xColumn)
+                        && listAvailableSeriesYColumns(card, option, { excludeSeriesId: series.id }).length > 0
+                      )
+                    ))
+                    .map((option) => ({
+                      value: option.id,
+                      label: option.fileName,
+                      description: t('common.rowCount', { count: formatNumber(option.rowCount) }),
+                    }))
+
+                  return (
+                    <div key={series.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 py-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <strong className="min-w-0 flex-1 break-words text-sm font-semibold text-base-content">
+                          {series.label || dataset?.fileName || t('cards.unnamedSeries')}
+                        </strong>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={t('inspector.seriesMenu')}
+                              title={t('inspector.seriesMenu')}
+                            >
+                              <MoreHorizontal size={16} strokeWidth={2.1} />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onSelect={() => setActiveTab('display')}>
+                              {t('inspector.openDisplaySettings')}
+                            </DropdownMenuItem>
+                            {card.series.length > 1 && (
+                              <DropdownMenuItem
+                                variant="destructive"
+                                onSelect={() => onRemoveSeries(series.id)}
+                              >
+                                {t('inspector.removeSeries')}
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+
+                    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
+                      <SelectMenu
+                          value={series.datasetId}
+                          options={datasetOptions}
+                          onChange={(value) => onChangeSeries(series.id, { datasetId: value })}
+                          buttonClassName="shadow-none"
+                        />
+
+                        <SelectMenu
+                          value={series.yColumn}
+                          options={numericOptions.map((header) => ({
+                            value: header,
+                            label: header,
+                          }))}
+                          onChange={(value) => onChangeSeries(series.id, { yColumn: value })}
+                          placeholder={t('inspector.chooseField')}
+                          buttonClassName="shadow-none"
+                        />
+                      </div>
+
+                      {!supportsX && (
+                        <div className="rounded-[var(--radius-box)] bg-error/10 px-3 py-2 text-sm leading-6 text-error">
+                          {t('inspector.incompatibleSeries', { xColumn: card.xColumn })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'display' && (
+          <div role="tabpanel" id="inspector-panel-display" aria-labelledby="inspector-tab-display">
+            <section className="py-6">
+              <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.seriesDisplaySectionTitle')}</div>
+              <div className="grid grid-cols-[minmax(0,1fr)]">
+                {card.series.map((series) => (
+                  <div key={series.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 py-4">
+                    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1">
+                      <span className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{t('inspector.dataSource')}</span>
+                      <strong className="min-w-0 break-words text-sm font-semibold text-base-content">
+                        {datasetsById[series.datasetId]?.fileName || t('cards.unnamedSeries')}
+                      </strong>
+                    </div>
+                    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
+                      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                        <span className={fieldLabelClass}>{t('inspector.displayName')}</span>
+                        <input
+                          type="text"
+                          value={series.label}
+                          placeholder={datasetsById[series.datasetId]?.fileName || t('inspector.displayNamePlaceholder')}
+                          onChange={(event) => onChangeSeries(series.id, { label: event.target.value })}
+                          className={inputClass}
+                        />
+                      </label>
+
+                      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                        <span className={fieldLabelClass}>{t('inspector.seriesColor')}</span>
+                        <label className="relative flex h-12 items-center gap-3 rounded-[var(--radius-field)] bg-muted px-4 text-sm text-base-content focus-within:ring-2 focus-within:ring-ring/30">
+                          <span className="size-5 rounded-md border border-base-300" style={{ background: series.color }} />
+                          <span className="font-medium">{series.color.toUpperCase()}</span>
+                          <span className="ml-auto text-base-content/55">
+                            <Palette size={15} strokeWidth={2.1} />
+                          </span>
+                          <input
+                            type="color"
+                            value={series.color}
+                            onChange={(event) => onChangeSeries(series.id, { color: event.target.value })}
+                            className="absolute inset-0 cursor-pointer opacity-0"
+                            aria-label={t('inspector.seriesColor')}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="py-6">
+              <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.chartDisplaySectionTitle')}</div>
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
+                <Switch
+                  checked={card.showLegend}
+                  label={t('inspector.legend')}
+                  onChange={(checked) => onChangeCard({ showLegend: checked })}
+                />
+                {card.kind !== 'pie' && (
+                  <>
+                    <Switch
+                      checked={card.showGrid}
+                      label={t('inspector.gridLines')}
+                      onChange={(checked) => onChangeCard({ showGrid: checked })}
+                    />
+                    <Switch
+                      checked={card.showAxes}
+                      label={t('inspector.axes')}
+                      onChange={(checked) => onChangeCard({ showAxes: checked })}
+                    />
+                  </>
+                )}
+              </div>
+            </section>
+
+            {card.kind !== 'pie' && (
+            <section className="py-6">
+              <div className="mb-4 text-lg font-semibold text-base-content">{t('inspector.axisRangeSectionTitle')}</div>
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
+                <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                  <span className={fieldLabelClass}>{t('inspector.xRangeMin')}</span>
+                  <input
+                    type="text"
+                    value={card.xRange.min}
+                    placeholder={t('inspector.autoRangePlaceholder')}
+                    onChange={(event) => onChangeCard({ xRange: { ...card.xRange, min: event.target.value } })}
+                    className={inputClass}
+                  />
+                </label>
+
+                <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                  <span className={fieldLabelClass}>{t('inspector.xRangeMax')}</span>
+                  <input
+                    type="text"
+                    value={card.xRange.max}
+                    placeholder={t('inspector.autoRangePlaceholder')}
+                    onChange={(event) => onChangeCard({ xRange: { ...card.xRange, max: event.target.value } })}
+                    className={inputClass}
+                  />
+                </label>
+
+                <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                  <span className={fieldLabelClass}>{t('inspector.yRangeMin')}</span>
+                  <input
+                    type="text"
+                    value={card.yRange.min}
+                    placeholder={t('inspector.autoRangePlaceholder')}
+                    onChange={(event) => onChangeCard({ yRange: { ...card.yRange, min: event.target.value } })}
+                    className={inputClass}
+                  />
+                </label>
+
+                <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+                  <span className={fieldLabelClass}>{t('inspector.yRangeMax')}</span>
+                  <input
+                    type="text"
+                    value={card.yRange.max}
+                    placeholder={t('inspector.autoRangePlaceholder')}
+                    onChange={(event) => onChangeCard({ yRange: { ...card.yRange, max: event.target.value } })}
+                    className={inputClass}
+                  />
+                </label>
+              </div>
+            </section>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+interface HeatmapFieldsProps {
+  config: HeatmapConfig
+  datasets: CsvData[]
+  onChange: (patch: Partial<HeatmapConfig>) => void
+  fieldLabelClass: string
+}
+
+function HeatmapFields({ config, datasets, onChange, fieldLabelClass }: HeatmapFieldsProps) {
+  const { t } = useI18n()
+
+  const currentDataset = datasets.find((d) => d.id === config.datasetId) ?? datasets[0] ?? null
+  const headers = currentDataset?.headers ?? []
+
+  return (
+    <>
+      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+        <span className={fieldLabelClass}>{t('inspector.heatmap.dataset')}</span>
+        <SelectMenu
+          value={config.datasetId}
+          options={datasets.map((d) => ({
+            value: d.id,
+            label: d.fileName,
+            description: t('common.rowCount', { count: d.rowCount }),
+          }))}
+          onChange={(value) => {
+            const ds = datasets.find((d) => d.id === value)
+            const dsHeaders = ds?.headers ?? []
+            onChange({
+              datasetId: value,
+              xColumn: dsHeaders[0] ?? '',
+              yColumn: dsHeaders[1] ?? dsHeaders[0] ?? '',
+              zColumn: null,
+            })
+          }}
+          buttonClassName="shadow-none"
+        />
+      </label>
+
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
+        <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+          <span className={fieldLabelClass}>{t('inspector.heatmap.xColumn')}</span>
+          <SelectMenu
+            value={config.xColumn}
+            options={headers.map((h) => ({ value: h, label: h }))}
+            onChange={(value) => onChange({ xColumn: value })}
+            buttonClassName="shadow-none"
+          />
+        </label>
+
+        <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+          <span className={fieldLabelClass}>{t('inspector.heatmap.yColumn')}</span>
+          <SelectMenu
+            value={config.yColumn}
+            options={headers.map((h) => ({ value: h, label: h }))}
+            onChange={(value) => onChange({ yColumn: value })}
+            buttonClassName="shadow-none"
+          />
+        </label>
+      </div>
+
+      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
+        <span className={fieldLabelClass}>{t('inspector.heatmap.zColumn')}</span>
+        <SelectMenu
+          value={config.zColumn ?? ''}
+          options={[
+            { value: '', label: t('inspector.heatmap.zCount') },
+            ...headers.map((h) => ({ value: h, label: h })),
+          ]}
+          onChange={(value) => onChange({ zColumn: value || null })}
+          buttonClassName="shadow-none"
+        />
+      </label>
+    </>
+  )
+}

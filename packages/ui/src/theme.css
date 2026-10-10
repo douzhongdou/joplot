@@ -1,0 +1,325 @@
+/**
+ * joplot 共享设计令牌与基础样式。
+ *
+ * 用法：各应用在自己的 globals.css 里先 `@import "tailwindcss"`，再引入本文件：
+ *   @import "tailwindcss";
+ *   @import "tw-animate-css";
+ *   @import "@joplot/ui/theme.css";
+ *   @source "../../../packages/ui/src";
+ */
+
+@theme inline {
+  /* Legacy daisy-style aliases (kept so existing class names keep working) */
+  --color-base-100: var(--theme-base-100);
+  --color-base-200: var(--theme-base-200);
+  --color-base-300: var(--theme-base-300);
+  --color-base-content: var(--theme-base-content);
+  --color-primary: var(--theme-primary);
+  --color-primary-content: var(--theme-primary-content);
+  --color-secondary: var(--theme-secondary);
+  --color-secondary-content: var(--theme-secondary-content);
+  --color-accent: var(--theme-accent);
+  --color-accent-content: var(--theme-accent-content);
+  --color-neutral: var(--theme-neutral);
+  --color-neutral-content: var(--theme-neutral-content);
+  --color-info: var(--theme-info);
+  --color-info-content: var(--theme-info-content);
+  --color-success: var(--theme-success);
+  --color-success-content: var(--theme-success-content);
+  --color-warning: var(--theme-warning);
+  --color-warning-content: var(--theme-warning-content);
+  --color-error: var(--theme-error);
+  --color-error-content: var(--theme-error-content);
+
+  /* shadcn tokens */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  /* Base palette: shadcn neutral (light) */
+  --theme-base-100: oklch(1 0 0);
+  --theme-base-200: oklch(0.97 0 0);
+  --theme-base-300: oklch(0.922 0 0);
+  --theme-base-content: oklch(0.145 0 0);
+  --theme-primary: oklch(0.205 0 0);
+  --theme-primary-content: oklch(0.985 0 0);
+  --theme-secondary: oklch(0.97 0 0);
+  --theme-secondary-content: oklch(0.205 0 0);
+  --theme-accent: oklch(0.97 0 0);
+  --theme-accent-content: oklch(0.205 0 0);
+  --theme-neutral: oklch(0.205 0 0);
+  --theme-neutral-content: oklch(0.985 0 0);
+  --theme-info: oklch(0.623 0.214 259.815);
+  --theme-info-content: oklch(0.985 0 0);
+  --theme-success: oklch(0.696 0.17 162.48);
+  --theme-success-content: oklch(0.985 0 0);
+  --theme-warning: oklch(0.769 0.188 70.08);
+  --theme-warning-content: oklch(0.145 0 0);
+  --theme-error: oklch(0.577 0.245 27.325);
+  --theme-error-content: oklch(0.985 0 0);
+
+  /* shadcn standard tokens */
+  --background: var(--theme-base-100);
+  --foreground: var(--theme-base-content);
+  --card: var(--theme-base-100);
+  --card-foreground: var(--theme-base-content);
+  --popover: var(--theme-base-100);
+  --popover-foreground: var(--theme-base-content);
+  --primary: var(--theme-primary);
+  --primary-foreground: var(--theme-primary-content);
+  --secondary: var(--theme-secondary);
+  --secondary-foreground: var(--theme-secondary-content);
+  --muted: var(--theme-base-200);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: var(--theme-accent);
+  --accent-foreground: var(--theme-accent-content);
+  --destructive: var(--theme-error);
+  --destructive-foreground: var(--theme-error-content);
+  --border: var(--theme-base-300);
+  --input: var(--theme-base-300);
+  --ring: oklch(0.708 0 0);
+  --radius: 0.625rem;
+
+  /* Legacy radius tokens, narrowed to the shadcn scale */
+  --radius-selector: 0.375rem;
+  --radius-field: 0.375rem;
+  --radius-box: 0.5rem;
+
+  /* shadcn sidebar tokens：引用 daisy 别名，深色主题下自动跟随，无需在 [data-theme=dark] 重复 */
+  --sidebar: var(--theme-base-100);
+  --sidebar-foreground: var(--theme-base-content);
+  --sidebar-primary: var(--theme-primary);
+  --sidebar-primary-foreground: var(--theme-primary-content);
+  --sidebar-accent: var(--theme-base-200);
+  --sidebar-accent-foreground: var(--theme-base-content);
+  --sidebar-border: var(--theme-base-300);
+  --sidebar-ring: oklch(0.708 0 0);
+
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --chart-6: oklch(0.627 0.265 303.9);
+  --chart-grid: color-mix(in oklab, var(--color-base-content) 10%, transparent);
+  --chart-axis: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+  --chart-selection: color-mix(in oklab, var(--color-primary) 35%, transparent);
+  --navbar-height: 3.75rem;
+  --inspector-width: 28rem;
+  --dashboard-row-height: 72px;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  /* Base palette: shadcn neutral (dark) */
+  --theme-base-100: oklch(0.145 0 0);
+  --theme-base-200: oklch(0.205 0 0);
+  --theme-base-300: oklch(0.269 0 0);
+  --theme-base-content: oklch(0.985 0 0);
+  --theme-primary: oklch(0.922 0 0);
+  --theme-primary-content: oklch(0.205 0 0);
+  --theme-secondary: oklch(0.269 0 0);
+  --theme-secondary-content: oklch(0.985 0 0);
+  --theme-accent: oklch(0.371 0 0);
+  --theme-accent-content: oklch(0.985 0 0);
+  --theme-neutral: oklch(0 0 0);
+  --theme-neutral-content: oklch(0.985 0 0);
+  --theme-info: oklch(0.488 0.243 264.376);
+  --theme-info-content: oklch(0.985 0 0);
+  --theme-success: oklch(0.696 0.17 162.48);
+  --theme-success-content: oklch(0.145 0 0);
+  --theme-warning: oklch(0.769 0.188 70.08);
+  --theme-warning-content: oklch(0.145 0 0);
+  --theme-error: oklch(0.704 0.191 22.216);
+  --theme-error-content: oklch(0.985 0 0);
+
+  /* shadcn standard tokens */
+  --background: var(--theme-base-100);
+  --foreground: var(--theme-base-content);
+  --card: var(--theme-base-200);
+  --card-foreground: var(--theme-base-content);
+  --popover: var(--theme-base-200);
+  --popover-foreground: var(--theme-base-content);
+  --primary: var(--theme-primary);
+  --primary-foreground: var(--theme-primary-content);
+  --secondary: var(--theme-secondary);
+  --secondary-foreground: var(--theme-secondary-content);
+  --muted: var(--theme-base-300);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: var(--theme-accent);
+  --accent-foreground: var(--theme-accent-content);
+  --destructive: var(--theme-error);
+  --destructive-foreground: var(--theme-error-content);
+  --border: var(--theme-base-300);
+  --input: var(--theme-base-300);
+  --ring: oklch(0.556 0 0);
+  --radius: 0.625rem;
+
+  /* Legacy radius tokens, narrowed to the shadcn scale */
+  --radius-selector: 0.375rem;
+  --radius-field: 0.375rem;
+  --radius-box: 0.5rem;
+
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --chart-6: oklch(0.828 0.189 84.429);
+  --chart-grid: color-mix(in oklab, var(--color-base-content) 12%, transparent);
+  --chart-axis: color-mix(in oklab, var(--color-base-content) 68%, transparent);
+  --chart-selection: color-mix(in oklab, var(--color-primary) 40%, transparent);
+  --navbar-height: 3.75rem;
+  --inspector-width: 28rem;
+  --dashboard-row-height: 72px;
+}
+
+@media (max-width: 639px) {
+  :root,
+  [data-theme="light"],
+  [data-theme="dark"] {
+    --navbar-height: 2.75rem;
+  }
+}
+
+/* Science workspace runs a denser top bar; opt in with data-navbar="compact". */
+[data-navbar='compact'] {
+  --navbar-height: 3rem;
+}
+
+@media (max-width: 639px) {
+  [data-navbar='compact'] {
+    --navbar-height: 2.75rem;
+  }
+}
+
+/* Science workspace runs a denser top bar; opt in with data-navbar="compact". */
+[data-navbar='compact'] {
+  --navbar-height: 3rem;
+}
+
+@media (max-width: 639px) {
+  [data-navbar='compact'] {
+    --navbar-height: 2.75rem;
+  }
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  /* shadcn 约定：裸 `border` 类默认用 --border（Tailwind v4 的默认值是 currentColor，会变黑框） */
+  *,
+  *::before,
+  *::after {
+    border-color: var(--border);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: var(--color-base-200);
+    color: var(--color-base-content);
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+}
+
+/* 焦点不画任何提示环：全项目约定，键盘与指针一视同仁，状态只靠边框/背景表达。 */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: none;
+}
+
+/* Menu/listbox items already highlight their active row; don't draw a second frame. */
+:where([role='menuitem'], [role='menuitemradio'], [role='menuitemcheckbox'], [role='option']):focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Narrow scrollbars everywhere (Firefox + WebKit/Chromium) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--color-base-content) 22%, transparent) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: color-mix(in oklab, var(--color-base-content) 22%, transparent);
+  border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklab, var(--color-base-content) 38%, transparent);
+}
+
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

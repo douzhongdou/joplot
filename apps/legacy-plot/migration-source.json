@@ -1,0 +1,7 @@
+{
+  "sourceRemote": "origin",
+  "sourceBranch": "main",
+  "sourceCommit": "d1548e8d411cb57baf93e32c554e948dde0ac4e7",
+  "preservedDirectories": ["app", "src", "public", "tests"],
+  "notes": "应用代码、静态资源、路由、主题和本地存储保持原样；仅调整 workspace 包名、本地端口和工程命令。"
+}

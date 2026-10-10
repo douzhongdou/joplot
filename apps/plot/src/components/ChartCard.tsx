@@ -1,0 +1,719 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { PointerEvent } from 'react'
+import {
+  GripVertical,
+  MoveDiagonal2,
+} from 'lucide-react'
+import { PlotCanvas } from './PlotCanvas'
+import { PlotToolbar, type PlotCopyState } from './PlotToolbar'
+import { buildAggregatedSeries, toPlotSeries } from '../lib/aggregation'
+import {
+  buildChartTypePayload,
+  buildRenderChartPayload,
+  resolvePrimaryDataset,
+} from '../lib/analytics'
+import { track } from '../lib/track'
+import { buildChartDataRevision, summarizeNumericColumn } from '../lib/workbench'
+import { buildPieGrid, buildPieTraces, shouldShowPieLegend } from '../lib/pie'
+import { CHART_AXIS_FALLBACK, CHART_GRID_FALLBACK, getChartColor, resolveThemeColor, withAlpha } from '../lib/theme'
+import { CHART_HOVERLABEL } from '../lib/tooltipStyle'
+import type { ChartCard as ChartCardConfig, CsvData, NormalizedRow } from '../types'
+import type { CopyImageResult } from './PlotCanvas'
+import { useI18n } from '../i18n'
+
+interface Props {
+  card: ChartCardConfig
+  datasetsById: Record<string, CsvData>
+  filteredRowsByDataset: Record<string, NormalizedRow[]>
+  filterRevision: string
+  selected: boolean
+  allowLayoutEditing?: boolean
+  showCopyImage?: boolean
+  mobileChrome?: boolean
+  onSelect: () => void
+  onDragStart: (event: PointerEvent<HTMLElement>) => void
+  onResizeStart: (event: PointerEvent<HTMLButtonElement>) => void
+}
+
+interface PlotCanvasApi {
+  autorange: () => Promise<void>
+  copyImage: () => Promise<CopyImageResult | null>
+  downloadImage: () => Promise<void>
+}
+
+function formatValue(value: number | null) {
+  return value === null ? '-' : Number(value.toFixed(3)).toString()
+}
+
+function parseNumberRange(min: string, max: string) {
+  const minValue = Number(min)
+  const maxValue = Number(max)
+
+  return min.trim() !== ''
+    && max.trim() !== ''
+    && Number.isFinite(minValue)
+    && Number.isFinite(maxValue)
+    && minValue < maxValue
+    ? [minValue, maxValue]
+    : undefined
+}
+
+function parseTextRange(min: string, max: string) {
+  return min.trim() !== '' && max.trim() !== '' ? [min, max] : undefined
+}
+
+export function ChartCard({
+  card,
+  datasetsById,
+  filteredRowsByDataset,
+  filterRevision,
+  selected,
+  allowLayoutEditing = true,
+  showCopyImage = true,
+  mobileChrome = false,
+  onSelect,
+  onDragStart,
+  onResizeStart,
+}: Props) {
+  const { t, formatNumber } = useI18n()
+  const plotRef = useRef<PlotCanvasApi>(null)
+  const renderEventSignatureRef = useRef<string | null>(null)
+  const [copyState, setCopyState] = useState<PlotCopyState>('idle')
+  const [exportBusy, setExportBusy] = useState(false)
+
+  const kindLabels: Record<ChartCardConfig['kind'], string> = {
+    line: t('chartKinds.line'),
+    scatter: t('chartKinds.scatter'),
+    bar: t('chartKinds.bar'),
+    pie: t('chartKinds.pie'),
+    stats: t('chartKinds.stats'),
+    area: t('chartKinds.area'),
+    radar: t('chartKinds.radar'),
+    heatmap: t('chartKinds.heatmap'),
+  }
+
+  useEffect(() => {
+    if (copyState === 'idle') {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => setCopyState('idle'), 1600)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [copyState])
+
+  const validSeries = useMemo(() => (
+    card.dataConfig.mode === 'raw'
+      ? card.series
+      .map((series) => {
+        const dataset = datasetsById[series.datasetId]
+
+        if (!dataset || !dataset.headers.includes(card.xColumn) || !series.yColumn) {
+          return null
+        }
+
+        if (!dataset.numericColumns.includes(series.yColumn)) {
+          return null
+        }
+
+        return {
+          series,
+          dataset,
+          rows: filteredRowsByDataset[series.datasetId] ?? dataset.rows,
+        }
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+      : []
+  ), [card.dataConfig.mode, card.series, card.xColumn, datasetsById, filteredRowsByDataset])
+
+  const aggregateResult = useMemo(() => {
+    if (card.dataConfig.mode !== 'aggregate') {
+      return null
+    }
+
+    return buildAggregatedSeries(
+      Object.values(datasetsById),
+      card.dataConfig.aggregation,
+      filteredRowsByDataset,
+    )
+  }, [card.dataConfig, datasetsById, filteredRowsByDataset])
+
+  const plotData = useMemo(() => {
+    if (card.kind === 'stats') {
+      return []
+    }
+
+    const lineShape = card.drawMode === 'spline' || card.drawMode === 'spline+markers' ? 'spline' : 'linear'
+    const useScatter = card.drawMode === 'spline' || card.drawMode === 'spline+markers'
+
+    if (card.kind === 'heatmap') {
+      const hc = card.heatmapConfig
+      if (!hc) return []
+
+      const dataset = datasetsById[hc.datasetId]
+      if (!dataset) return []
+
+      const rows = filteredRowsByDataset[hc.datasetId] ?? dataset.rows
+      const { xColumn, yColumn, zColumn } = hc
+
+      const xSet = new Set<string>()
+      const ySet = new Set<string>()
+      const cellValues = new Map<string, number[]>()
+      const cellCounts = new Map<string, number>()
+
+      for (const row of rows) {
+        const xVal = row.raw[xColumn] ?? ''
+        const yVal = row.raw[yColumn] ?? ''
+        xSet.add(xVal)
+        ySet.add(yVal)
+        const key = `${xVal}\x00${yVal}`
+        cellCounts.set(key, (cellCounts.get(key) ?? 0) + 1)
+
+        if (zColumn) {
+          const zVal = row.numeric[zColumn]
+          if (zVal !== null) {
+            const arr = cellValues.get(key)
+            if (arr) arr.push(zVal)
+            else cellValues.set(key, [zVal])
+          }
+        }
+      }
+
+      const xValues = [...xSet]
+      const yValues = [...ySet]
+
+      const z: number[][] = yValues.map((yVal) =>
+        xValues.map((xVal) => {
+          const key = `${xVal}\x00${yVal}`
+          if (zColumn) {
+            const vals = cellValues.get(key)
+            if (!vals || vals.length === 0) return 0
+            return vals.reduce((sum, v) => sum + v, 0) / vals.length
+          }
+          return cellCounts.get(key) ?? 0
+        })
+      )
+
+      return [{
+        type: 'heatmap' as const,
+        x: xValues,
+        y: yValues,
+        z,
+        colorscale: 'Viridis',
+        showscale: true,
+      }]
+    }
+
+    if (card.kind === 'radar') {
+      if (aggregateResult) {
+        return toPlotSeries(aggregateResult).map((series, index) => {
+          const color = getChartColor(index)
+          const closedX = series.x.length > 0 ? [...series.x, series.x[0]] : series.x
+          const closedY = series.y.length > 0 ? [...series.y, series.y[0]] : series.y
+
+          return {
+            type: 'scatterpolar' as const,
+            mode: 'lines+markers' as const,
+            theta: closedX,
+            r: closedY,
+            fill: 'toself' as const,
+            fillcolor: withAlpha(color, 0.13),
+            marker: { color, size: 6 },
+            line: { color, width: card.lineWidth },
+            name: series.name,
+          }
+        })
+      }
+
+      return validSeries.map(({ series, rows }) => {
+        const theta = rows.map((row) => row.raw[card.xColumn] ?? '')
+        const r = rows.map((row) => row.numeric[series.yColumn!])
+        const closedTheta = theta.length > 0 ? [...theta, theta[0]] : theta
+        const closedR = r.length > 0 ? [...r, r[0]] : r
+
+        return {
+          type: 'scatterpolar' as const,
+          mode: 'lines+markers' as const,
+          theta: closedTheta,
+          r: closedR,
+          fill: 'toself' as const,
+          fillcolor: withAlpha(series.color, 0.13),
+          marker: { color: series.color, size: 6 },
+          line: { color: series.color, width: card.lineWidth },
+          name: series.label,
+        }
+      })
+    }
+
+    if (card.kind === 'pie') {
+      if (aggregateResult) {
+        return buildPieTraces(toPlotSeries(aggregateResult).map((series) => ({
+          name: series.name,
+          labels: series.x,
+          values: series.y,
+        })))
+      }
+
+      return buildPieTraces(validSeries.map(({ series, rows }) => ({
+        name: series.label,
+        labels: rows.map((row) => row.raw[card.xColumn] ?? ''),
+        values: rows.map((row) => row.numeric[series.yColumn!]),
+      })))
+    }
+
+    if (aggregateResult) {
+      return toPlotSeries(aggregateResult).map((series, index) => {
+        const color = getChartColor(index)
+
+        if (card.kind === 'bar') {
+          return {
+            type: 'bar' as const,
+            x: series.x,
+            y: series.y,
+            marker: { color },
+            name: series.name,
+          }
+        }
+
+        const traceBase = {
+          x: series.x,
+          y: series.y,
+          marker: { color, size: 6 },
+          line: { color, width: card.lineWidth, shape: lineShape },
+          name: series.name,
+          connectgaps: false,
+        }
+
+        if (card.kind === 'area') {
+          return {
+            ...traceBase,
+            type: (useScatter ? 'scatter' : 'scattergl') as 'scatter' | 'scattergl',
+            mode: 'lines' as const,
+            fill: 'tozeroy' as const,
+            fillcolor: withAlpha(color, 0.2),
+          }
+        }
+
+        return {
+          ...traceBase,
+          type: (useScatter ? 'scatter' : 'scattergl') as 'scatter' | 'scattergl',
+          mode: card.kind === 'scatter' ? 'markers' as const : (card.drawMode === 'spline' || card.drawMode === 'lines' ? 'lines' as const : card.drawMode),
+        }
+      })
+    }
+
+    return validSeries.map(({ series, rows }) => {
+      const x = rows.map((row) => row.raw[card.xColumn] ?? '')
+      const y = rows.map((row) => row.numeric[series.yColumn!])
+
+      if (card.kind === 'bar') {
+        return {
+          type: 'bar' as const,
+          x,
+          y,
+          marker: { color: series.color },
+          name: series.label,
+        }
+      }
+
+      const traceBase = {
+        x,
+        y,
+        marker: { color: series.color, size: 6 },
+        line: { color: series.color, width: card.lineWidth, shape: lineShape },
+        name: series.label,
+        connectgaps: false,
+      }
+
+      if (card.kind === 'area') {
+        return {
+          ...traceBase,
+          type: (useScatter ? 'scatter' : 'scattergl') as 'scatter' | 'scattergl',
+          mode: 'lines' as const,
+          fill: 'tozeroy' as const,
+          fillcolor: withAlpha(series.color, 0.2),
+        }
+      }
+
+      return {
+        ...traceBase,
+        type: (useScatter ? 'scatter' : 'scattergl') as 'scatter' | 'scattergl',
+        mode: card.kind === 'scatter' ? 'markers' as const : (card.drawMode === 'spline' || card.drawMode === 'lines' ? 'lines' as const : card.drawMode),
+      }
+    })
+  }, [aggregateResult, card.drawMode, card.kind, card.lineWidth, card.xColumn, validSeries])
+
+  const hasAggregateSeries = (aggregateResult?.series.length ?? 0) > 0
+  const renderedSeriesCount = aggregateResult ? aggregateResult.series.length : validSeries.length
+
+  const plotLayout = useMemo(() => {
+    const gridColor = resolveThemeColor('--chart-grid', CHART_GRID_FALLBACK)
+    const axisColor = resolveThemeColor('--chart-axis', CHART_AXIS_FALLBACK)
+    const showPieLegend = card.kind === 'pie' && shouldShowPieLegend(card.showLegend, plotData)
+
+    const base: Record<string, unknown> = {
+      showlegend: card.kind === 'pie'
+        ? showPieLegend
+        : card.showLegend && renderedSeriesCount > 1,
+      hoverlabel: CHART_HOVERLABEL,
+    }
+
+    if (card.kind === 'pie') {
+      base.grid = buildPieGrid(plotData.length)
+      base.margin = { l: 24, r: 24, t: plotData.length > 1 ? 48 : 24, b: showPieLegend ? 72 : 24 }
+      base.uniformtext = { minsize: 12, mode: 'hide' }
+      base.legend = {
+        orientation: 'h',
+        x: 0.5,
+        xanchor: 'center',
+        y: -0.08,
+        yanchor: 'top',
+      }
+    } else if (card.kind === 'radar') {
+      base.polar = {
+        radialaxis: { visible: card.showAxes, gridcolor: gridColor, color: axisColor },
+        angularaxis: { gridcolor: gridColor, color: axisColor },
+      }
+    } else if (card.kind !== 'heatmap') {
+      base.xaxis = {
+        title: { text: card.showAxes ? card.xColumn : '', automargin: true },
+        automargin: true,
+        showgrid: card.showGrid,
+        gridcolor: gridColor,
+        color: axisColor,
+        visible: card.showAxes,
+        range: parseTextRange(card.xRange.min, card.xRange.max),
+      }
+      base.yaxis = {
+        title: {
+          text: card.showAxes
+            ? (
+                card.dataConfig.mode === 'aggregate'
+                  ? card.dataConfig.aggregation.metricColumn
+                  : (validSeries[0]?.series.yColumn ?? '')
+              )
+            : '',
+          automargin: true,
+        },
+        automargin: true,
+        showgrid: card.showGrid,
+        gridcolor: gridColor,
+        color: axisColor,
+        visible: card.showAxes,
+        range:
+          parseNumberRange(card.yRange.min, card.yRange.max)
+          ?? (
+            card.yMin !== null && card.yMax !== null && card.yMin < card.yMax
+              ? [card.yMin, card.yMax]
+              : undefined
+          ),
+      }
+      base.hovermode = 'x unified'
+    }
+
+    return base
+  }, [
+    card.dataConfig,
+    card.kind,
+    card.showAxes,
+    card.showGrid,
+    card.showLegend,
+    card.xColumn,
+    card.xRange.max,
+    card.xRange.min,
+    card.yMax,
+    card.yMin,
+    card.yRange.max,
+    card.yRange.min,
+    plotData.length,
+    renderedSeriesCount,
+    validSeries,
+  ])
+
+  const primarySeries = validSeries[0] ?? null
+  const summary = useMemo(
+    () => (
+      primarySeries?.series.yColumn
+        ? summarizeNumericColumn(primarySeries.rows, primarySeries.series.yColumn)
+        : null
+    ),
+    [primarySeries],
+  )
+  const aggregateSummary = useMemo(() => {
+    const firstSeries = aggregateResult?.series[0]
+
+    if (!firstSeries) {
+      return null
+    }
+
+    const values = firstSeries.points
+      .map((point) => point.y)
+      .filter((value): value is number => value !== null)
+
+    if (values.length === 0) {
+      return {
+        seriesName: firstSeries.name,
+        count: 0,
+        min: null,
+        max: null,
+        mean: null,
+      }
+    }
+
+    return {
+      seriesName: firstSeries.name,
+      count: values.length,
+      min: Math.min(...values),
+      max: Math.max(...values),
+      mean: values.reduce((sum, value) => sum + value, 0) / values.length,
+    }
+  }, [aggregateResult])
+
+  const primaryAnalyticsDataset = useMemo(() => {
+    if (card.kind === 'heatmap' && card.heatmapConfig) {
+      return datasetsById[card.heatmapConfig.datasetId] ?? null
+    }
+
+    if (card.dataConfig.mode === 'aggregate') {
+      return resolvePrimaryDataset(
+        datasetsById,
+        card.dataConfig.aggregation.datasetIds,
+      )
+    }
+
+    return validSeries[0]?.dataset
+      ?? resolvePrimaryDataset(
+        datasetsById,
+        card.series.map((series) => series.datasetId),
+      )
+  }, [card.dataConfig, card.heatmapConfig, card.kind, card.series, datasetsById, validSeries])
+
+  const hasRenderableOutput = (
+    card.kind === 'stats'
+      ? Boolean(aggregateSummary || (summary && primarySeries))
+      : (validSeries.length > 0 || hasAggregateSeries || (card.kind === 'heatmap' && !!card.heatmapConfig))
+  )
+
+  const renderEventSignature = useMemo(() => {
+    if (!primaryAnalyticsDataset || !hasRenderableOutput) {
+      return null
+    }
+
+    return JSON.stringify({
+      revision: buildChartDataRevision(card, filterRevision),
+      kind: card.kind,
+      datasetId: primaryAnalyticsDataset.id,
+    })
+  }, [card, filterRevision, hasRenderableOutput, primaryAnalyticsDataset])
+
+  useEffect(() => {
+    if (!renderEventSignature || !primaryAnalyticsDataset) {
+      return
+    }
+
+    if (renderEventSignatureRef.current === renderEventSignature) {
+      return
+    }
+
+    track('render_chart', buildRenderChartPayload(card.kind, primaryAnalyticsDataset))
+    renderEventSignatureRef.current = renderEventSignature
+  }, [card.kind, primaryAnalyticsDataset, renderEventSignature])
+
+  async function handleCopyImage() {
+    if (exportBusy) {
+      return
+    }
+
+    setExportBusy(true)
+
+    try {
+      const mode = await plotRef.current?.copyImage()
+
+      switch (mode) {
+        case 'binary':
+        case 'html':
+        case 'text':
+          setCopyState('copied')
+          track('copy_image', buildChartTypePayload(card.kind))
+          break
+        case 'downloaded':
+          setCopyState('downloaded')
+          break
+      }
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
+  async function handleDownloadImage() {
+    if (exportBusy) {
+      return
+    }
+
+    setExportBusy(true)
+
+    try {
+      await plotRef.current?.downloadImage()
+      track('download_png', buildChartTypePayload(card.kind))
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
+  return (
+    <article
+      className={mobileChrome
+        ? 'relative flex h-full min-h-0 flex-col bg-base-100 px-1 py-2 focus-visible:outline-none'
+        : `relative flex h-full min-h-0 flex-col rounded-[calc(var(--radius-box)+0.25rem)] bg-base-100 p-3 shadow-sm transition focus-visible:outline-none ${
+            selected
+              ? 'ring-2 ring-ring/40'
+              : ''
+          }`}
+      onMouseDown={onSelect}
+      onFocus={(event) => {
+        if (event.target === event.currentTarget) {
+          onSelect()
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) {
+          return
+        }
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onSelect()
+        }
+      }}
+      role="group"
+      aria-label={card.title}
+      tabIndex={0}
+    >
+      <div className={`grid items-start gap-3 pb-3 ${allowLayoutEditing ? 'grid-cols-[36px_minmax(0,1fr)]' : 'grid-cols-[minmax(0,1fr)]'}`}>
+        {allowLayoutEditing && (
+          <button
+            type="button"
+            className="inline-grid size-10 touch-none select-none place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary active:cursor-grabbing"
+            onPointerDown={onDragStart}
+            aria-label={t('chartCard.dragCard')}
+            title={t('chartCard.dragCard')}
+          >
+            <GripVertical size={16} strokeWidth={2.2} />
+          </button>
+        )}
+
+        <div className="grid min-w-0 gap-2">
+          <h3 className="break-words text-lg font-semibold leading-tight text-base-content sm:text-xl sm:leading-none">{card.title}</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex h-7 items-center rounded-full bg-muted px-3 text-xs font-medium text-base-content/70">
+              {kindLabels[card.kind]}
+            </span>
+            <span className="inline-flex h-7 items-center rounded-full bg-muted px-3 text-xs font-medium text-base-content/70">
+              {t('chartCard.seriesCount', { count: formatNumber(renderedSeriesCount) })}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col">
+        {card.kind === 'stats' && aggregateSummary && (
+          <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3">
+            {[
+              [t('chartCard.stats.dataset'), aggregateSummary.seriesName],
+              [t('chartCard.stats.validValues'), String(aggregateSummary.count)],
+              [t('chartCard.stats.missingValues'), String(aggregateResult?.skippedRows ?? 0)],
+              [t('chartCard.stats.min'), formatValue(aggregateSummary.min)],
+              [t('chartCard.stats.max'), formatValue(aggregateSummary.max)],
+              [t('chartCard.stats.mean'), formatValue(aggregateSummary.mean)],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-[var(--radius-box)] bg-muted p-4">
+                <div className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{label}</div>
+                <div className="mt-2 break-words text-2xl font-semibold text-base-content">{value}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {card.kind === 'stats' && !aggregateSummary && summary && primarySeries && (
+          <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3">
+            {[
+              [t('chartCard.stats.dataset'), primarySeries.dataset.fileName],
+              [t('chartCard.stats.validValues'), String(summary.count)],
+              [t('chartCard.stats.missingValues'), String(summary.missing)],
+              [t('chartCard.stats.min'), formatValue(summary.min)],
+              [t('chartCard.stats.max'), formatValue(summary.max)],
+              [t('chartCard.stats.mean'), formatValue(summary.mean)],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-[var(--radius-box)] bg-muted p-4">
+                <div className="text-xs font-medium uppercase tracking-[0.12em] text-base-content/55">{label}</div>
+                <div className="mt-2 break-words text-2xl font-semibold text-base-content">{value}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {card.kind !== 'stats' && (validSeries.length > 0 || hasAggregateSeries || (card.kind === 'heatmap' && !!card.heatmapConfig)) && (
+          <div className="flex min-h-0 flex-1 flex-col gap-3">
+            <PlotCanvas
+              ref={plotRef}
+              data={plotData}
+              uirevision={buildChartDataRevision(card, filterRevision)}
+              layout={plotLayout}
+              exportKind={card.kind}
+              exportTitle={card.title}
+              frameless={mobileChrome}
+            />
+
+            <div className="flex flex-wrap items-center gap-2">
+              <PlotToolbar
+                busy={exportBusy}
+                copyState={copyState}
+                showCopy={showCopyImage}
+                onAutorange={() => void plotRef.current?.autorange()}
+                onCopyImage={() => void handleCopyImage()}
+                onDownloadImage={() => void handleDownloadImage()}
+              />
+
+              {copyState !== 'idle' && (
+                <div className="inline-flex h-9 items-center rounded-full bg-primary/10 px-3 text-xs font-semibold text-primary">
+                  {copyState === 'copied' ? t('chartCard.copySuccess') : t('chartCard.copyDownloadedFallback')}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {aggregateResult && (
+          aggregateResult.skippedDatasets.length > 0
+          || aggregateResult.skippedRows > 0
+          || aggregateResult.omittedSeriesCount > 0
+        ) && (
+          <div className="mt-3 rounded-[var(--radius-box)] border border-warning/25 bg-warning/10 px-3 py-2 text-xs leading-5 text-amber-800 dark:text-amber-200">
+            {t('chartCard.aggregateSkipped', {
+              datasets: aggregateResult.skippedDatasets.length,
+              rows: aggregateResult.skippedRows,
+              series: aggregateResult.omittedSeriesCount,
+            })}
+          </div>
+        )}
+
+        {((card.kind === 'stats' && !summary && !aggregateSummary) || (card.kind !== 'stats' && validSeries.length === 0 && !hasAggregateSeries && !(card.kind === 'heatmap' && !!card.heatmapConfig))) && (
+          <div role="status" className="flex flex-1 items-center justify-center rounded-[var(--radius-box)] bg-muted/50 p-6 text-center text-sm leading-6 text-base-content/55">
+            <div>{t('chartCard.noValidSeries')}</div>
+          </div>
+        )}
+      </div>
+
+      {allowLayoutEditing && (
+        <button
+          type="button"
+          className="absolute bottom-3 right-3 inline-grid size-10 touch-none select-none place-items-center rounded-[var(--radius-box)] border-0 bg-transparent text-base-content/60 transition hover:bg-transparent hover:text-primary"
+          onPointerDown={onResizeStart}
+          aria-label={t('chartCard.resizeCard')}
+          title={t('chartCard.resizeCard')}
+        >
+          <MoveDiagonal2 size={15} strokeWidth={2.1} />
+        </button>
+      )}
+    </article>
+  )
+}

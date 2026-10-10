@@ -1,175 +1,75 @@
-<p align="center">
-  <img src="./src/icon.svg" width="96" alt="joplot logo" />
-</p>
+# joplot monorepo
 
-<h1 align="center">joplot</h1>
+一个 pnpm workspace，三个独立的 Next.js 应用。应用之间不互相 import，各自构建、部署和发布。
 
-<p align="center">一个本地优先的 CSV 可视化工作台</p>
+## 应用
 
-<p align="center">多文件导入 · 图卡画布 · 工作区筛选 · 函数画板 · 图片导出 · 中英日界面</p>
+| 应用 | 目录 | 用途 | 本地端口 |
+| --- | --- | --- | --- |
+| 老 joplot | `apps/legacy-plot` | 线上稳定版 CSV 工作台和函数画板 | 3002 |
+| 新 joplot | `apps/plot` | 科学数据处理工作台；目前只做开发预览 | 3000 |
+| joimage | `apps/image` | 图像处理、分析与 Stack 工作台 | 3001 |
 
-`joplot` 面向需要快速查看、比较和整理表格数据的场景：把一个或多个 CSV 文件拖进页面，就可以直接生成图表卡片，在同一个工作台里完成筛选、组合、对比、导出和复盘，而不需要先搭建数据库或写一层脚本。也可以切到函数画板，直接输入 `y = f(x)` 公式出图。
+老 joplot 从 `origin/main` 的 `d1548e8d411cb57baf93e32c554e948dde0ac4e7` 迁入，来源记录在 `apps/legacy-plot/migration-source.json`。`app/`、`src/`、`public/`、`tests/` 保留原样，包括 `/zh`、`/en`、`/ja` 和函数页的原有行为，以及浏览器存储键。
 
-## 一句话介绍
+新 joplot 的根路径进入科学工作台，旧 `/science` 地址跳转到 `/`，`/super-plot` 和 `/spike/runtime` 保留为实验页。旧 CSV 工作台和函数画板的页面只在 legacy 应用发布；新应用中保留的底层工具与组件可以在后续开发时逐步整理。
 
-如果你经常收到各种 CSV 导出文件，又不想每次都开 Excel、写脚本或者搭临时 BI 页面，`joplot` 想解决的就是这类“马上看、马上比、马上出图”的工作。
+`packages/ui` 和 `packages/i18n` 供新 joplot、joimage 共享。老 joplot 保留原有 UI、主题和语言实现，不依赖这两个包。应用不得直接引用其他应用的源码。
 
-## 当前状态
+## 开发与检查
 
-- 当前为前端本地版，无后端依赖。
-- 已具备可用的 CSV 导入、筛选、绘图和持久化能力。
-- 适合个人分析、小团队内部工具、MVP 展示和公开继续迭代。
-
-## 项目定位
-
-- 本地优先：数据解析、筛选和图表渲染都在浏览器内完成。
-- 多文件工作台：支持一次导入多个 CSV，在同一画布里对比不同数据源。
-- 面向探索：适合做临时分析、运营复盘、实验结果对比和轻量数据巡检。
-
-## 功能特性
-
-- 支持通过按钮选择或整页拖拽导入一个或多个 CSV / Excel（`.xlsx`、`.xls`）文件。
-- 自动识别数值列，并生成默认折线图作为首个分析入口。
-- 支持折线图、散点图、柱状图、饼图、面积图、雷达图、热力图和统计卡八种图卡类型。
-- 支持在同一张图卡中绑定多个数据系列，前提是它们共享可用的 X 轴字段。
-- 支持工作区级筛选条件，并提供 `全部满足` / `满足任一` 两种组合逻辑。
-- 支持拖拽移动图卡位置、拖拽调整图卡尺寸。
-- 支持图卡级显示设置，包括标题、绘制方式、线宽、网格线、图例、坐标轴和系列颜色。
-- 支持复制图表图片到剪贴板，剪贴板不可用时会自动回退为下载 PNG。
-- 支持本地持久化，刷新页面后会恢复数据集、图卡布局和筛选状态。
-- 支持中文、英文、日文三种界面语言，并根据浏览器语言初始化。
-- 内置函数画板（`/zh/function` 等多语言路由）：输入 `y = f(x)` 公式即可绘制，支持多条曲线叠加、参数滑块、渐近线自动断线、Y 轴自适应 / 手动范围，以及把采样点一键发送回数据工作台。
-
-## 适用场景
-
-- 快速查看业务导出的 CSV 结果
-- 对比多个实验批次或多份报表
-- 为会议或周报临时生成可截图的图表
-- 在正式接入 BI 系统之前做轻量探索
-- 快速画一条数学公式曲线（阻尼振荡、分布、S 形曲线等）并导出图片
-
-## 功能预览
-
-- 上传一个或多个 CSV / Excel 文件后，应用会自动生成默认图卡。
-- 可以继续添加折线图、散点图、柱状图、饼图、面积图、雷达图、热力图和统计卡。
-- 同一图卡可挂载多个系列，用于跨数据集对比。
-- 所有筛选条件在工作台级生效，适合做统一观察口径。
-- 图卡支持拖拽编排，适合整理成汇报视图。
-
-如果你准备把这个仓库公开到 GitHub，建议后续补一张首页截图或一段 GIF，这会比纯文字更容易让访问者理解项目价值。
-
-## 快速开始
-
-### 环境要求
-
-- Node.js 24+
-- pnpm 11+（版本已通过 `packageManager` 字段钉住，corepack 会自动切换）
-
-### 安装依赖
+从仓库根运行：
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
+pnpm dev:legacy       # 老 joplot，3002
+pnpm dev:plot         # 新 joplot，3000
+pnpm dev:image        # joimage，3001
+pnpm dev             # 同时启动三个应用
+pnpm typecheck       # 各应用类型检查
+pnpm test            # 应用隔离检查 + 各应用测试
 ```
 
-### 启动开发环境
+生产构建可分别运行，不需要把未完成的新 joplot 一起发布：
 
 ```bash
-pnpm dev
+pnpm build:legacy
+pnpm build:plot
+pnpm build:image
 ```
 
-默认会启动一个本地 Next.js 开发服务器，打开终端输出中的地址即可访问。
+`pnpm build` 适用于检查整个仓库，会构建所有应用；单个应用发布应使用对应构建命令或该应用的 Vercel Project。
 
+## 部署：三个 Vercel Project
 
-### 构建生产版本
+| Project | Root Directory | 域名与发布策略 |
+| --- | --- | --- |
+| 老 joplot | `apps/legacy-plot` | 保留原线上域名和环境变量 |
+| 新 joplot | `apps/plot` | 使用独立预览域名，开发完成前不绑定老站域名 |
+| joimage | `apps/image` | 独立域名、独立发布 |
 
-```bash
-pnpm build
-```
+每个 Project 单独配置 Root Directory、域名和环境变量。构建命令在应用目录执行 `pnpm build`，不要使用仓库根的递归构建作为单个 Project 的构建命令。各应用内都有 `vercel.json`。
 
-### 运行测试
+新 joplot、joimage 需要开启 **Include source files outside of the Root Directory in the Build Step**，以访问 `packages/*`。Vercel 的 **Skip unaffected projects** 可减少无关构建，但共享包、根 lockfile 和 workspace 配置变更仍可能影响多个应用。新 joplot 开发期间保持 Preview 部署；在统一生产分支上运行它时，另行关闭自动生产发布，不要绑定线上域名。
 
-```bash
-pnpm test
-```
+### 迁移顺序
 
-## 使用方式
+1. 现有线上老 joplot 先继续使用 `origin/main` 的根目录部署配置，joimage 可继续从 `cloud` 独立部署。
+2. 用包含此 monorepo 的分支创建三个独立 Project 的预览，确认老站首页、函数页、静态资源、数据恢复和分析统计行为一致。
+3. **在旧 Vercel Project 上切换生产分支之前**，把 Root Directory 改为 `apps/legacy-plot`；保留原域名与环境变量。项目根目录设置通常对整个 Project 生效，验证迁移应使用另建的预览 Project，不要把线上 Project 暂时指到错误目录。
+4. joimage 的 Root Directory 保持 `apps/image`。新 joplot 保持预览状态。
+5. 验证各自部署后，再把三个应用的代码统一到主分支；每次发布只操作目标 Project。
 
-1. 打开应用后上传一个或多个 CSV / Excel 文件。
-2. 应用会基于首个数据集自动生成默认折线图。
-3. 通过顶部工具栏继续添加折线图、散点图、柱状图、饼图或其他图卡。
-4. 在右侧检查面板中调整图卡标题、系列字段、颜色和显示方式。
-5. 在工作台顶部展开筛选面板，按字段配置筛选条件。
-6. 通过拖拽整理图卡布局，最后复制或下载图表图片。
+本仓库变更不会自动修改 Vercel Project 的生产分支、Root Directory 或域名。合并到当前线上 main 前必须先按以上顺序验证并调整部署配置。
 
-### 函数画板
+## 语言与站点地址
 
-1. 在顶部导航切换到「函数」板块（或直接访问 `/zh/function`）。
-2. 输入 `y = f(x)` 形式的公式，例如 `exp(-x/6) * sin(2x)`，曲线会即时绘制；支持省略乘号（`2x`、`x(x+1)`）、`pi` / `e` 常量和常见数学函数。
-3. 公式中 `x` 以外的字母（如 `a`、`b`）会自动生成参数滑块，可调整数值和范围实时观察变化。
-4. Y 轴默认自适应（渐近线尖峰会被自动裁剪），也可以在「定义域与采样」中手动输入 Y 轴范围，留空即恢复自适应。
-5. 点击「发送到工作台」可把当前可见曲线的采样点作为数据集加入数据工作台，继续做筛选、对比和导出。
-6. 画板状态（公式、定义域、参数）会保存在本地，刷新页面后自动恢复。
+老 joplot 保留原版带语言前缀的路由和 SEO，canonical 仍指向 `https://joplot.com`。
 
-## 当前实现边界
+新 joplot、joimage 使用 `@joplot/i18n`：语言通过 cookie 与 `Accept-Language` 分发，对外 URL 不带语言前缀。两个应用的 `vercel.json` 保留 `Vary: Accept-Language`。
 
-- 支持导入 CSV 和 Excel（`.xlsx`、`.xls`）文件，暂不支持 JSON 或数据库直连，Excel 仅读取第一个工作表。
-- 当前没有后端服务，数据不会自动同步到云端。
-- 数据持久化基于浏览器 `localStorage`，更换浏览器或清理缓存后不会保留。
-- 图表组合依赖共享字段；当不同数据集没有兼容的 X 轴时，无法直接叠加到同一图卡。
-- 主题切换入口已预留，但尚未开放完整主题配置能力。
-- 函数画板当前支持直角坐标下的 `y = f(x)`，极坐标、参数方程和 3D 曲面尚未支持。
+- `apps/plot`：`NEXT_PUBLIC_IMAGE_APP_URL` 控制去 joimage 的入口；`NEXT_PUBLIC_SITE_URL` 可设置新应用自己的预览地址。未配置时不生成 canonical，预览阶段始终 `noindex`，robots 禁止索引，sitemap 为空。
+- `apps/image`：`NEXT_PUBLIC_PLOT_APP_URL` 控制去新 joplot 的入口。新 joplot 尚未上线时留空，入口自动隐藏。joimage 的站点 metadata、robots、sitemap 地址仍由该应用自己的配置管理。
+- Umami 环境变量按 Project 分别配置；老站保留原有配置，新站使用自己的 Website ID。
 
-## 技术栈
-
-- React 19
-- TypeScript
-- Next.js App Router
-- Plotly.js
-- Papa Parse
-- Tailwind CSS 4
-
-## 项目结构
-
-```text
-app/            Next.js 页面、metadata 与多语言路由入口
-src/
-  components/   界面组件与工作台交互
-  hooks/        CSV 数据加载与状态管理
-  i18n/         多语言字典与语言切换逻辑
-  lib/          图表、筛选、上传、持久化等核心工具
-tests/          核心逻辑测试
-public/         静态资源
-docs/           设计与规划文档
-```
-
-## 开发说明
-
-- 项目默认使用 `pnpm` 作为包管理器。
-- 当前仓库提供 `dev`、`build`、`start`、`test` 四个常用脚本。
-- 核心业务逻辑已包含测试文件，主要覆盖数据集构建、筛选、持久化和多语言初始化等能力。
-
-## 开源协作
-
-欢迎通过 Issue 或 Pull Request 提出改进建议，比较适合继续演进的方向包括：
-
-- 更丰富的图表类型
-- 更智能的字段映射和多表关联体验
-- 更完整的主题系统
-- 更稳定的导出与分享能力
-- 更清晰的公开演示材料和文档
-
-## 路线方向
-
-- 补充更多图表类型和统计分析卡片
-- 优化多数据集联动与字段映射体验
-- 完善主题系统和视觉自定义能力
-- 增强导出、分享与协作相关能力
-
-## 说明
-
-- 项目以 MIT 协议开源，详见 [LICENSE](./LICENSE)。
-- 如果准备将它作为公开仓库发布，建议继续补充：
-
-- 在线演示地址
-- 项目截图或录屏
-- 版本发布说明
+跨域链接携带 `?lang=` 传递语言，对方应用会写入自己的 cookie，再跳回干净 URL。环境变量应配置在各个应用的 `.env.local` 或对应 Vercel Project，仓库根的 `.env.example` 仅用于说明。

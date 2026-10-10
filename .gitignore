@@ -13,3 +13,8 @@ __pycache__
 tsconfig.tsbuildinfo
 .mimosa
 .zcode-shots
+.dsh-acl-recovery
+public/spike-duckdb/
+
+.tmp-shot
+.pnpm-store

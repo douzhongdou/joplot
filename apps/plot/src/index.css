@@ -1,0 +1,27 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@joplot/ui/theme.css";
+
+/* 共享 UI 包在 node_modules 之外，需要显式告诉 Tailwind 扫描它的类名 */
+@source "../../../packages/ui/src";
+
+/* ---- 以下为本应用（绘图工作台）专属样式 ---- */
+
+.js-plotly-plot,
+.plot-container {
+  width: 100%;
+  height: 100%;
+}
+
+/* Hover tooltip card. Plotly has no radius option and renders the unified hover
+   label as a legend group (`rect.bg`); older builds use `.hovertext`. */
+.js-plotly-plot .hoverlayer .legend > rect.bg,
+.js-plotly-plot .hoverlayer .hovertext rect {
+  rx: 8px;
+  ry: 8px;
+}
+
+/* Plotly hard-codes 3px of text padding around hover labels. */
+.js-plotly-plot .hoverlayer .legend .scrollbox {
+  transform: translate(7px, 7px);
+}

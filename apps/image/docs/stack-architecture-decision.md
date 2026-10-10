@@ -1,0 +1,363 @@
+# Stack 架构决策
+
+本文是《科学图像工作台架构方案》第 4、5、8 节的落地依据。Stack 是本工作台的核心功能，
+其读取与渲染方案经过对 ImageJ 1、Napari、OME-Zarr/NGFF 的源码与规范调查后确定。
+
+调查方式为逐行阅读源码并记录行号证据，所有结论均可复查。凡未在代码或规范中找到依据的，
+本文明确标注“未验证”，不做推测。
+
+## 1 调查范围
+
+| 对象 | 版本 / 出处 | 调查重点 |
+| --- | --- | --- |
+| ImageJ 1 | 本地 checkout（路径随开发机不同，见 [README 的路径表](../README.md)；`ij/ImageJ.java:81` 声明 `1.54u`） | 多页 TIFF 按页随机读取、翻页流程、二维显示绘制 |
+| Napari | 官方文档 stable 显示 9.1.0；源码 `napari/napari` 主分支（`src/` 布局） | 多维栈渲染栈、缓存策略、超大图处理 |
+| OME-Zarr / NGFF | 规范 0.6，2026-09-17 发布 | 轴顺序、分块、多分辨率 |
+
+## 2 ImageJ 的实际做法
+
+ImageJ 有三类栈，语义不同，不能混用：
+
+| 类 | 位置 | 适用场景 | 取页方式 |
+| --- | --- | --- | --- |
+| `ImageStack` | `ij/ImageStack.java:308` | 全内存 | `stack[n-1]` 直接取数组 |
+| `VirtualStack` | `ij/VirtualStack.java:172` | 目录 + 每页一个独立文件 | 每次 `new Opener().openTempImage(path, names[n-1])` |
+| `FileInfoVirtualStack` | `ij/plugin/FileInfoVirtualStack.java:207` | **单文件多页 TIFF** | 每次 `new FileOpener(info[n-1]).openProcessor()` |
+
+我们的场景对应第三类，它由 `IJ.openVirtual(path)` 进入（`ij/IJ.java:1992`）。
+
+### 2.1 索引建立：零像素字节读取
+
+`ij/io/TiffDecoder.java:824-835` 以 IFD 链式跳转遍历索引：
+
+```java
+while (ifdOffset>0L) {
+    in.seek(ifdOffset);            // 随机跳到该页 IFD
+    FileInfo fi = OpenIFD();       // 读这一页的 tag 条目
+    if (fi!=null) {
+        list.add(fi);
+        ifdOffset = ((long)getInt())&0xffffffffL;   // next IFD 偏移 → 继续跳转
+    } else ifdOffset = 0L;
+}
+```
+
+`OpenIFD()`（同文件 `:364-420`）逐条读 tag，并在 `count>1` 时以
+`saveLoc → seek(lvalue) → 读 count 个值 → seek(saveLoc)` 取行外值数组：
+
+```java
+case STRIP_OFFSETS:
+    if (count==1) fi.stripOffsets = new int[] {value};
+    else {
+        long saveLoc = in.getLongFilePointer();
+        in.seek(lvalue);
+        fi.stripOffsets = new int[count];
+        for (int c=0; c<count; c++) fi.stripOffsets[c] = getInt();
+        in.seek(saveLoc);
+    }
+```
+
+**每个分段（segment）的字节偏移与长度全部来自 IFD 条目及其行外值数组，一个像素字节都不读。**
+因此索引 IO 量只与 `页数 × tag 数` 相关，与文件大小无关；数百页的索引通常在几十 KB 量级。
+
+索引粒度是**每 IFD（每页）一个 `FileInfo`**；strip 只是该 `FileInfo` 内的 `int[] stripOffsets` /
+`int[] stripLengths`，不是独立对象。
+
+### 2.2 按页读取
+
+`ij/plugin/FileInfoVirtualStack.java:207-228`：
+
+```java
+info[n-1].nImages = 1;              // 把该页当作单页图读
+FileOpener fo = new FileOpener(info[n-1]);
+ip = fo.openProcessor();            // 按 info[n-1].getOffset() 定位
+```
+
+### 2.3 缓存：没有
+
+三类栈均无 cache 字段，`ij/ImagePlus.java` 中也搜不到任何缓存代码。
+每次 `getProcessor` 都重新走完整的打开与读取流程，来回翻页重复读文件。
+
+### 2.4 默认打开多页 TIFF 并未使用按页读
+
+`ij/io/Opener.java:1144-1148` 默认构造的是全内存 `ImageStack`，无大小阈值、无 UI 提示；
+`FileInfoVirtualStack` 只能由用户显式选择触发（`ij/io/ImportDialog.java`，
+`ij/plugin/FolderOpener.java:603`）。即 ImageJ 的日常使用路径并未启用按页读取。
+
+### 2.5 显示：纯 CPU 软件绘制
+
+`ij/gui/ImageCanvas.java` 全部为 AWT 软件绘制：`g.drawImage(...)`（`:235`、`:556`）、
+`RenderingHints.KEY_INTERPOLATION`（`:257`）、`offScreenImage` 双缓冲（`:552-568`）。
+无任何 GPU 渲染。
+
+### 2.6 窗口 / level 走查找表
+
+`ij/process/ImageProcessor.java:168` 要求色彩模型为 `IndexColorModel`，
+即 256 级查找表；`setMinAndMax` 改变的是 LUT 而非逐像素浮点运算。
+
+**本项目实测**：将逐像素浮点 `(value - lo) * scale` 换成 64K 项 LUT 查表后，
+4096×4096 uint16 源、zoom=1 的视口光栅化耗时（中位，5 次取样）：
+
+| 视口 | 逐像素浮点 | LUT 查表 | 提速 | 占 50ms 预算 |
+| --- | --- | --- | --- | --- |
+| 1920×1080 dpr=1 | 17.7 ms | 12.1 ms | 1.47× | 24% |
+| 1920×1080 dpr=2 | 64.0 ms | 40.7 ms | 1.57× | 81% |
+| 3840×2160 dpr=2 | 225.6 ms | 151.3 ms | 1.49× | 303% |
+
+结论：LUT 是确定收益且零风险，但只值约 1.5 倍，**4K dpr=2 仍超预算 3 倍。
+症结不在光栅化速度，而在需要处理的像素数量。**
+
+## 3 ImageJ 不可照抄之处
+
+| # | ImageJ 行为 | 证据 | 状态 |
+| --- | --- | --- | --- |
+| 1 | 拒绝 tiled TIFF | `ij/io/TiffDecoder.java:538-540` `error("ImageJ cannot open tiled TIFFs...")` | tile 属 WSI 管线（§6），本期 stack 不需要。但 `indexer.ts` 仍能识别并索引 tile，避免静默产出错误像素 |
+| 2 | 不支持 BigTIFF | 偏移以 `getInt()` 读取，如 `:398`、`:829` | **已补齐**。本项目 `engine/tiff.ts:19-20` 的写出侧已明确拒绝 >4 GiB 并要求 BigTIFF，若读取侧不支持将无法读回自己格式支持的数据 |
+| 3 | 无缓存 | 三类栈均无 cache 字段 | **待补齐**，见 §6.3 的 L2 |
+| 4 | 不支持「一个 IFD 多页」 | `TiffDecoder.java:833-834` `if (fi.nImages>1) ifdOffset = 0L; // ignore extra IFDs in ImageJ and NIH Image stacks` | **已补齐**，多帧数记入 `frames` |
+
+## 4 Napari 的做法
+
+| 主题 | 结论 | 来源 |
+| --- | --- | --- |
+| 渲染后端 | VisPy（OpenGL）；napari 自身不含像素光栅化代码 | `src/napari/_vispy/layers/image.py` |
+| 切片抽象 | **不存在 Slice layer**，切片是渲染管线阶段：`_SliceInput` / `_SliceRequest` / `_SliceResponse` | napari 主分支 |
+| CPU 回退 | 未找到，全仓库无软件渲染路径 | 同上 |
+| 超大图 | 自研 `TiledImageNode` | 见下 |
+
+`_vispy/layers/image.py` 的选择规则：
+
+```python
+match ndisplay, shape:
+    case 2, (s0, s1, *_) if s0 > M2D or s1 > M2D:
+        res = self._tiledimage_node
+    case 2, _:
+        res = self._image_node
+```
+
+两点值得注意：
+
+1. **napari 没有 CPU 回退**，与 ImageJ 构成明确的路线分野。
+2. `TiledImageNode` 是为“图像尺寸超过 GPU 最大纹理尺寸”而专门实现的。
+   这说明**分块支持不只是为了兼容既有文件格式，而是超大图渲染的必需品**。
+
+## 5 OME-Zarr / NGFF
+
+| 版本 | 底层存储 | 状态 |
+| --- | --- | --- |
+| 0.4 | Zarr v2 | 历史数据量大，规范仍建议支持读取 |
+| 0.5 | Zarr v3 | 生态主力 |
+| 0.6 | Zarr v3 | 2026-09-17 发布 |
+
+0.6 的主要变化在坐标系统而非存储：`axes` 升级为具名 coordinate systems，
+并引入 `coordinateTransformations`（identity / scale / translation / affine 等）。
+就纯栈浏览而言，0.5 与 0.6 的读取路径基本一致。
+
+分块（chunk）是 Zarr 的原生设计，适配随机访问；但它的前提是数据以 Zarr 存储。
+面对来源不可控的第三方 TIFF，业界做法仍是建立索引后按需读取。
+
+## 6 范围界定：Stack 与 WSI 是两套管线
+
+Stack（Z/T 栈浏览）与 WSI（全切片影像）在数据形态与随机访问粒度上差异很大，本项目明确分开：
+
+| | Stack（本期） | WSI（不在本期） |
+| --- | --- | --- |
+| 典型文件 | 多页 / 多 IFD TIFF，单页 1–16 MP | 单页超大 tiled TIFF，可达 100 GP |
+| 分段粒度 | 多为整页一条带 | 固定 tile（如 256×256、512×512） |
+| 随机访问粒度 | 随机页 | 页内随机 ROI |
+| 管线 | 本期 | 另立一套 |
+
+### 6.1 关键事实：strip 的分段粒度通常就是整页
+
+本项目的两个 TIFF 写出器都写 `RowsPerStrip = height`
+（`engine/tiff.ts:27`、`lib/tiff.ts:19`），即单页只有一条分段。
+ImageJ 的写出行为相同。这意味着 Stack 场景下的"只上传可见区域覆盖的分段"**无从谈起** ——
+没有比整页更细的分段可用。
+
+因此 Stack 的正确路径是：
+
+1. 按页读整页字节。这是数据量决定的下限，无法绕过。
+2. 整页上传为一张 GPU 纹理。
+3. 缩放、平移、window/level 全部在 GPU 完成；翻页后不再重新读取或重算。
+
+以 4096×4096 uint16 为例，单页 33.5 MB，约合 256 MB 缓存预算下的 7.5 页。
+成本集中在「每页一次的读取与上传」，而非逐像素光栅化 ——
+后者交给 GPU 后不再是瓶颈（见 §2.6 的 CPU 实测）。
+
+这也修正了 §2.6 的结论：4K dpr=2 超预算的根因是 **CPU 逐像素处理**，
+而不是数据量本身过大。数据量只需承担每页一次的成本。
+
+### 6.2 关于 tiled TIFF 的处理
+
+`engine/tiff/indexer.ts` 保留了对 tile 的识别与索引能力，
+目的是遇到 tiled 文件时能正确索引、或明确报错，而不是静默产出错误像素。
+但本期不为 tile 做任何渲染层面的优化，其分段裁剪能力属于 WSI 管线的范畴。
+
+### 6.3 实现顺序
+
+| 层 | 内容 | 状态 |
+| --- | --- | --- |
+| L0 | `TiffIndexer`：IFD 链式遍历，输出逐页索引（每页含统一 `segments`），支持 strip、BigTIFF、多帧 IFD | **已完成** `engine/tiff/indexer.ts` |
+| L1 | `TiffPageSource.readPage(n)` 与 `TiffStackStorage`：按页读字节并对齐 dataset 轴 | **已完成** `engine/tiff/source.ts`、`engine/storage-tiff.ts` |
+| L2 | 字节预算 LRU 缓存 + 邻页预取 | **已具备，无需新做**（见 §6.5） |
+| L3 | GPU 渲染：整页上传为纹理，window/level 与采样在着色器内完成 | 未做，当前仍为 `rasterizeViewport` 的 CPU 路径 |
+| L4 | `encodeTiffStack` 增加多分辨率金字塔 | 未做 |
+
+### 6.4 实现记录
+
+L0 与 L1 的实现中确认或修正了以下几点，均已由测试固定：
+
+**行序无需翻转。** TIFF 第一行即图像顶部。ITK 导入路径同样不翻转
+（`importer.ts:86-98` 按 `size[0]/size[1]` 取宽高后顺序拷贝），
+`rasterizeViewport` 也假设第 0 行在顶部（`render/raster.ts` 的 `iy * iw + ix`）。
+三者一致，因此两条读取路径不会互相颠倒。
+
+**RGB 布局必须转换。** TIFF 以像素交织存 RGB，而 `ImageBlock` 的 `c` 轴为平面分离
+（`raster.ts` 按 `data[channel * pixels + index]` 取值，`importer.ts:116` 同）。
+读取层负责转换。
+
+**字节序必须逐页记录。** `TiffIndex` 有文件级的 `littleEndian`，但 `TiffPage` 必须另存一份。
+缺该字段时 `meta.littleEndian` 为 `undefined`，而 `DataView.getUint16(at, undefined)`
+把 `undefined` 当作 `false`，于是小端文件被按大端解读 —— 数值全部错位且不抛任何错误
+（实测 `1` 读成 `256`、`400` 读成 `0x9001 = 36865`）。此坑只有类型检查能发现。
+
+**BigTIFF 的偏移类是 LONG8。** 偏移类 tag 在 BigTIFF 下为 8 字节（type 13/16/17/18），
+按 4 字节读取会让超过 4 GiB 的偏移静默截断为 `0`，表现为「文件能打开但像素全黑」。
+经典 TIFF 中 type 13 是 4 字节的 IFD 指针，因此该差异必须在 `big` 分支单独处理。
+
+**未压缩页的分段按坐标放置，不可直接拼接。** 多个条带在文件里是彼此独立的字节区间，
+必须按各自的 `y` 写入目标缓冲的正确行位置。
+
+### 6.5 L2 无需另建：缓存与预取原本就已就绪
+
+初版计划把「字节预算 LRU + 邻页预取」单列为 L2，实现时发现 `runtime.ts` 早已具备：
+
+- `cacheKeyFor`（`runtime.ts:287-293`）的缓存键已包含 `selectionKey(selection)`，
+  因此按页缓存天然生效，无需另建。
+- `schedulePrefetch`（`runtime.ts:296-333`）已预取邻页 `[+1,-1,+2]`，
+  并按翻页方向设置 `prefetchForward` / `prefetchBackward` 优先级。
+
+因此惰性存储接入后缓存与预取自动生效。实测确认：预取命中时 `run()` 在同步块内
+即返回，**不存在「已过期」中间态**，翻页无闪烁。
+
+### 6.5.1 翻页手感的第二轮修复（本轮）
+
+上一节的结论只在「翻一页、等画面出来、再翻下一页」的节奏下成立。连续滚轮下有三处
+各自独立地吃掉了手感，均已修复并实测：
+
+| # | 症状 | 根因 | 修法 |
+| --- | --- | --- | --- |
+| 1 | 滚 20 格只出 1 帧，其余全被丢弃 | 每页成本高于滚轮事件间隔时，`run()` 的合并策略只保留最新请求 | 属数据量决定的下限，但修掉 2、3 后等待从 77.5 ms 降到 62.9 ms |
+| 2 | 预取命中率恒为 0 | 预取任务的过期版本里含 `selectionKey`，用户每翻一页就把在途与已入队的预取全部作废；且 `runQueued` 时直接 `return` | 预取改用「数据集 + Recipe」版本（`dataVersionFor`）、在切片切换时即刻入队、窗口按翻页方向偏置为 `[+1..+4, -1, -2]`，并裁掉距当前页超过 8 页的待跑任务 |
+| 3 | 预取与当前页互相抢引擎、重复算同一页 | 两者各发一次请求 | 按缓存键共享在途 Promise（`runShared`）：显示请求直接搭上已发出的预取 |
+
+另有两处与翻页无关但同属该路径的固定开销：
+
+- **整帧分析给显示让路。** 分析原先排在显示之后但会独占引擎，`pumpAnalysis` 现在在
+  `runQueued || runPromise` 时直接返回，等显示彻底空闲再补（结果只保留最新一页）。
+- **Original 对比改为按需取帧。** 旧实现每次切片切换都调 `readSourceFrame()`，
+  即一次完整的空 Recipe 执行加跨线程整页回传（4096² uint16 合 33.5 MB），
+  比翻页本身还贵；现在只在用户点击 Original 时才读。
+
+渲染侧本轮做了区域化（仍未上 GPU，L3 依旧未做）：
+
+- `imageRasterRegion` 只圈出图像覆盖的像素矩形，其余像素由一次 `fillRect` 铺底色。
+  缩小查看（Stack 的常见形态）下处理的像素数降一个数量级。
+- 内核把彩色 / 灰度 / 阈值 / 有无色彩调整四类分支提到循环外，并复用 RGBA 缓冲。
+- 口径由 `rasterizeViewport`（整视口版）保留，用于逐位回归：120 组
+  （4 种 dtype × 6 种相机 × 5 种显示选项）与原实现逐位相同。
+
+1024² uint16 灰度、1400×900 视口（dpr=2）实测中位耗时：
+
+| 场景 | 改前 | 改后 | 提速 |
+| --- | --- | --- | --- |
+| fit（zoom≈0.6，图像居中） | 37.8 ms | 7.5 ms | 5.0× |
+| 1:1 dpr=1 | 14.0 ms | 5.5 ms | 2.6× |
+| 图像部分越界 | 16.4 ms | 4.9 ms | 3.3× |
+| 放大 4×（视口内全是图像） | 62.1 ms | 50.8 ms | 1.2× |
+
+即缩小浏览已落入单帧预算，**放大到充满视口仍是 §6.1 的 CPU 逐像素瓶颈**，只能靠 L3。
+
+### 6.5.2 把解码成本挪回打开阶段（本轮）
+
+§6.5.1 之后「手感」仍未对齐 ImageJ。根因不在渲染：用户拖入的是文件夹里的
+12 张 4096×3072 JPEG（2.8 MB/张），走 `MultiFileStackStorage` 的惰性解码，
+于是**每翻一页才现场解码一次**。复现 `bitmap.ts` + `align` 实测该链路：
+
+| 阶段 | 4096×3072 JPEG |
+| --- | --- |
+| `createImageBitmap`（JPEG 解码） | 35.0 ms |
+| `drawImage` + `getImageData`（取像） | 50.8 ms |
+| `rgbaToPlanarRgb`（逐像素平面化） | 22.7 ms |
+| `slice()`（worker 内拷贝，供 transfer） | 6.1 ms |
+| **合计** | **114.7 ms / 页** |
+
+ImageJ 在拖入文件夹时把这笔钱一次付掉（`FolderOpener` 整卷读入内存，所以它可见地
+Loading），之后翻页只是换 `ImageProcessor` 引用 + `g.drawImage`（§2.2、§2.5）。
+本轮把成本挪回打开阶段：
+
+- **整卷预热。** `runtime.scheduleWarmup()` 复用 §6.5 的预取队列，把尚未缓存的页
+  以 `TASK_PRIORITY.background` 铺进队列：显示空闲时逐页执行，用户翻页时自动让路
+  （`pump` 的让路条件）。进度经 `RuntimeState.preload` 报到 UI（状态栏「正在载入 Stack i / n」）。
+- **按需放宽缓存预算。** 新增 `ByteCache.setBudget()`；预热时按「页数 × 单页字节 × 1.15」
+  放宽，上限取设备内存的 1/4（封顶 1 GiB，拿不到 `deviceMemory` 时 768 MiB）。
+  不放宽的话整卷预热会被自身预算边热边淘汰，等于白热。
+  预热任务与预取任务共用队列与 `coalesceKey`，被顶掉或取消时同样记账（`onDiscard`），
+  否则进度永远到不了 100%。
+- **渲染查表。** `mappingLut`：整数 dtype 的取值只有 0..ceiling 种（uint8 是 256、
+  uint16 是 65536），逐像素 `Math.round((value - lo) * scale)` 换成一次数组读。
+  4096×3072 RGB uint8 + fit 视口 1400×700 dpr2：51.3 ms → **11.6 ms**；
+  1024² uint16 灰度：21.1 ms → **1.9 ms**。125 组组合（5 dtype × 5 相机 × 5 显示选项）
+  与原实现逐位一致。
+- 缓存命中时不再先广播 `running`：翻页绝大多数命中，那次 emit 只会白触发一遍全量重渲染。
+
+实测（32 页、每页人为注入 40 ms 解码成本，模拟文件夹栈；数据来自 `ImageRuntime` 探针）：
+
+| 场景 | 翻页等待 | 翻页期间引擎请求 |
+| --- | --- | --- |
+| 等预热完成再翻（整卷预热 1.48 s） | 平均 0.1 ms，最大 0.8 ms | 0 次 / 31 页 |
+| 打开就翻（预热与翻页交错） | 平均 6.8 ms，最大 43.5 ms | 40 次 / 31 页 |
+
+预热完成后翻页彻底变成缓存命中，与 ImageJ 的「换引用 + blit」同一量级；
+不等预热直接翻也不再退化成每页一次完整解码。
+
+### 6.6 接入后的实测结果
+
+三页 64×64 uint16 stack（竖条 / 横条 / 斜条纹三种图案）在浏览器中实测：
+
+| 页码 | 画面中心 3×3 采样（灰度） | 与预期的图案 |
+| --- | --- | --- |
+| 1 / 3 | `[113,130,142]` 三行重复 | 竖条：沿 x 递增、y 重复 ✓ |
+| 2 / 3 | `[113,113,113] [130,130,130] [142,142,142]` | 横条：沿 y 递增、x 相同 ✓ |
+| 3 / 3 | `[0,146,255] [146,0,109] [255,109,219]` | 斜条纹：对角交替 ✓ |
+
+按钮边界正确（首页禁用 `←`、末页禁用 `→`），控制台无错误。
+
+连点翻页时按钮处于 `disabled`（`busy` 期间），故不会堆积请求；
+实测无「新页码配旧像素」，也无残留加载遮罩。
+
+### 6.7 尚未覆盖
+
+- 压缩 TIFF 走 ITK-Wasm 全量解码，因此仍受全量读入的限制（300 页 4096×4096 uint16 不可接受）。
+  要支持压缩栈，需要按页解压路径。
+- OME-TIFF 的 c/t/z 多维语义（需解析 OME-XML）未支持，当前一个 IFD 一律映射为一个 z 切片。
+- 物理标定未从 TIFF 的 Resolution tag 读取，`spatialTransform` 一律标记为未标定。
+
+## 7 与既有文档的关系
+
+第 8 节关于二维视口的“LUT 优化”在本轮实测后应补充：LUT 只值约 1.5 倍，
+不足以覆盖 4K dpr=2。真正的杠杆是减少需要传输与处理的像素数量（§6）。
+
+第 4 节“优先按偏移读取所需字节，避免大文件一开始就调用完整 `file.arrayBuffer`”
+与 §2.1 的实测一致，且明确了实现方式为 IFD 链式遍历。
+
+## 8 未验证事项
+
+- 压缩 TIFF 未纳入索引层之外的任何处理。压缩数据必须整段解压，因此对压缩页只能整页读，
+  无法按分段部分读。按 §6.1，整页读本就是 Stack 的正常路径，故此限制不构成额外约束；
+  但压缩页的读取成本会高于同尺寸的无压缩页。
+- `TIFFTAG_PAGE_NUMBER` 与 SubIFDs（多页嵌套在单一 IFD 内）未纳入索引，
+  仅覆盖「一个 IFD 一页」与「一个 IFD 多帧（nImages）」两种情形。
+- IFD 链式遍历在 IFD 全部前置、像素数据后置的常见布局下已由 ImageJ 验证；
+  像素数据与 IFD 交错排布的文件中，索引仍只读 IFD 区域，不受影响。
+- 单页 33.5 MB 整页上传 GPU 的实际耗时未实测。这决定 L3 的渲染后端选型，
+  需在浏览器中测量后回填。
