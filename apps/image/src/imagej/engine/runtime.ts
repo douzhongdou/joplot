@@ -1204,6 +1204,14 @@ export class ImageRuntime {
    */
   private scheduleWarmupSoon(): void {
     if (!this.prefetchEnabled || this.disposed) return
+    const dataset = this.state.dataset
+    const recipe = this.currentRecipe()
+    if (!dataset || !recipe) return
+    // 预热只跟「数据集 + Recipe（含 throughStep）」绑定，而 `warmupFinished` 记的正是
+    // 上一次铺开所依据的版本。版本没变就直接返回，**典型情形就是翻页**：翻页不改 recipe，
+    // 预热结果依然有效，绝不能走到下面的 cancel —— 否则翻一页就把整卷任务撤掉，
+    // 而 `warmupFinished` 又拦着不让重排，预热从此永久停摆，之后每页都得现场解码。
+    if (this.warmupFinished === this.dataVersionFor(recipe, this.state.throughStepId)) return
     this.cancelWarmup()
     if (this.warmupTimer) clearTimeout(this.warmupTimer)
     this.warmupTimer = setTimeout(() => {

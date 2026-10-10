@@ -39,10 +39,11 @@ import type { ImageRuntime } from '../engine/runtime'
 import { useImageAnalysis } from './useImageAnalysis'
 import { ImageViewport, type ImageViewportHandle, type PixelProbe } from './ImageViewport'
 import { ColorContrastPanel } from './ColorContrastPanel'
+import { SCOPE_PROMPT } from '../lib/scopePrompt'
 import { StackBuilderDialog, type StackRow } from './StackBuilderDialog'
 import { StackOrderDialog } from './StackOrderDialog'
 import { RawSensorDialog, type RawSensorPrompt } from './RawSensorDialog'
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@joplot/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@joplot/ui/dialog'
 import { AnimationCommandPanel, CombineCommandPanel, DebayerCommandPanel, FilterCommandPanel, LabelCommandPanel, MontageCommandPanel, MontageToStackCommandPanel, OrthogonalCommandPanel, Project3dCommandPanel, ReduceCommandPanel, RemontageCommandPanel, ResliceCommandPanel, SetLabelCommandPanel, SubstackCommandPanel, ThresholdCommandPanel, ZProjectCommandPanel } from './CommandPanels'
 import { HistogramChart } from './HistogramChart'
 import { applyColorAdjustments, type ColorAdjustment } from '../engine/colorAdjustments'
@@ -176,6 +177,24 @@ function groupSizeFactors(count: number): number[] {
   return factors
 }
 
+/** 每个样本的字节数；图像信息栏据此算数据量。 */
+const BYTES_PER_SAMPLE: Record<string, number> = { uint8: 1, uint16: 2, int16: 2, float32: 4 }
+
+/** 数据量：对齐 ImageJ 的 1024 进制（4096×3072 的 8-bit 两页正好显示 24MB）。 */
+function formatDataSize(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)}GB`
+  if (bytes >= 1024 ** 2) return `${Math.round(bytes / 1024 ** 2)}MB`
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)}KB`
+  return `${bytes}B`
+}
+
+/** 图像信息栏里的类型名，用 ImageJ 的词表（8-bit / 16-bit / 32-bit / RGB）。 */
+function dtypeName(dataset: Dataset): string {
+  if (dataset.componentKind === 'rgb') return 'RGB'
+  if (dataset.dtype === 'float32') return '32-bit'
+  return dataset.dtype === 'uint8' ? '8-bit' : '16-bit'
+}
+
 /**
  * 解析 ImageJ 风格的切片表达式：`1-3`、`1-100-2`、`7,9,25` → 0-based 下标数组。
  *
@@ -209,13 +228,11 @@ function parseSliceList(input: string, count: number): number[] {
  * 每个可翻的轴独占一行，因此 hyperstack（c/z/t）也只是几行矮栏，不会挤压图像。
  * 翻页在途时页码显示 `…`：架构方案第 1 节禁止"新页码配旧像素"。
  */
-function StackSliceBar({ slices, stale, disabled, pageLabel, label, onSelect }: {
+function StackSliceBar({ slices, stale, disabled, pageLabel, onSelect }: {
   slices: readonly { axis: 't' | 'c' | 'z'; length: number; index: number }[]
   stale: boolean
   disabled: boolean
   pageLabel: string
-  /** 当前页的来源文件名（多文件 Stack 才有）：翻页时回答「这一页是哪个文件」。 */
-  label?: string
   onSelect(axis: 't' | 'c' | 'z', index: number): void
 }) {
   if (!slices.length) return null
@@ -260,13 +277,6 @@ function StackSliceBar({ slices, stale, disabled, pageLabel, label, onSelect }: 
           </span>
         </div>
       ))}
-      {/* 来源文件名单独一行：挤进上面的轴行会被滑块压成几个字，这里能读全（过长仍截断，`title` 给全名）。 */}
-      {label ? (
-        <div className="flex h-6 min-w-0 items-center gap-1.5 border-t border-base-300/60 px-2 text-xs text-base-content/70">
-          <ImageIcon size={12} className="shrink-0 opacity-60" />
-          <span className="truncate" title={label}>{label}</span>
-        </div>
-      ) : null}
     </div>
   )
 }
@@ -305,7 +315,8 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const [thresholdLevel, setThresholdLevel] = useState(128)
   const [debayerPattern, setDebayerPattern] = useState('auto'), [debayerAlgorithm, setDebayerAlgorithm] = useState('malvar')
   const [scope, setScope] = useState<'image' | 'roi'>('image')
-  const [applyAll, setApplyAll] = useState(false)
+  /** 待执行的应用：多页 Stack 上先问作用域，答完再把 `allPages` 交给它（见 requestScope）。 */
+  const [pendingScope, setPendingScope] = useState<((allPages: boolean) => void) | null>(null)
   const [paramCommand, setParamCommand] = useState<ParamCommand | null>(null)
   useEffect(() => {
   }, [])
@@ -450,6 +461,26 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   const pageIndex = slice?.index ?? 0
   /** 切片轴的页数：跨帧命令（Z 投影 / 整栈统计）的作用范围。 */
   const sliceCount = slice?.length ?? 1
+  /**
+   * 图像信息栏（ImageJ 把这一行写在图像窗口标题上）：
+   * `<页>/<总页> (<标签>); 宽×高 pixels; 类型; 数据量`。
+   *
+   * 常驻一行，翻页或 `stale` 时只把页码换成 `…`——行本身不出现也不消失，
+   * 所以画面不会随翻页上下跳动。单页图没有页码段，只剩尺寸/类型/大小。
+   */
+  const imageInfo = useMemo(() => {
+    const dataset = state.dataset
+    if (!dataset) return ''
+    const width = dataset.shape[dataset.axes.indexOf('x')] ?? 0
+    const height = dataset.shape[dataset.axes.indexOf('y')] ?? 0
+    const samples = dataset.shape.reduce((total, length) => total * length, 1)
+    const size = formatDataSize(samples * (BYTES_PER_SAMPLE[dataset.dtype] ?? 1))
+    const label = state.sliceLabels?.[pageIndex]
+    const page = sliceCount > 1
+      ? `${stale ? '…' : pageIndex + 1}/${sliceCount}${!stale && label ? ` (${label})` : ''}; `
+      : ''
+    return `${page}${width}×${height} ${copy.status.pixels}; ${dtypeName(dataset)}; ${size}`
+  }, [state.dataset, state.sliceLabels, pageIndex, sliceCount, stale, copy])
   /** 时间帧数：大于 1 时 Z 投影才提供「全部时间帧」。 */
   const timeCount = slices.find((entry) => entry.axis === 't')?.length ?? 1
   const stackStats = state.stackStats
@@ -702,7 +733,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
    */
   const filterPreviewScope = (): StepScope => {
     const scope = stepScope(null)
-    if (applyAll || scope.kind !== 'frame' || !image) return scope
+    if (scope.kind !== 'frame' || !image) return scope
     const bounds = viewportRef.current?.visibleRegion()
     if (!bounds) return scope
     return {
@@ -725,7 +756,6 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     const stepId = filterPreviewStepId
     filterScopeTimer.current = setTimeout(() => {
       filterScopeTimer.current = null
-      if (applyAll) return
       const next = region
         ? {
             kind: 'frame' as const,
@@ -765,32 +795,77 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     const stepId = filterPreviewStepId
     filterPreviewTimer.current = setTimeout(() => { filterPreviewTimer.current = null; runtime.updateParams(stepId, next) }, FILTER_PREVIEW_DEBOUNCE_MS)
   }
-  /** 执行：已经在预览就直接留下那一步，否则按当前参数提交一步。 */
+  /**
+   * 执行：已经在预览就把那一步固化成最终作用域，否则按当前参数提交一步。
+   *
+   * 预览那一步带的是「当前切片 + 视口可见区域」的临时作用域，直接留下就等于既锁死在
+   * 当前切片、又只处理屏幕上那一块；所以固化时必须用 `stepScope` 把它换掉 ——
+   * 与新增一步走同一个作用域询问，否则开着预览就没法选「整个 Stack」。
+   */
   const applyFilter = (op: ParamOp) => {
     setError('')
-    if (filterPreviewStepId) setFilterPreviewStepId(null)
-    else submit(op, filterParamValues(op), null)
-    setParamCommand(null)
+    const previewId = filterPreviewStepId
+    if (!previewId) {
+      submit(op, filterParamValues(op), null)
+      setParamCommand(null)
+      return
+    }
+    // 取消询问时什么都不做：面板与预览都留在原处，用户可以接着调。
+    requestScope((allPages) => {
+      setFilterPreviewStepId(null)
+      runtime.updateScope(previewId, stepScope(null, allPages))
+      setParamCommand(null)
+    })
   }
 
-  const stepScope = (target: RoiInput | null): StepScope => {
+  const stepScope = (target: RoiInput | null, allPages = false): StepScope => {
     // 算子作用域目前是矩形 `Region`，因此取选区包围盒；统计类走掩码语义（见 analysis.ts）。
     const bounds = target ? roiBounds(toRoi(target)) : null
     const region = image && bounds ? { start: image.axes.map((axis) => axis === 'x' ? bounds.x : axis === 'y' ? bounds.y : 0), shape: image.axes.map((axis, i) => axis === 'x' ? bounds.width : axis === 'y' ? bounds.height : image.shape[i]!) } : undefined
-    if (applyAll) return region ? { kind: 'roi', region } : { kind: 'stack' }
+    if (allPages) return region ? { kind: 'roi', region } : { kind: 'stack' }
     return { kind: 'frame', selection: { ...state.selection }, region }
   }
-  const submit = (op: string, params: Record<string, number | string> = {}, target: RoiInput | null = roi) => {
+  /**
+   * 真正提交一步：`allPages` 决定它落在当前切片还是整个 Stack。
+   *
+   * 与之配套的 `submit` 会在多页 Stack 上先弹窗问一次 —— 同一个问题只问一次，
+   * 所以顶栏左侧不再需要常驻的「应用到整个 Stack」复选框。
+   */
+  const commitSubmit = (op: string, params: Record<string, number | string>, target: RoiInput | null, allPages: boolean) => {
     if (!image || busy) return
     setError(''); setShowOriginal(false)
-    if (colorPreview.length) commitColorPreview(colorPreview, applyAll)
+    // 正在预览的色彩调整先落到当前切片，别让它被后面的步骤挤成整栈作用域。
+    if (colorPreview.length) commitColorPreview(colorPreview, false)
     const ci = image.axes.indexOf('c')
     const needsGray = getOperator(op)?.input.channels !== 'any'
     // debayer 需要单通道输入，但输出是 RGB，应保持彩色显示；其他需要灰度的算子仍先转灰度。
     const outputsRgb = op === 'debayer'
     setShowColor(outputsRgb || (op !== 'grayscale' && !needsGray))
-    if (op !== 'grayscale' && !outputsRgb && needsGray && ci >= 0 && (image.shape[ci] ?? 1) > 1) runtime.addStep('grayscale', {}, stepScope(null))
-    runtime.addStep(op, params, stepScope(target))
+    if (op !== 'grayscale' && !outputsRgb && needsGray && ci >= 0 && (image.shape[ci] ?? 1) > 1) runtime.addStep('grayscale', {}, stepScope(null, allPages))
+    runtime.addStep(op, params, stepScope(target, allPages))
+  }
+  /**
+   * 作用域询问的统一入口。
+   *
+   * 凡是在 Stack 上「只改这一页还是整栈」有歧义、又会改变像素的操作都必须从这里过一遍：
+   * 亮度/对比度、白平衡、滤镜、阈值、二值化、数学运算、去马赛克……此前各写各的，
+   * 于是有的问（亮度/对比度面板自带弹窗）、有的不问（白平衡直接执行）。
+   * 单页图没有歧义，直接按当前切片执行，不打扰。
+   */
+  const requestScope = (apply: (allPages: boolean) => void) => {
+    if (!stack) { apply(false); return }
+    // 必须用 updater 形式：直接 setPendingScope(apply) 会被 React 当成 updater 调用。
+    setPendingScope(() => apply)
+  }
+  const submit = (op: string, params: Record<string, number | string> = {}, target: RoiInput | null = roi) => {
+    if (!image || busy) return
+    requestScope((allPages) => commitSubmit(op, params, target, allPages))
+  }
+  /** 作用域弹窗的答复：先关窗再执行，避免执行过程中弹窗还挂着。 */
+  const decideScope = (allPages: boolean) => {
+    const apply = pendingScope
+    setPendingScope(null)
+    apply?.(allPages)
   }
   /** 打开某个命令自己的参数面板（先提交正在预览的色彩调整，并切到合适的显示模式）。 */
   const openParamCommand = (command: ParamCommand) => {
@@ -1391,12 +1466,15 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     if (projected) onOpenDataset?.(projected)
   }
   /** 「白平衡」：按所选调色算法往处理链加一步 colorGrading（纯调色，非显示范围）。 */
-  const applyColorGrading = () => {
+  const applyColorGrading = (allPages: boolean) => {
     if (!hasImage || busy) return
     setError('')
-    if (gradingPreviewStepId.current) {
-      // 预览已经是处理链里的一步：停止跟踪它就等于「固化」，不需要再加一步。
+    const previewId = gradingPreviewStepId.current
+    if (previewId) {
+      // 预览已经是处理链里的一步：固化它，但作用域要换成用户刚选的那个 ——
+      // 预览那一步恒为「当前切片」，直接留下就再也选不了整个 Stack。
       gradingPreviewStepId.current = null
+      runtime.updateScope(previewId, stepScope(null, allPages))
       return
     }
     runtime.addStep('colorGrading', {
@@ -1406,7 +1484,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
       gainR: gradingGains[0],
       gainG: gradingGains[1],
       gainB: gradingGains[2],
-    }, stepScope(null))
+    }, stepScope(null, allPages))
     // 应用后不收起面板：白平衡通常要连着试几种方法/参数，收起反而碍事（再点一次命令项即可收起）。
   }
 
@@ -1842,11 +1920,11 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
         onGain={(channel, value) => setGradingGains((current) => [channel === 0 ? value : current[0], channel === 1 ? value : current[1], channel === 2 ? value : current[2]])}
 
         onPreview={setGradingPreview}
-        onApply={applyColorGrading}
+        onApply={() => requestScope(applyColorGrading)}
       />
     : paramOp === 'levels'
     ? image
-      ? <ColorContrastPanel embedded session={colorSession} block={image} roi={roi ? roiBounds(roi) : null} language={language} busy={busy} hasStack={Boolean(stack)} singleChannel={!isRgb} mode={paramCommand === 'White Balance' ? 'colorBalance' : 'brightness'} onPreview={setColorPreview} onApply={commitColorPreview} onClose={closeParamCommand} />
+      ? <ColorContrastPanel embedded session={colorSession} block={image} roi={roi ? roiBounds(roi) : null} language={language} busy={busy} singleChannel={!isRgb} onPreview={setColorPreview} onApply={(settings) => requestScope((allPages) => { commitColorPreview(settings, allPages); setColorSession((value) => value + 1) })} onClose={closeParamCommand} />
       : null
     : paramOp === 'threshold'
       ? <ThresholdCommandPanel copy={copy} level={thresholdLevel} minimum={stats?.histogramMin ?? 0} maximum={stats?.histogramMax ?? 255} step={image?.dtype === 'float32' ? 'any' : 1} disabled={!hasImage || busy} onLevel={setThresholdLevel} onApply={applyCurrentThreshold} onOtsu={applyOtsu} onClose={closeParamCommand} />
@@ -2328,12 +2406,6 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
       <div className="grid min-h-0 min-w-0 grid-cols-1 overflow-y-auto lg:grid-cols-[260px_minmax(0,1fr)_300px] lg:overflow-hidden">
         {/* 左栏「处理」：命令目录（选中项下方内联展开自己的操作面板）+ 撤销 / 状态 */}
         <aside className="order-2 flex min-h-0 flex-col border-b border-base-300 bg-base-100 lg:order-none lg:h-full lg:border-b-0 lg:border-r">
-          {stack && <div className="shrink-0 border-b border-base-300 px-2.5 py-2 text-xs">
-            <Label className="flex items-center gap-2">
-              <Checkbox checked={applyAll} onCheckedChange={(value) => setApplyAll(value === true)} />
-              {copy.stack.applyAll}
-            </Label>
-          </div>}
           <div className="min-h-0 flex-1">
             <ImageJSidebar language={language} registry={registry} onRun={runCommand} onCommand={runStackCommand} disabled={!hasImage || busy}
               expandableCommands={expandableCommands} expandedCommand={expandedCommandLabel} panel={panel} onToggleCommand={toggleParamCommand}
@@ -2367,7 +2439,6 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
             <div role="status" aria-live="polite" className="min-h-4 text-xs text-base-content/60">
               {preload ? `${copy.stack.preloading} ${preload.done} / ${preload.total}` : status}
               {!preload && state.lastRunMs !== undefined ? ` · ${state.lastRunMs} ms` : ''}
-              {state.sliceLabels?.[pageIndex] ? ` · ${state.sliceLabels[pageIndex]}` : ''}
               {analysisResult.error && <span className="text-destructive">{analysisResult.error}</span>}
             </div>
           </footer>
@@ -2375,6 +2446,14 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
 
         <main className="order-1 flex min-h-[60vh] min-w-0 flex-col bg-base-100 lg:order-none lg:min-h-0">
           {tabsHeader}
+          {/* 图像信息栏：ImageJ 把「页/总页 (标签); 宽×高 pixels; 类型; 大小」写在图像窗口标题上。
+              这里放在 tab 之下、图像之上，并且常驻——不随翻页出现或消失，避免布局跳动。 */}
+          {imageInfo ? (
+            // 不挂 `role="status"`：左栏状态行已经是 live region，两个一起播报会重复。
+            <div className="flex h-6 shrink-0 items-center overflow-hidden border-b border-base-300 bg-base-100 px-2 text-xs text-base-content/70">
+              <span className="truncate" title={imageInfo}>{imageInfo}</span>
+            </div>
+          ) : null}
           <ContextMenu>
             <ContextMenuTrigger asChild>
           <div className="relative min-h-0 flex-1">
@@ -2431,8 +2510,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
           </ContextMenu>
           {/* 切片栏紧贴图像窗口的**下方**，与 ImageJ 的 StackWindow 滚动条位置一致
               （ImageLayout 把滚动条排在画布之后），并从工具栏里移了出来。 */}
-          <StackSliceBar slices={slices} stale={stale} disabled={navBusy} pageLabel={copy.stack.page}
-            label={stale ? '' : state.sliceLabels?.[pageIndex] ?? ''} onSelect={selectAxis} />
+          <StackSliceBar slices={slices} stale={stale} disabled={navBusy} pageLabel={copy.stack.page} onSelect={selectAxis} />
         </main>
 
         {/* 右栏「分析」：卡片式视图（一个卡片一个可视化）+ 导出 */}
@@ -2485,6 +2563,23 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
           <div className="min-h-0 flex-1 overflow-y-auto p-2">{viewCards}</div>
         </aside>
       </div>
+
+      {/* 作用域询问：命令目录里的跨切片操作（滤镜 / 阈值 / 二值化 / 数学运算…）在提交前问一次。
+          此前这件事由左栏顶部一个常驻复选框承担，而亮度/对比度面板又单独弹一次同样的窗，
+          同一个问题问两遍；现在统一成弹窗，复选框已移除。 */}
+      <Dialog open={Boolean(pendingScope)} onOpenChange={(open) => { if (!open) setPendingScope(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{SCOPE_PROMPT[language].title}</DialogTitle>
+            <DialogDescription>{SCOPE_PROMPT[language].hint}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPendingScope(null)}>{SCOPE_PROMPT[language].cancel}</Button>
+            <Button type="button" variant="outline" onClick={() => decideScope(false)}>{SCOPE_PROMPT[language].current}</Button>
+            <Button type="button" onClick={() => decideScope(true)}>{SCOPE_PROMPT[language].all}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -150,7 +150,7 @@ export interface ImagejCopy {
     packed12: string
     applyToAll: string
   }
-  stack: { page: string; exportCurrent: string; exportAll: string; geometryUnavailable: string; applyAll: string; preloading: string }
+  stack: { page: string; exportCurrent: string; exportAll: string; geometryUnavailable: string; preloading: string }
   tools: {
     hand: string; zoom: string; dropper: string; rectangle: string; oval: string
     line: string; arrow: string; polyline: string; polygon: string; freehand: string
@@ -296,6 +296,8 @@ export interface ImagejCopy {
     ready: string
     loading: string
     applied: string
+    /** 图像信息栏的尺寸单位（ImageJ 的 `4096x3072 pixels`）。 */
+    pixels: string
   }
   errors: {
     decode: string
@@ -448,7 +450,7 @@ const zhCN: ImagejCopy = {
     packed12: 'MIPI 位打包（3 字节 2 像素）',
     applyToAll: '该参数将应用到文件夹内的 {n} 个文件，合成为一个 Stack',
   },
-  stack: { page: '切片', exportCurrent: '导出当前 TIFF', exportAll: '导出整个 TIFF 栈', geometryUnavailable: '多页栈暂不支持改变切片尺寸的操作', applyAll: '应用到整个 Stack（关闭时仅当前切片）', preloading: '正在载入 Stack' },
+  stack: { page: '切片', exportCurrent: '导出当前 TIFF', exportAll: '导出整个 TIFF 栈', geometryUnavailable: '多页栈暂不支持改变切片尺寸的操作', preloading: '正在载入 Stack' },
   tools: {
     hand: '平移', zoom: '放大镜', dropper: '取色器', rectangle: '矩形', oval: '椭圆',
     line: '直线', arrow: '箭头', polyline: '折线', polygon: '多边形', freehand: '手绘',
@@ -589,6 +591,7 @@ run: '执行',
     ready: '就绪',
     loading: '读取中…',
     applied: '已应用',
+    pixels: '像素',
   },
   errors: {
     decode: '图片解码失败，请换一张图片重试。',
@@ -741,7 +744,7 @@ const en: ImagejCopy = {
     packed12: 'MIPI packed (2 px in 3 bytes)',
     applyToAll: 'These parameters apply to all {n} files in the folder, combined into one stack',
   },
-  stack: { page: 'Slice', exportCurrent: 'Export current TIFF', exportAll: 'Export TIFF stack', geometryUnavailable: 'Size-changing operations are unavailable for multi-page stacks', applyAll: 'Apply to the whole Stack (off: current slice only)', preloading: 'Loading Stack' },
+  stack: { page: 'Slice', exportCurrent: 'Export current TIFF', exportAll: 'Export TIFF stack', geometryUnavailable: 'Size-changing operations are unavailable for multi-page stacks', preloading: 'Loading Stack' },
   tools: {
     hand: 'Pan', zoom: 'Zoom', dropper: 'Color picker', rectangle: 'Rectangle', oval: 'Oval',
     line: 'Line', arrow: 'Arrow', polyline: 'Polyline', polygon: 'Polygon', freehand: 'Freehand',
@@ -882,6 +885,7 @@ run: 'Run',
     ready: 'Ready',
     loading: 'Loading…',
     applied: 'Applied',
+    pixels: 'pixels',
   },
   errors: {
     decode: 'Could not decode this image. Try another file.',
@@ -1034,7 +1038,7 @@ const jaJP: ImagejCopy = {
     packed12: 'MIPI パック（3 バイトに 2 画素）',
     applyToAll: 'この設定はフォルダー内の {n} ファイルに適用され、1 つのスタックになります',
   },
-  stack: { page: 'スライス', exportCurrent: '現在の TIFF を出力', exportAll: 'TIFF スタックを出力', geometryUnavailable: '複数ページのスタックではサイズを変える操作はできません', applyAll: 'スタック全体に適用（オフ：現在のスライス）', preloading: 'スタックを読み込み中' },
+  stack: { page: 'スライス', exportCurrent: '現在の TIFF を出力', exportAll: 'TIFF スタックを出力', geometryUnavailable: '複数ページのスタックではサイズを変える操作はできません', preloading: 'スタックを読み込み中' },
   tools: {
     hand: '移動', zoom: 'ズーム', dropper: 'スポイト', rectangle: '矩形', oval: '楕円',
     line: '直線', arrow: '矢印', polyline: '折れ線', polygon: '多角形', freehand: 'フリーハンド',
@@ -1175,6 +1179,7 @@ run: '実行',
     ready: '準備完了',
     loading: '読み込み中…',
     applied: '適用しました',
+    pixels: 'ピクセル',
   },
   errors: {
     decode: '画像を読み込めませんでした。別の画像を試してください。',

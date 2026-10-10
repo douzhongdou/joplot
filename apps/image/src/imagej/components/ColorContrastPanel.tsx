@@ -15,13 +15,13 @@ import { fastHistogram } from '../lib/fastHistogram'
 import { HistogramChart } from './HistogramChart'
 
 const COPY = {
-  'zh-CN': { live: '实时', refresh: '刷新直方图', title: '亮度/对比度', minimum: '最小值', maximum: '最大值', brightness: '亮度', contrast: '对比度', channel: '通道', auto: '自动', reset: '重置', set: '设置', apply: '应用', close: '关闭', range: '设置显示范围', minValue: '显示最小值', maxValue: '显示最大值', ok: '确定', cancel: '取消', invalid: '请输入有限数值，最大值不能小于最小值。', pixels: '像素', cumulative: '累计', level: '灰度', frequency: '频率', log: '对数刻度', stack: '应用到整个 Stack？', stackHint: '将当前亮度/对比度设置应用到所有切片？', current: '仅当前切片', all: '整个 Stack' },
-  en: { live: 'Live', refresh: 'Refresh histogram', title: 'Brightness/Contrast', minimum: 'Minimum', maximum: 'Maximum', brightness: 'Brightness', contrast: 'Contrast', channel: 'Channel', auto: 'Auto', reset: 'Reset', set: 'Set', apply: 'Apply', close: 'Close', range: 'Set Display Range', minValue: 'Minimum displayed value', maxValue: 'Maximum displayed value', ok: 'OK', cancel: 'Cancel', invalid: 'Enter finite values with maximum greater than or equal to minimum.', pixels: 'px', cumulative: 'Cumulative', level: 'Level', frequency: 'Frequency', log: 'Log scale', stack: 'Apply to Entire Stack?', stackHint: 'Apply brightness and contrast settings to all slices in the stack?', current: 'Current slice', all: 'Entire Stack' },
-  'ja-JP': { live: 'ライブ', refresh: 'ヒストグラムを更新', title: '明るさ/コントラスト', minimum: '最小値', maximum: '最大値', brightness: '明るさ', contrast: 'コントラスト', channel: 'チャンネル', auto: '自動', reset: 'リセット', set: '設定', apply: '適用', close: '閉じる', range: '表示範囲を設定', minValue: '表示の最小値', maxValue: '表示の最大値', ok: 'OK', cancel: 'キャンセル', invalid: '有限値を入力し、最大値を最小値以上にしてください。', pixels: 'ピクセル', cumulative: '累積', level: '階調', frequency: '頻度', log: '対数目盛', stack: 'スタック全体に適用？', stackHint: '現在の設定をすべてのスライスに適用しますか？', current: '現在のスライス', all: 'スタック全体' },
+  'zh-CN': { live: '实时', refresh: '刷新直方图', title: '亮度/对比度', minimum: '最小值', maximum: '最大值', brightness: '亮度', contrast: '对比度', channel: '通道', auto: '自动', reset: '重置', set: '设置', apply: '应用', close: '关闭', range: '设置显示范围', minValue: '显示最小值', maxValue: '显示最大值', ok: '确定', cancel: '取消', invalid: '请输入有限数值，最大值不能小于最小值。', pixels: '像素', cumulative: '累计', level: '灰度', frequency: '频率', log: '对数刻度' },
+  en: { live: 'Live', refresh: 'Refresh histogram', title: 'Brightness/Contrast', minimum: 'Minimum', maximum: 'Maximum', brightness: 'Brightness', contrast: 'Contrast', channel: 'Channel', auto: 'Auto', reset: 'Reset', set: 'Set', apply: 'Apply', close: 'Close', range: 'Set Display Range', minValue: 'Minimum displayed value', maxValue: 'Maximum displayed value', ok: 'OK', cancel: 'Cancel', invalid: 'Enter finite values with maximum greater than or equal to minimum.', pixels: 'px', cumulative: 'Cumulative', level: 'Level', frequency: 'Frequency', log: 'Log scale' },
+  'ja-JP': { live: 'ライブ', refresh: 'ヒストグラムを更新', title: '明るさ/コントラスト', minimum: '最小値', maximum: '最大値', brightness: '明るさ', contrast: 'コントラスト', channel: 'チャンネル', auto: '自動', reset: 'リセット', set: '設定', apply: '適用', close: '閉じる', range: '表示範囲を設定', minValue: '表示の最小値', maxValue: '表示の最大値', ok: 'OK', cancel: 'キャンセル', invalid: '有限値を入力し、最大値を最小値以上にしてください。', pixels: 'ピクセル', cumulative: '累積', level: '階調', frequency: '頻度', log: '対数目盛' },
 }
 
-export function ColorContrastPanel({ block, roi, language, busy, hasStack, embedded = false, singleChannel = false, mode = 'brightness', session = 0, onPreview, onApply }: {
-  block: ImageBlock; roi: Rect | null; language: keyof typeof COPY; busy: boolean; hasStack: boolean
+export function ColorContrastPanel({ block, roi, language, busy, embedded = false, singleChannel = false, mode = 'brightness', session = 0, onPreview, onApply }: {
+  block: ImageBlock; roi: Rect | null; language: keyof typeof COPY; busy: boolean
   /** 内联模式：在命令目录里紧跟所属命令项展开（去掉整块分隔线与外边距）。 */
   embedded?: boolean
   /** 灰度图：只有一个通道，隐藏通道选择。 */
@@ -37,7 +37,7 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, embed
   /** 变化时复位面板内部状态（撤销 / 重做、换图后重新展开用）。 */
   session?: number
   onPreview(settings: readonly ColorAdjustment[]): void
-  onApply(settings: readonly ColorAdjustment[], allPages: boolean): void
+  onApply(settings: readonly ColorAdjustment[]): void
   /** 面板不再自带关闭按钮：再点一次命令项即可收起，此处仅为调用方签名兼容。 */
   onClose?(): void
 }) {
@@ -46,7 +46,7 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, embed
   const [range, setRange] = useState({ min: 0, max: defaultMax })
   const [snapshots, setSnapshots] = useState<readonly ColorAdjustment[]>([])
   const [autoWholeImage, setAutoWholeImage] = useState(false)
-  const [log, setLog] = useState(false), [setting, setSetting] = useState(false), [stackDialog, setStackDialog] = useState(false)
+  const [log, setLog] = useState(false), [setting, setSetting] = useState(false)
   const [enteredMin, setEnteredMin] = useState('0'), [enteredMax, setEnteredMax] = useState(String(defaultMax)), [error, setError] = useState('')
   const autoThreshold = useRef(0)
   const active = useMemo(() => range.min === 0 && range.max === defaultMax ? [] : [{ ...range, channel, roi: !autoWholeImage && roi ? { ...roi } : undefined }], [range, channel, roi, defaultMax, autoWholeImage])
@@ -63,7 +63,10 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, embed
   useEffect(() => { setRange({ min: 0, max: defaultMax }); setSnapshots([]); setAutoWholeImage(false); autoThreshold.current = 0 }, [block, defaultMax, session])
   useEffect(() => onPreview(settings), [settings, onPreview])
   const reset = () => { setRange({ min: 0, max: defaultMax }); setAutoWholeImage(false); autoThreshold.current = 0 }
-  const apply = (allPages: boolean) => { onApply(settings, allPages); setSnapshots([]); reset(); setStackDialog(false) }
+  // 只把设置交出去，不在这里复位：工作台要先问作用域，用户还可能点「取消」。
+  // 就地清空快照并 reset 会让取消一次询问就等于白调一场；复位改由 `session` 驱动，
+  // 工作台在真正提交之后才递增它。
+  const apply = () => { onApply(settings) }
   const auto = () => {
     const stats = histogram
     if (stats.count === 0) return
@@ -107,7 +110,8 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, embed
         <Button size="sm" variant="outline" disabled={busy || histogram.count === 0} onClick={auto}>{copy.auto}</Button>
         <Button size="sm" variant="outline" disabled={busy} onClick={reset}>{copy.reset}</Button>
         <Button size="sm" variant="outline" disabled={busy} onClick={() => { setEnteredMin(String(range.min)); setEnteredMax(String(range.max)); setError(''); setSetting(true) }}>{copy.set}</Button>
-        <Button size="sm" disabled={busy} onClick={() => hasStack ? setStackDialog(true) : apply(false)}>{copy.apply}</Button>
+        {/* 作用域（当前切片 / 整个 Stack）由工作台的统一入口询问，面板不再自己弹窗。 */}
+        <Button size="sm" disabled={busy} onClick={apply}>{copy.apply}</Button>
       </div>
     </div>
     <Dialog open={setting} onOpenChange={setSetting}><DialogContent><DialogHeader><DialogTitle>{copy.range}</DialogTitle><DialogDescription>{copy.channel}: {channel}</DialogDescription></DialogHeader>
@@ -116,7 +120,6 @@ export function ColorContrastPanel({ block, roi, language, busy, hasStack, embed
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <DialogFooter><Button variant="outline" onClick={() => setSetting(false)}>{copy.cancel}</Button><Button onClick={() => { const min = Number(enteredMin), max = Number(enteredMax); if (!enteredMin.trim() || !enteredMax.trim() || !Number.isFinite(min) || !Number.isFinite(max) || max < min) { setError(copy.invalid); return }; setAutoWholeImage(false); setRange({ min, max }); setSetting(false) }}>{copy.ok}</Button></DialogFooter>
     </DialogContent></Dialog>
-    <Dialog open={stackDialog} onOpenChange={setStackDialog}><DialogContent><DialogHeader><DialogTitle>{copy.stack}</DialogTitle><DialogDescription>{copy.stackHint}</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setStackDialog(false)}>{copy.cancel}</Button><Button variant="outline" onClick={() => apply(false)}>{copy.current}</Button><Button onClick={() => apply(true)}>{copy.all}</Button></DialogFooter></DialogContent></Dialog>
   </section>
 }
 
