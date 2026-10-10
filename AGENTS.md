@@ -12,17 +12,22 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 pnpm workspace monorepo. Apps never import from each other; shared code lives in `packages/*`.
 
-- `apps/plot` — CSV / science plotting workbench (Next.js)
+- `apps/legacy-plot` — stable joplot from origin/main; preserve its routes, theme and storage
+- `apps/plot` — new scientific plotting workbench, preview only (Next.js)
 - `apps/image` — ImageJ-style 8-bit image workbench (Next.js)
 - `packages/ui` — shared shadcn/ui primitives (`@joplot/ui`) and the design-token stylesheet
 - `packages/i18n` — shared language + localized-route helpers (`@joplot/i18n`)
 
 Common commands (from the repo root): `pnpm install`, `pnpm -r typecheck`, `pnpm -r test`,
-`pnpm dev:plot`, `pnpm dev:image`.
+`pnpm dev:legacy`, `pnpm dev:plot`, `pnpm dev:image`.
+
+Each app is deployed as a separate Vercel Project with its own root directory and domain.
+Do not migrate legacy-plot to shared UI/i18n packages as part of changes to new apps.
+Use `pnpm build:legacy`, `pnpm build:plot`, or `pnpm build:image` for an individual release.
 
 # UI conventions
 
-This project uses shadcn/ui (new-york style, neutral base color). Reusable primitives live in
+The new plot and image apps use shadcn/ui (new-york style, neutral base color). Reusable primitives live in
 `packages/ui/src` and are imported as `@joplot/ui/<name>` (accordion, button, card, checkbox,
 context-menu, dialog, dropdown-menu, input, label, popover, select, separator, sheet, slider,
 switch, table, tabs, toggle-group, tooltip) — prefer them over hand-rolled controls.

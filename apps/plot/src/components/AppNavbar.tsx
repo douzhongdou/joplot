@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { Activity, ChevronDown, CircleHelp, FlaskConical, FunctionSquare, Image as ImageIcon, Languages, TableProperties } from 'lucide-react'
+import { Activity, ChevronDown, CircleHelp, FlaskConical, Image as ImageIcon, Languages } from 'lucide-react'
 import { HelpButton, HelpDialog } from './HelpDialog'
 import { SelectMenu } from './SelectMenu'
 import { Button, buttonVariants } from '@joplot/ui/button'
@@ -22,8 +22,6 @@ import { cn } from '@/lib/utils'
 import { crossDomainUrl } from '@joplot/i18n/routing'
 import { imageAppUrl } from '../lib/externalApps'
 import {
-  FUNCTION_STUDIO_PATH,
-  HOME_PATH,
   SCIENCE_PATH,
   SUPER_PLOT_PATH,
   SUPPORTED_LANGUAGES,
@@ -39,7 +37,7 @@ interface Props {
   mobile?: boolean
   viewMode?: 'chart' | 'data'
   onChangeViewMode?: (mode: 'chart' | 'data') => void
-  /** 是否显示板块导航（数据 / 函数 / super-plot / 科学处理 / 图像）；工具栏模式可关掉。 */
+  /** 是否显示新应用的板块导航（super-plot / 科学处理 / 图像）。 */
   showNav?: boolean
   /** 当前板块自己的工具按钮，渲染在导航与语言/帮助之间。 */
   toolbar?: ReactNode
@@ -53,7 +51,7 @@ interface Props {
 }
 
 export function AppNavbar({
-  section = 'workbench',
+  section = 'science',
   hasDatasets = false,
   mobile = false,
   viewMode = 'chart',
@@ -156,22 +154,6 @@ export function AppNavbar({
 
         {showNav ? (
           <nav className="ml-1 flex min-w-0 items-center gap-0.5 overflow-x-auto sm:ml-3" aria-label={t('nav.sectionsLabel')}>
-          <Link
-            href={HOME_PATH}
-            aria-current={section === 'workbench' ? 'page' : undefined}
-            className={sectionLinkClass(section === 'workbench')}
-          >
-            <TableProperties size={15} strokeWidth={2.1} aria-hidden="true" />
-            <span>{t('nav.workbench')}</span>
-          </Link>
-          <Link
-            href={FUNCTION_STUDIO_PATH}
-            aria-current={section === 'function' ? 'page' : undefined}
-            className={sectionLinkClass(section === 'function')}
-          >
-            <FunctionSquare size={15} strokeWidth={2.1} aria-hidden="true" />
-            <span>{t('nav.function')}</span>
-          </Link>
           <Link
             href={SUPER_PLOT_PATH}
             aria-current={section === 'superplot' ? 'page' : undefined}

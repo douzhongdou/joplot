@@ -8,8 +8,12 @@
     "dev:plot": "pnpm --filter @joplot/plot dev",
     "dev:image": "pnpm --filter @joplot/image dev",
     "build": "pnpm -r build",
-    "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "test": "node --test tests/*.test.mjs && pnpm -r --workspace-concurrency=1 test",
+    "typecheck": "pnpm -r typecheck",
+    "dev:legacy": "pnpm --filter @joplot/legacy-plot dev",
+    "build:legacy": "pnpm --filter @joplot/legacy-plot build",
+    "build:plot": "pnpm --filter @joplot/plot build",
+    "build:image": "pnpm --filter @joplot/image build"
   },
   "devDependencies": {
     "@types/react": "19.2.14",

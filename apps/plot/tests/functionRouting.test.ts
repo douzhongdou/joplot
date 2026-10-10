@@ -13,7 +13,7 @@ test('section paths are language-agnostic', () => {
   assert.equal(HOME_PATH, '/')
   assert.equal(FUNCTION_STUDIO_PATH, '/function')
   assert.equal(SUPER_PLOT_PATH, '/super-plot')
-  assert.equal(SCIENCE_PATH, '/science')
+  assert.equal(SCIENCE_PATH, '/')
 })
 
 test('normalizeLanguage still maps browser and cookie values', () => {

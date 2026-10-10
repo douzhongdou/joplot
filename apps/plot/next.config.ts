@@ -10,6 +10,8 @@ const nextConfig: NextConfig = {
   transpilePackages: ['@joplot/ui', '@joplot/i18n'],
   async redirects() {
     const redirects = [
+      // 科学工作台成为新 joplot 首页，保留原实验页地址的跳转。
+      { source: '/science', destination: '/', permanent: true },
       // 语言不进入对外 URL：既接住历史的 /zh、/en/function，也挡住 proxy 内部 rewrite 用的
       // /zh-CN、/ja-JP 语言段——保证每个语言只有一份可索引的对外地址。
       { source: '/:lang(zh-CN|zh|en|ja-JP|ja)', destination: '/', permanent: true },

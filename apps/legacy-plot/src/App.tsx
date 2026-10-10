@@ -731,7 +731,7 @@ export default function App() {
 
       {dragActive && (
         <div className="pointer-events-none fixed inset-0 z-40 grid place-items-center bg-neutral/10">
-          <div className="grid min-w-[min(420px,calc(100vw-32px))] gap-3 rounded-[calc(var(--radius-box)+0.25rem)] bg-base-100/95 px-6 py-6 text-center shadow-xl backdrop-blur-md">
+          <div className="grid min-w-[min(420px,calc(100vw-32px))] gap-3 rounded-[calc(var(--radius-box)+0.25rem)] border border-primary/35 bg-base-100/95 px-6 py-6 text-center backdrop-blur-md">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{uploadCopy.overlayBadge}</p>
             <strong className="text-lg font-semibold text-base-content">{uploadCopy.overlayTitle}</strong>
           </div>
