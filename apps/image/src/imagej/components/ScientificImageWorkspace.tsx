@@ -842,7 +842,10 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
     const outputsRgb = op === 'debayer'
     setShowColor(outputsRgb || (op !== 'grayscale' && !needsGray))
     if (op !== 'grayscale' && !outputsRgb && needsGray && ci >= 0 && (image.shape[ci] ?? 1) > 1) runtime.addStep('grayscale', {}, stepScope(null, allPages))
-    runtime.addStep(op, params, stepScope(target, allPages))
+    // debayer 是格式转换，链上只该有一次：替换掉旧的逐帧步骤，
+    // 否则被那些步骤覆盖的帧会拿到 RGB 再 debayer，报「需要单通道图像」。
+    if (op === 'debayer') runtime.replaceStep(op, params, stepScope(target, allPages))
+    else runtime.addStep(op, params, stepScope(target, allPages))
   }
   /**
    * 作用域询问的统一入口。
@@ -1924,7 +1927,12 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
       />
     : paramOp === 'levels'
     ? image
-      ? <ColorContrastPanel embedded session={colorSession} block={image} roi={roi ? roiBounds(roi) : null} language={language} busy={busy} singleChannel={!isRgb} onPreview={setColorPreview} onApply={(settings) => requestScope((allPages) => { commitColorPreview(settings, allPages); setColorSession((value) => value + 1) })} onClose={closeParamCommand} />
+      ? <ColorContrastPanel embedded session={colorSession} block={image} roi={roi ? roiBounds(roi) : null} language={language} busy={busy} singleChannel={!isRgb} onPreview={(settings) => {
+        // 「原图」模式会屏蔽显示调整（rasterOptions 里 colorAdjustments 被清空），
+        // 于是拖着 B&C 滑杆画面毫无变化。用户一旦真的调了范围，就应当退出原图对比。
+        if (settings.length) setShowOriginal(false)
+        setColorPreview(settings)
+      }} onApply={(settings) => requestScope((allPages) => { commitColorPreview(settings, allPages); setColorSession((value) => value + 1) })} onClose={closeParamCommand} />
       : null
     : paramOp === 'threshold'
       ? <ThresholdCommandPanel copy={copy} level={thresholdLevel} minimum={stats?.histogramMin ?? 0} maximum={stats?.histogramMax ?? 255} step={image?.dtype === 'float32' ? 'any' : 1} disabled={!hasImage || busy} onLevel={setThresholdLevel} onApply={applyCurrentThreshold} onOtsu={applyOtsu} onClose={closeParamCommand} />
@@ -1947,9 +1955,12 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
   /* ---------------- 右栏：卡片式视图（一个卡片 = 一个可视化） ---------------- */
 
   const viewCards = views.length ? (
-    <div className="grid gap-2">
+    // grid-cols-1 = minmax(0,1fr)：隐式 auto 轨道会按内容的 max-content 撑宽，
+    // 冻结来源这种超长 nowrap 文本会把右栏顶破；固定轨道后卡片宽度确定，truncate 才生效。
+    <div className="grid grid-cols-1 gap-2">
       {views.map((card) => (
-        <Card key={card.id} className="gap-1.5 rounded-sm border-base-300 px-2 py-1.5 shadow-none">
+        // min-w-0：卡片是 grid item，min-width:auto 会让冻结来源这种 nowrap 长文本把卡片撑出右栏。
+        <Card key={card.id} className="min-w-0 gap-1.5 rounded-sm border-base-300 px-2 py-1.5 shadow-none">
           {/* 标题行压矮：行高由按钮容器决定，标题本身不撑高。
               所有元素平铺在 CardHeader 下一级（不再套 div / CardAction），
               这样行高、间距、对齐都能直接在同一个 flex 上下文里控制。
@@ -1981,7 +1992,9 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
               <X className="size-3" />
             </Button>
           </CardHeader>
-          <CardContent className="grid gap-1 px-0 py-0">
+          {/* grid-cols-1 = minmax(0,1fr)：隐式 auto 列按子项 max-content 定宽，
+              冻结来源这类超长 nowrap 文本会把内容顶出卡片；固定轨道后 truncate 才生效。 */}
+          <CardContent className="grid grid-cols-1 gap-1 px-0 py-0">
 
           {card.type === 'measurement' ? (
             !hasImage ? (
@@ -2397,7 +2410,7 @@ function ImageDocumentView({ runtime, onOpenImage, onOpenDataset, onListDocument
                 两段读数各自按有无拼接，中间的分隔符只在两段都在时出现——
                 没选区就没必要留一个孤零零的破折号占位。 */}
             <span className="ml-auto hidden shrink-0 truncate pl-2 font-mono text-xs text-base-content/55 md:inline">
-              {[probe ? `(${probe.x}, ${probe.y}) = ${probe.value}` : '', roiLabel].filter(Boolean).join(' · ')}
+              {[probe ? `(${probe.x}, ${probe.y}) = ${probe.rgb ? probe.rgb.join(', ') : probe.value}` : '', roiLabel].filter(Boolean).join(' · ')}
             </span>
           </>
         }

@@ -35,14 +35,29 @@ function clampByte(value: number): number {
  * （输出缓冲是 `Uint8ClampedArray`，整数赋值的语义同样是夹取）。
  */
 const LUT_CACHE = new Map<string, Uint8Array>()
-function mappingLut(ceiling: number, lo: number, scale: number): Uint8Array {
-  const key = `${ceiling}\u0001${lo}\u0001${scale}`
+function mappingLut(ceiling: number, lo: number, scale: number, minimum = 0): Uint8Array {
+  const key = `${minimum}\u0001${ceiling}\u0001${lo}\u0001${scale}`
   const cached = LUT_CACHE.get(key)
   if (cached) return cached
-  const lut = new Uint8Array(ceiling + 1)
-  for (let value = 0; value <= ceiling; value += 1) lut[value] = clampByte(Math.round((value - lo) * scale))
+  const lut = new Uint8Array(ceiling - minimum + 1)
+  for (let value = minimum; value <= ceiling; value += 1) lut[value - minimum] = clampByte(Math.round((value - lo) * scale))
   if (LUT_CACHE.size >= 8) LUT_CACHE.clear()
   LUT_CACHE.set(key, lut)
+  return lut
+}
+
+/**
+ * 灰度显示范围调整（Brightness/Contrast、Set Display Range）的查表。
+ *
+ * 灰度没有通道概念，`adjustedColorValue` 的输出直接落在 `[0, ceiling]`（该 dtype 的全部取值），
+ * 所以这里一次预算出「原值 → 8 位」的完整映射。只有调整不依赖通道选择与 ROI 时才成立，
+ * 否则必须逐像素判定。
+ */
+function adjustedGrayLut(ceiling: number, adjustments: readonly ColorAdjustment[]): Uint8Array {
+  const lut = new Uint8Array(ceiling + 1)
+  for (let value = 0; value <= ceiling; value += 1) {
+    lut[value] = clampByte(Math.round(adjustedColorValue(value, 0, 0, 0, adjustments, ceiling) * 255 / ceiling))
+  }
   return lut
 }
 
@@ -69,7 +84,19 @@ function paint(out: Uint8ClampedArray, region: RasterRegion, block: ImageBlock, 
   const ceiling = block.dtype === 'uint16' ? 65535 : 255
   /** 只有浮点数据会出现非有限值；整数路径省掉逐像素的 `Number.isFinite`，并可用查表。 */
   const mayBeNonFinite = block.dtype === 'float32'
-  const lut = mayBeNonFinite ? null : mappingLut(ceiling, lo, scale)
+  const lutOffset = block.dtype === 'int16' ? 32768 : 0
+  const lut = mayBeNonFinite ? null : mappingLut(block.dtype === 'int16' ? 32767 : ceiling, lo, scale, -lutOffset)
+  /*
+   * 显示范围调整（B&C / Set Display Range）对单通道同样生效：ImageJ 的 Brightness/Contrast
+   * 作用在灰度图上就是改 display range，拖滑杆必须立刻改变画面。
+   *
+   * 调整后的值已经落在 `[0, ceiling]` 域，所以这里直接映到 8 位——再叠一层窗宽窗位就是
+   * 两次映射，会把中间调压掉。
+   */
+  const grayRange = components !== 3 && adjustments.length > 0
+  const rangeLut = grayRange && !mayBeNonFinite && adjustments.every((setting) => setting.channel === 'all' && !setting.roi)
+    ? adjustedGrayLut(ceiling, adjustments)
+    : null
   const xIndices = new Int32Array(width)
   for (let i = 0; i < width; i++) xIndices[i] = Math.floor(((region.x + i + 0.5) / dpr - camera.panX) / camera.zoom)
   const rowBytes = width * 4
@@ -99,9 +126,9 @@ function paint(out: Uint8ClampedArray, region: RasterRegion, block: ImageBlock, 
       if (color) {
         if (adjustments.length === 0) {
           if (lut) {
-            out[p] = lut[source[index]!]!
-            out[p + 1] = lut[source[pixels + index]!]!
-            out[p + 2] = lut[source[2 * pixels + index]!]!
+            out[p] = lut[source[index]! + lutOffset]!
+            out[p + 1] = lut[source[pixels + index]! + lutOffset]!
+            out[p + 2] = lut[source[2 * pixels + index]! + lutOffset]!
           } else {
             for (let channel = 0; channel < 3; channel++) {
               const value = source[channel * pixels + index]!
@@ -110,20 +137,29 @@ function paint(out: Uint8ClampedArray, region: RasterRegion, block: ImageBlock, 
           }
           continue
         }
+        // 与灰度的 grayRange 同理：调整后的值已在 `[0, ceiling]` 域，直接映到 8 位，
+        // 再叠窗宽窗位就是两次映射（16 位 RAW debayer 后点「自动」会整幅爆白）。
         for (let channel = 0; channel < 3; channel++) {
           const value = adjustedColorValue(source[channel * pixels + index]!, channel, ix, iy, adjustments, ceiling)
-          out[p + channel] = Number.isFinite(value) ? Math.round((value - lo) * scale) : 0
+          out[p + channel] = Number.isFinite(value) ? clampByte(Math.round(value * 255 / ceiling)) : 0
         }
         continue
       }
-      // 单通道不参与 RGB 通道调整：与通道语义一致，也与原实现逐位一致。
+      // 单通道不参与 RGB 的逐通道调整；但 `all` 范围的显示调整对灰度有效（见上方 grayRange）。
       let level: number
       if (components !== 3) {
         const raw = source[index]!
-        level = lut ? lut[raw]! : Number.isFinite(raw) ? Math.round((raw - lo) * scale) : 0
+        if (grayRange) {
+          if (rangeLut && raw >= 0 && raw <= ceiling) level = rangeLut[raw]!
+          else {
+            const value = adjustedColorValue(raw, 0, ix, iy, adjustments, ceiling)
+            level = Number.isFinite(value) ? clampByte(Math.round(value * 255 / ceiling)) : 0
+          }
+        } else level = lut ? lut[raw + lutOffset]! : Number.isFinite(raw) ? Math.round((raw - lo) * scale) : 0
       } else {
+        // 彩色按灰度显示（灰度开关）时同样走「调整后直接映 8 位」，不叠窗宽窗位。
         const averaged = Math.round((adjustedColorValue(source[index]!, 0, ix, iy, adjustments, ceiling) + adjustedColorValue(source[pixels + index]!, 1, ix, iy, adjustments, ceiling) + adjustedColorValue(source[2 * pixels + index]!, 2, ix, iy, adjustments, ceiling)) / 3)
-        level = Number.isFinite(averaged) ? Math.round((averaged - lo) * scale) : 0
+        level = Number.isFinite(averaged) ? (adjustments.length ? clampByte(Math.round(averaged * 255 / ceiling)) : Math.round((averaged - lo) * scale)) : 0
       }
       out[p] = level; out[p + 1] = level; out[p + 2] = level
     }

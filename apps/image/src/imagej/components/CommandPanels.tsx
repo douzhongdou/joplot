@@ -29,9 +29,10 @@ function CommandPanelShell({ children }: {
   disabled?: boolean
   children: ReactNode
 }) {
+  // 透明平铺：外壳卡片在侧栏命令项上（标题+面板一张淡底卡），这里不再自带边框和底色。
   return (
-    <Card className="mt-1 gap-0 rounded-[var(--radius-field)] border-base-300 bg-base-200/40 py-0 shadow-none">
-      <CardContent className="p-2">{children}</CardContent>
+    <Card className="mt-0.5 gap-0 rounded-[var(--radius-field)] border-0 bg-transparent py-0 shadow-none">
+      <CardContent className="p-1">{children}</CardContent>
     </Card>
   )
 }

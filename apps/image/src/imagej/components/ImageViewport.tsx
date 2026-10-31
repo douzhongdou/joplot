@@ -38,7 +38,7 @@ export interface ImageViewportHandle {
    */
   visibleRegion(): { x: number; y: number; width: number; height: number } | null
 }
-export interface PixelProbe { x: number; y: number; value: number }
+export interface PixelProbe { x: number; y: number; value: number; rgb?: [number, number, number] }
 
 /** 视口底色；与光栅化内核里的越界像素色一致，两者拼接处看不出接缝。 */
 const VIEWPORT_BACKGROUND = '#131317'
@@ -334,7 +334,12 @@ export function ImageViewport({ block, windowLevel, options, tool, variant, roi,
   const probeAt = (x: number, y: number) => {
     const i = y * iw + x, ci = block.axes.indexOf('c'), pixels = iw * ih
     const colorValue = (channel: number) => adjustedColorValue(block.data[channel * pixels + i]!, channel, x, y, options?.colorAdjustments ?? [], block.dtype === 'uint16' ? 65535 : 255)
-    onProbe({ x, y, value: ci >= 0 && block.shape[ci] === 3 ? Math.round((colorValue(0) + colorValue(1) + colorValue(2)) / 3) : block.data[i]! })
+    if (ci >= 0 && block.shape[ci] === 3) {
+      const rgb: [number, number, number] = [Math.round(colorValue(0)), Math.round(colorValue(1)), Math.round(colorValue(2))]
+      onProbe({ x, y, value: Math.round((rgb[0] + rgb[1] + rgb[2]) / 3), rgb })
+      return
+    }
+    onProbe({ x, y, value: block.data[i]! })
   }
 
   /** 命中的手柄序号（按屏幕距离判定，避免给 SVG 手柄再加一层事件监听）。 */

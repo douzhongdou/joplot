@@ -87,7 +87,8 @@ export function ColorGradingPanel({ language, method, clipPercent, strength, gai
   const channels: readonly (keyof typeof copy)[] = ['red', 'green', 'blue']
   // 灰度图上灰度世界/白点是恒等变换，直接不列出来，省得用户以为坏了。
   const methods = rgb ? COLOR_GRADING_METHODS : COLOR_GRADING_METHODS.filter((value) => value !== 'grayWorld' && value !== 'whitePatch')
-  return <section className="mt-1">
+  // 透明平铺：外壳卡片在侧栏命令项上（标题+面板一张淡底卡），面板自身不再带边框底色。
+  return <section className="mt-0.5 p-1">
     <div className="grid gap-2">
       <div className="grid gap-1">
         <Label htmlFor="imagej-grading-method" className="text-xs">{copy.method}</Label>
