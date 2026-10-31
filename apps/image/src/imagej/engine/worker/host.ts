@@ -5,7 +5,8 @@
  * 主线程宿主（测试、SSR、Worker 不可用时）。
  */
 import { createDataset, type Dataset, type SliceSelection } from '../dataset.ts'
-import { MemoryStorage, type Storage } from '../storage.ts'
+import { MemoryStorage, SharedStorage, type Storage } from '../storage.ts'
+import { RecipePageStorage } from '../storage-recipe.ts'
 import { PageMapStorage, type PageRef } from '../storage-pages.ts'
 import { importFile, importImageStack, type ImportResult } from '../importer.ts'
 import type { RawSensorOptions } from '../raw/sensor.ts'
@@ -41,20 +42,29 @@ interface Entry {
   dataset: Dataset
   storage: Storage
   controller: AbortController
+  /** 同一源上可同时创建多个派生栈，关闭时需取消全部创建任务。 */
+  restructures?: Set<AbortController>
 }
 
 export class EngineHost {
   private readonly entries = new Map<string, Entry>()
   private readonly engine = new PureComputeEngine()
+  private lifecycle = 0
 
   async import(file: File, decoder?: (file: File) => Promise<unknown | null>, options?: RawSensorOptions): Promise<ImportResult> {
+    const lifecycle = this.lifecycle
     const result = await importFile(file, decoder as never, options)
+    if (lifecycle !== this.lifecycle) { result.storage.release(); throw new DOMException('已取消', 'AbortError') }
+    result.storage = new SharedStorage(result.storage)
     this.entries.set(result.dataset.id, { dataset: result.dataset, storage: result.storage, controller: new AbortController() })
     return result
   }
 
   async importStack(files: File[], decoder?: (file: File) => Promise<unknown | null>, options?: ReadonlyMap<string, RawSensorOptions>): Promise<ImportResult> {
+    const lifecycle = this.lifecycle
     const result = await importImageStack(files, decoder as never, options)
+    if (lifecycle !== this.lifecycle) { result.storage.release(); throw new DOMException('已取消', 'AbortError') }
+    result.storage = new SharedStorage(result.storage)
     this.entries.set(result.dataset.id, { dataset: result.dataset, storage: result.storage, controller: new AbortController() })
     return result
   }
@@ -236,22 +246,22 @@ export class EngineHost {
 
     const keepTimeAxis = timeCount > 1
     const keepProjectionAxis = groups.length > 1
+    const first = pages[0]!
     const outAxes: AxisName[] = []
     const outShape: number[] = []
-    dataset.axes.forEach((name, index) => {
+    first.axes.forEach((name, index) => {
       const keepTime = name === 't' && keepTimeAxis
-      const keepProjection = index === axisIndex && keepProjectionAxis
-      const keepSpatial = name === 'y' || name === 'x' || (name === 'c' && index !== axisIndex)
+      const keepProjection = name === axis && keepProjectionAxis
+      const keepSpatial = name === 'y' || name === 'x' || (name === 'c' && name !== axis && first.shape[index]! > 1)
       if (!keepTime && !keepProjection && !keepSpatial) return
       outAxes.push(name)
-      outShape.push(keepTime ? timeCount : keepProjection ? groups.length : dataset.shape[index]!)
+      outShape.push(keepTime ? timeCount : keepProjection ? groups.length : first.shape[index]!)
     })
     if (outAxes.length < 2 || !outAxes.includes('y') || !outAxes.includes('x')) {
       throw new Error('投影结果的维度不足两维')
     }
 
     // 逐页把像素摆进目标布局：时间帧对应 t 轴、组序号对应投影轴、页内平面序号对应 `c` 轴。
-    const first = pages[0]!
     const strides = shapeStrides(outShape)
     const axisOut = outAxes.indexOf(axis)
     const timeOut = outAxes.indexOf('t')
@@ -296,9 +306,9 @@ export class EngineHost {
       shape: outShape,
       spatialTransform,
       timeCalibration: dataset.timeCalibration,
-      channels: dataset.channels,
+      channels: outputChannels(first),
       source,
-      componentKind: outAxes.includes('c') ? 'rgb' : 'scalar',
+      componentKind: first.axes.includes('c') && first.shape[first.axes.indexOf('c')] === 3 ? 'rgb' : 'scalar',
       metadata,
       buffer,
     })
@@ -765,11 +775,13 @@ export class EngineHost {
   /**
    * 栈结构编辑：Reverse / Reduce / Make Substack / Delete Slice / Add Slice。
    *
-   * 这些命令只换一组页、不重算像素，因此结果数据集用 `PageMapStorage` 做**页映射**，
-   * 像素仍按需从源读取（Add Slice 插入的空白页由 `'blank'` 标记表示）。
+   * 页结构由 `PageMapStorage` 映射，Recipe 在原页坐标上按需执行，
+   * 不保存整栈像素副本（Add Slice 插入的空白页由 `'blank'` 标记表示）。
    */
   async restructure(request: {
     datasetId: string
+    recipe?: Recipe
+    throughStepId?: string
     op: 'reverse' | 'reduce' | 'substack' | 'delete' | 'add'
     /** reduce 的步长。 */
     factor?: number
@@ -783,6 +795,9 @@ export class EngineHost {
     const entry = this.entries.get(request.datasetId)
     if (!entry) throw new Error(`未知数据集 ${request.datasetId}`)
     const dataset = entry.dataset
+    const controller = new AbortController()
+    const signal = controller.signal
+    if (!(entry.storage instanceof SharedStorage)) entry.storage = new SharedStorage(entry.storage)
     const axis = plainSliceAxis(dataset)
     if (!axis) return undefined
     const axisIndex = dataset.axes.indexOf(axis)
@@ -830,18 +845,38 @@ export class EngineHost {
       }
     }
 
-    const shape = [...dataset.shape]
-    shape[axisIndex] = pages.length
-    return registerMappedDataset(this.entries, {
-      source: entry.storage,
-      sourceDataset: dataset,
-      pages,
-      sliceAxis: axisIndex,
-      shape,
-      name: request.title?.trim() || `${dataset.source.name} (${label})`,
-      fingerprint: `restructure:${dataset.id}@${dataset.revision}:${request.op}:${request.factor ?? ''}:${(request.pages ?? []).join('.')}:${request.at ?? ''}:${request.count ?? ''}`,
-      metadata: { ...dataset.metadata, restructure: request.op },
-    })
+    // 原页坐标执行冻结的 Recipe，随后映射页号；frame/pages 作用域也随源页移动。
+    let source = entry.storage
+    let sourceDataset = dataset
+    let processed: SharedStorage | undefined
+    entry.restructures ??= new Set()
+    entry.restructures.add(controller)
+    try {
+      if (request.recipe?.steps.length) {
+        processed = new SharedStorage(await RecipePageStorage.create(dataset, source, request.recipe, request.throughStepId, {
+          axis, pages: pages.filter((page): page is number => page !== 'blank'), signal,
+        }))
+        source = processed
+        const meta = source.metadata()
+        const rgb = meta.channels?.[0]?.kind === 'rgb'
+        sourceDataset = createDataset({ ...dataset, ...meta, componentKind: rgb ? 'rgb' : 'scalar' })
+      }
+      const mappedAxis = sourceDataset.axes.indexOf(axis)
+      if (signal.aborted) throw new DOMException('已取消', 'AbortError')
+      if (mappedAxis < 0) throw new Error('处理后的帧缺少要重排的切片轴')
+      const shape = [...sourceDataset.shape]
+      shape[mappedAxis] = pages.length
+      return registerMappedDataset(this.entries, {
+        source,
+        sourceDataset,
+        pages,
+        sliceAxis: mappedAxis,
+        shape,
+        name: request.title?.trim() || `${dataset.source.name} (${label})`,
+        fingerprint: `restructure:${dataset.id}@${dataset.revision}:${request.op}:${request.factor ?? ''}:${(request.pages ?? []).join('.')}:${request.at ?? ''}:${request.count ?? ''}`,
+        metadata: { ...dataset.metadata, restructure: request.op },
+      })
+    } finally { processed?.release(); entry.restructures.delete(controller) }
   }
 
   /**
@@ -1300,16 +1335,27 @@ export class EngineHost {
   }
 
   cancel(): void {
-    for (const entry of this.entries.values()) entry.controller.abort()
+    for (const entry of this.entries.values()) {
+      entry.controller.abort()
+      for (const controller of entry.restructures ?? []) controller.abort()
+    }
   }
 
   dispose(datasetId?: string): void {
     if (datasetId) {
-      this.entries.get(datasetId)?.storage.release()
+      const entry = this.entries.get(datasetId)
+      entry?.controller.abort()
+      for (const controller of entry?.restructures ?? []) controller.abort()
+      entry?.storage.release()
       this.entries.delete(datasetId)
       return
     }
-    for (const entry of this.entries.values()) entry.storage.release()
+    this.lifecycle += 1
+    for (const entry of this.entries.values()) {
+      entry.controller.abort()
+      for (const controller of entry.restructures ?? []) controller.abort()
+      entry.storage.release()
+    }
     this.entries.clear()
   }
 }
@@ -1376,7 +1422,7 @@ function registerMappedDataset(entries: Map<string, Entry>, input: {
     metadata: input.metadata,
     source,
   }, input.source, input.pages, input.sliceAxis)
-  entries.set(dataset.id, { dataset, storage, controller: new AbortController() })
+  entries.set(dataset.id, { dataset, storage: new SharedStorage(storage), controller: new AbortController() })
   return dataset
 }
 
@@ -1425,7 +1471,7 @@ function registerMemoryDataset(entries: Map<string, Entry>, input: {
     metadata: input.metadata,
     source: input.source,
   }, input.buffer)
-  entries.set(dataset.id, { dataset, storage, controller: new AbortController() })
+  entries.set(dataset.id, { dataset, storage: new SharedStorage(storage), controller: new AbortController() })
   return dataset
 }
 
@@ -1437,6 +1483,16 @@ const METHOD_PREFIX: Record<ProjectionMethod, string> = {
   sum: 'SUM_',
   sd: 'STD_',
   median: 'MED_',
+}
+
+function outputChannels(block: Pick<ImageBlock, 'axes' | 'shape'>): ChannelInfo[] {
+  const c = block.axes.indexOf('c')
+  if (c >= 0 && block.shape[c] === 3) return [
+    { index: 0, name: 'Red', kind: 'rgb', displayColor: [255, 0, 0] },
+    { index: 1, name: 'Green', kind: 'rgb', displayColor: [0, 255, 0] },
+    { index: 2, name: 'Blue', kind: 'rgb', displayColor: [0, 0, 255] },
+  ]
+  return [{ index: 0, name: 'Channel 1', kind: 'other' }]
 }
 
 /** 行优先布局下每一维的步长。 */

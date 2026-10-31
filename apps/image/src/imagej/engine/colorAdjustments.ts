@@ -74,11 +74,20 @@ export function imagejAutoRange(histogram: Uint32Array, count: number, min: numb
   const autoThreshold = previousThreshold < 10 ? 5000 : Math.floor(previousThreshold / 2)
   const threshold = Math.floor(count / autoThreshold), limit = Math.floor(count / 10)
   const qualifies = (i: number) => histogram[i]! <= limit && histogram[i]! > threshold
-  let first = 0, last = 255
-  while (first < 255 && !qualifies(first)) first++
+  /*
+   * 桶数、扫描范围与桶宽都必须由直方图自身决定：8 位是 256 个桶，16 位
+   * （`fastHistogram`）是 65536 个桶，而 `analyzeBlock` 固定 256 个桶覆盖整个 dtype 值域。
+   *
+   * 早先这里写死 `last = 255` 与 `binSize = range / 256`：16 位直方图上扫描范围与桶宽
+   * 都不对，桶序号被当成值再乘 256，例如数据在 42..107 时「自动」给出 14848..18176，
+   * 整幅数据落在黑端，画面直接变全黑。
+   */
+  const binCount = histogram.length
+  let first = 0, last = binCount - 1
+  while (first < binCount - 1 && !qualifies(first)) first++
   while (last > 0 && !qualifies(last)) last--
   if (last < first) return { min: histogramMin, max: histogramMax, autoThreshold: 0 }
-  const binSize = (histogramMax - histogramMin + 1) / 256
+  const binSize = (histogramMax - histogramMin + 1) / binCount
   const lo = histogramMin + first * binSize, hi = histogramMin + last * binSize
   return { min: lo === hi ? min : lo, max: lo === hi ? max : hi, autoThreshold }
 }

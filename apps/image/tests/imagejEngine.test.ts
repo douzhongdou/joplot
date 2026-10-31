@@ -134,6 +134,21 @@ test('统计累加器可合并且样本标准差正确', () => {
 
 /* ---------------- Scheduler ---------------- */
 
+test('后台替换缓存值保留已有的全部 pin 引用', () => {
+  const cache = new ByteCache<number>(4)
+  cache.set('active', 1, 2, true)
+  cache.pin('active')
+  cache.set('active', 2, 2)
+  assert.equal(cache.stats().pinnedBytes, 2)
+  cache.unpin('active')
+  cache.set('pressure', 3, 4)
+  assert.equal(cache.has('active'), true)
+  cache.unpin('active')
+  cache.set('pressure', 3, 4)
+  assert.equal(cache.has('active'), false)
+  assert.equal(cache.has('pressure'), true)
+})
+
 test('ByteCache 按字节淘汰且尊重 pin', () => {
   const cache = new ByteCache<number>(10)
   cache.set('a', 1, 4)

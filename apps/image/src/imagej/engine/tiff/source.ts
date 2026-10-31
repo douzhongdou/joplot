@@ -58,21 +58,21 @@ async function inflateSegment(bytes: Uint8Array, compression: number): Promise<U
  * 对每一行，第 i 个样本还原为「前面所有样本之和」；行间重置。按位累加后用掩码截断，
  * 对无符号与二进制补码有符号整数都成立。
  */
-function undoHorizontalPredictor(bytes: Uint8Array, rowSamples: number, rowCount: number, bytesPerSample: number, littleEndian: boolean): void {
-  if (rowSamples < 2 || rowCount < 1) return
+function undoHorizontalPredictor(bytes: Uint8Array, rowSamples: number, rowCount: number, bytesPerSample: number, littleEndian: boolean, components: number): void {
+  if (rowSamples <= components || rowCount < 1) return
   if (bytesPerSample === 1) {
     for (let row = 0; row < rowCount; row += 1) {
       const base = row * rowSamples
-      for (let i = 1; i < rowSamples; i += 1) bytes[base + i] = (bytes[base + i]! + bytes[base + i - 1]!) & 0xff
+      for (let i = components; i < rowSamples; i += 1) bytes[base + i] = (bytes[base + i]! + bytes[base + i - components]!) & 0xff
     }
     return
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   for (let row = 0; row < rowCount; row += 1) {
     const base = row * rowSamples * bytesPerSample
-    for (let i = 1; i < rowSamples; i += 1) {
+    for (let i = components; i < rowSamples; i += 1) {
       const at = base + i * bytesPerSample
-      const prev = at - bytesPerSample
+      const prev = at - components * bytesPerSample
       if (bytesPerSample === 2) {
         view.setUint16(at, (view.getUint16(at, littleEndian) + view.getUint16(prev, littleEndian)) & 0xffff, littleEndian)
       } else if (bytesPerSample === 4) {
@@ -235,20 +235,24 @@ export class TiffPageSource {
     const raw = new Uint8Array(rowBytes * meta.height)
 
     for (const segment of meta.segments) {
-      const need = segment.height * rowBytes
+      // 边缘 tile 仍按完整 tile 宽高存储，越界部分是 padding。
+      const segmentRowBytes = (meta.layout === 'tile' ? meta.tileWidth : meta.width) * meta.components * sampleBytes
+      const storedRows = meta.layout === 'tile' ? meta.tileHeight : segment.height
+      const need = storedRows * segmentRowBytes
       // 未压缩时 byteLength 即原始字节数；Deflate 时读入的是压缩流，先解压再反预测。
       const stored = await this.handle.read(segment.offset, segment.byteLength)
       const bytes = await inflateSegment(stored, meta.compression)
-      if (meta.predictor === 2) {
-        const rowSamples = (meta.layout === 'tile' ? meta.tileWidth : meta.width) * meta.components
-        undoHorizontalPredictor(bytes, rowSamples, segment.height, sampleBytes, meta.littleEndian)
-      }
       if (bytes.byteLength < need) {
         throw new Error(`第 ${page} 页分段字节不足：期望 ${need}，实际 ${bytes.byteLength}（offset=${segment.offset}）`)
       }
+      if (meta.predictor === 2) {
+        const rowSamples = (meta.layout === 'tile' ? meta.tileWidth : meta.width) * meta.components
+        undoHorizontalPredictor(bytes, rowSamples, storedRows, sampleBytes, meta.littleEndian, meta.components)
+      }
       for (let row = 0; row < segment.height; row += 1) {
-        const from = row * rowBytes
-        raw.set(bytes.subarray(from, from + rowBytes), (segment.y + row) * rowBytes)
+        const from = row * segmentRowBytes
+        const copyBytes = segment.width * meta.components * sampleBytes
+        raw.set(bytes.subarray(from, from + copyBytes), (segment.y + row) * rowBytes + segment.x * meta.components * sampleBytes)
       }
     }
 

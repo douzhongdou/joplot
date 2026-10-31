@@ -59,13 +59,25 @@ test('BSCALE / BZERO 应用到浮点，物理值 = offset + scale × raw', async
   assert.match(decoded.warnings.join('\n'), /BZERO=1、BSCALE=2/)
 })
 
-test('BITPIX=8 + BZERO=128 按无符号 uint8 读出（有符号字节存储）', async () => {
+test('BITPIX=8 + BZERO=128 在无符号原始字节上加偏移', async () => {
   const raw = Uint8Array.from([0x80, 0xff, 0x00, 0x7f].map((v) => v & 0xff))
   const bytes = buildFitsBytes([{ bitpix: 8, naxis: [4, 1], data: raw, cards: [fitsCard('BZERO', 128)] }])
   const decoded = await decodeFitsFile(blobOf(bytes))
 
-  assert.equal(decoded.dtype, 'uint8')
-  assert.deepEqual([...decoded.data], [0, 127, 128, 255])
+  assert.equal(decoded.dtype, 'float32')
+  assert.deepEqual([...decoded.data], [256, 383, 128, 255])
+})
+
+test('BITPIX=8 的 BSCALE 使用 unsigned 原始值，支持负缩放和非整数偏移', async () => {
+  for (const [scale, offset, expected] of [
+    [2, 0, [0, 254, 256, 510]],
+    [-2, 0.5, [0.5, -253.5, -255.5, -509.5]],
+  ] as const) {
+    const bytes = buildFitsBytes([{ bitpix: 8, naxis: [4, 1], data: Uint8Array.from([0, 127, 128, 255]), cards: [fitsCard('BSCALE', scale), fitsCard('BZERO', offset)] }])
+    const decoded = await decodeFitsFile(blobOf(bytes))
+    assert.equal(decoded.dtype, 'float32')
+    assert.deepEqual([...decoded.data], expected)
+  }
 })
 
 test('NAXIS=3 的立方体映射到 z 轴', async () => {

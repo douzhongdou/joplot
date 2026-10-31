@@ -181,6 +181,7 @@ export class ImageRuntime {
   }
 
   private emit(patch: Partial<RuntimeState>): void {
+    if (this.disposed) return
     // 切片或 Recipe 一变，整栈统计就对不上画面了。失效判定集中在这里，
     // 免得每个改动 selection / recipe 的调用点都要记得自己清。
     const invalidated = 'selection' in patch || 'recipe' in patch || 'throughStepId' in patch
@@ -188,6 +189,17 @@ export class ImageRuntime {
       ? { stackStats: undefined, stackStatsStale: Boolean(this.state.stackStats) || Boolean(this.state.stackStatsStale), stackProfiles: undefined }
       : null
     this.state = { ...this.state, ...patch, ...staleStats, cache: this.cacheStats() }
+    if (invalidated || 'dataset' in patch) {
+      const recipe = this.currentRecipe()
+      if (this.state.dataset && recipe) {
+        const version = this.versionFor(recipe, this.state.throughStepId)
+        if (this.guard.version() !== version) {
+          this.state = { ...this.state, analysis: undefined, imageStale: Boolean(this.state.image) }
+        }
+        // 状态变更当场失效在途显示和分析，不能等下一次合并请求开始。
+        this.guard.update(version)
+      }
+    }
     for (const listener of this.listeners) listener(this.state)
   }
 
@@ -240,9 +252,12 @@ export class ImageRuntime {
 
   /** 跑一次导入并接管数据集；返回是否成功（失败时保留原数据集，只报错）。 */
   private async openWith(importer: () => Promise<Dataset>): Promise<boolean> {
+    if (this.disposed) return false
     this.emit({ status: 'importing', error: undefined, warnings: [] })
     try {
-      await this.adoptDataset(await importer())
+      const dataset = await importer()
+      if (this.discardCreatedIfClosed(dataset)) return false
+      await this.adoptDataset(dataset)
       return true
     } catch (error) {
       this.emit({ status: 'error', error: error instanceof Error ? error.message : String(error) })
@@ -257,7 +272,11 @@ export class ImageRuntime {
    * 并把画面刷成新数据集的当前切片。调用方负责为新数据集建好 Storage 并注册到引擎。
    */
   async adoptDataset(dataset: Dataset): Promise<void> {
-    if (this.state.dataset && this.state.dataset.id !== dataset.id) this.client.dispose(this.state.dataset.id)
+    if (this.discardCreatedIfClosed(dataset)) return
+    if (this.state.dataset) {
+      this.releaseDatasetCache(this.state.dataset)
+      if (this.state.dataset.id !== dataset.id) this.client.dispose(this.state.dataset.id)
+    }
     this.history = new RecipeHistory(createRecipe(dataset.id, dataset.revision))
     if (this.ownsCache) this.cache.clear()
     this.activeCacheKey = undefined
@@ -322,6 +341,27 @@ export class ImageRuntime {
     if (!capability) return undefined
     const step = makeStep(op, { ...defaultOperatorParams(capability), ...params }, scope)
     this.history.commit(appendStep(this.history.current(), step))
+    this.emit({ recipe: this.history.current(), throughStepId: step.id })
+    void this.run()
+    return step.id
+  }
+
+  /**
+   * 用一步新的替换链上所有同名步骤；返回新步骤 id。
+   *
+   * `debayer` 这类格式转换对同一数据集只该生效一次。旧行为下它只能作用于当前切片，
+   * 于是逐帧点过的那些帧各留了一个 frame 作用域的步骤；此时再叠一个整栈步骤，
+   * 被旧步骤覆盖的帧就会拿到 RGB 再 debayer，直接报「需要单通道图像」——
+   * 表现正是「整栈去马赛克只对一部分帧生效」。
+   */
+  replaceStep(op: string, params?: Record<string, number | string>, scope?: StepScope): string | undefined {
+    if (!this.history) return undefined
+    const capability = getOperator(op)
+    if (!capability) return undefined
+    const step = makeStep(op, { ...defaultOperatorParams(capability), ...params }, scope)
+    let recipe = this.history.current()
+    for (const existing of recipe.steps) if (existing.op === op) recipe = removeStep(recipe, existing.id)
+    this.history.commit(appendStep(recipe, step))
     this.emit({ recipe: this.history.current(), throughStepId: step.id })
     void this.run()
     return step.id
@@ -493,7 +533,7 @@ export class ImageRuntime {
         allTimeFrames: options.allTimeFrames,
         title: options.title,
       })
-      if (this.disposed) return undefined
+      if (this.discardCreatedIfClosed(projected)) return undefined
       this.emit({ status: 'ready' })
       return projected
     } catch (error) {
@@ -547,7 +587,7 @@ export class ImageRuntime {
         labels: this.state.sliceLabels,
         title: options.title,
       })
-      if (this.disposed) return undefined
+      if (this.discardCreatedIfClosed(montaged)) return undefined
       this.emit({ status: 'ready' })
       return montaged
     } catch (error) {
@@ -584,7 +624,7 @@ export class ImageRuntime {
         borderWidth: options.borderWidth,
         title: options.title,
       })
-      if (this.disposed) return undefined
+      if (this.discardCreatedIfClosed(stacked)) return undefined
       this.emit({ status: 'ready' })
       return stacked
     } catch (error) {
@@ -629,7 +669,7 @@ export class ImageRuntime {
         rotate: options.rotate,
         title: options.title,
       })
-      if (this.disposed) return undefined
+      if (this.discardCreatedIfClosed(sliced)) return undefined
       this.emit({ status: 'ready' })
       return sliced
     } catch (error) {
@@ -664,7 +704,10 @@ export class ImageRuntime {
         from: options.from,
         to: options.to,
       })
-      if (this.disposed) return []
+      if (this.disposed) {
+        for (const view of views) this.client.dispose(view.id)
+        return []
+      }
       this.emit({ status: 'ready' })
       return views
     } catch (error) {
@@ -722,14 +765,17 @@ export class ImageRuntime {
   }): Promise<Dataset | undefined> {
     const dataset = this.state.dataset
     if (!dataset || this.disposed) return undefined
+    const version = this.guard.version()
+    const recipe = this.currentRecipe() ?? undefined
+    const throughStepId = this.state.throughStepId
     this.emit({ status: 'running', error: undefined })
     try {
-      const restructured = await this.client.restructure({ datasetId: dataset.id, ...options })
-      if (this.disposed) return undefined
-      this.emit({ status: 'ready' })
+      const restructured = await this.client.restructure({ datasetId: dataset.id, recipe, throughStepId, ...options })
+      if (this.discardCreatedIfClosed(restructured)) return undefined
+      if (this.guard.version() === version) this.emit({ status: 'ready' })
       return restructured
     } catch (error) {
-      if (this.disposed) return undefined
+      if (this.disposed || this.guard.version() !== version) return undefined
       this.emit({ status: 'error', error: error instanceof Error ? error.message : String(error) })
       return undefined
     }
@@ -758,7 +804,7 @@ export class ImageRuntime {
         recipe: this.currentRecipe() ?? undefined,
         ...options,
       })
-      if (this.disposed) return undefined
+      if (this.discardCreatedIfClosed(combined)) return undefined
       this.emit({ status: 'ready' })
       return combined
     } catch (error) {
@@ -796,7 +842,7 @@ export class ImageRuntime {
         sliceLabels: this.state.sliceLabels,
         ...options,
       })
-      if (this.disposed) return undefined
+      if (this.discardCreatedIfClosed(labelled)) return undefined
       this.emit({ status: 'ready' })
       return labelled
     } catch (error) {
@@ -832,7 +878,7 @@ export class ImageRuntime {
         selection: { ...this.state.selection },
         ...options,
       })
-      if (this.disposed) return undefined
+      if (this.discardCreatedIfClosed(projected)) return undefined
       this.emit({ status: 'ready' })
       return projected
     } catch (error) {
@@ -867,7 +913,7 @@ export class ImageRuntime {
         selection: { ...this.state.selection },
         ...options,
       })
-      if (this.disposed) return undefined
+      if (this.discardCreatedIfClosed(remontaged)) return undefined
       this.emit({ status: 'ready' })
       return remontaged
     } catch (error) {
@@ -908,12 +954,18 @@ export class ImageRuntime {
   }
 
   async run(): Promise<void> {
+    if (this.disposed) return
     // 合并高频请求：一批连续调用只跑「最新一次」。已有 drain 在途时挂到同一个 promise，
     // 因此 `await run()` 依然会等到（含后续合并进来的）执行真正结束——测试与 openWith 依赖这一点。
     this.runQueued = true
     if (this.runPromise) return this.runPromise
-    this.runPromise = this.drainRuns()
-    return this.runPromise
+    // 先登记 Promise 再启动 drain：缓存命中的同步订阅回调也可能再次请求 run。
+    let resolve!: () => void
+    let reject!: (error: unknown) => void
+    const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail })
+    this.runPromise = promise
+    void this.drainRuns().then(resolve, reject)
+    return promise
   }
 
   private async drainRuns(): Promise<void> {
@@ -924,7 +976,7 @@ export class ImageRuntime {
       }
     } finally {
       this.runPromise = null
-      if (this.runQueued && !this.disposed) this.runPromise = this.drainRuns()
+      if (this.runQueued && !this.disposed) void this.run()
       else if (!this.disposed) {
         // 显示已停下来：把邻页预取与整帧分析补上（翻页期间两者都给显示让路）。
         this.schedulePrefetch()
@@ -937,11 +989,13 @@ export class ImageRuntime {
     const dataset = this.state.dataset
     const recipe = this.currentRecipe()
     if (!dataset || !recipe || this.disposed) return
-    const version = this.versionFor(recipe, this.state.throughStepId)
+    const selection = { ...this.state.selection }
+    const throughStepId = this.state.throughStepId
+    const version = this.versionFor(recipe, throughStepId)
     this.guard.update(version)
     // 先给当前页做缓存查找。命中时不广播 running：翻页绝大多数是命中，
     // 那次 emit 只会白触发一遍全量重渲染。
-    const key = this.cacheKeyFor(dataset, recipe, this.state.selection, this.state.throughStepId)
+    const key = this.cacheKeyFor(dataset, recipe, selection, throughStepId)
     if (this.activeCacheKey) this.cache.unpin(this.activeCacheKey)
     this.activeCacheKey = key
     const cached = this.cache.get(key)
@@ -957,10 +1011,10 @@ export class ImageRuntime {
       const result = await this.runShared(key, {
         datasetId: dataset.id,
         recipe,
-        selection: this.state.selection,
-        throughStepId: this.state.throughStepId,
+        selection,
+        throughStepId,
       })
-      if (this.guard.version() !== version) return // 过期结果不覆盖当前画面
+      if (this.disposed || this.guard.version() !== version) return // 过期结果不覆盖当前画面
       if (result.image) {
         const bytes = result.image.data.byteLength
         if (!result.results.some((step) => step.status === 'error')) this.cache.set(key, result, bytes, true)
@@ -979,7 +1033,7 @@ export class ImageRuntime {
       this.schedulePrefetch()
       this.scheduleWarmupSoon()
     } catch (error) {
-      if (this.guard.version() !== version) return
+      if (this.disposed || this.guard.version() !== version) return
       this.emit({ status: 'error', error: error instanceof Error ? error.message : String(error) })
     }
   }
@@ -1037,7 +1091,7 @@ export class ImageRuntime {
         const throughStepId = this.state.throughStepId
         try {
           const analysis = await this.client.analyze({ datasetId: dataset.id, recipe, selection, throughStepId })
-          if (analysis && this.guard.version() === version) this.emit({ analysis })
+          if (!this.disposed && analysis && this.guard.version() === version) this.emit({ analysis })
         } catch {
           // 分析失败不影响显示
         }
@@ -1127,7 +1181,7 @@ export class ImageRuntime {
             selection,
             throughStepId,
           })
-          if (result.image && !result.results.some((step) => step.status === 'error')) {
+          if (!this.isOutdated(version) && result.image && !result.results.some((step) => step.status === 'error')) {
             this.cache.set(key, result, result.image.data.byteLength)
           }
           return result
@@ -1249,10 +1303,26 @@ export class ImageRuntime {
     }
   }
 
+  private releaseDatasetCache(dataset: Dataset): void {
+    if (this.activeCacheKey) this.cache.unpin(this.activeCacheKey)
+    this.activeCacheKey = undefined
+    const prefix = `${datasetVersionKey(dataset)}\u0001`
+    this.cache.deleteWhere((key) => key.startsWith(prefix))
+  }
+
+  /** 新数据集尚未交给调用方时仍由本请求拥有，关闭后必须归还宿主。 */
+  private discardCreatedIfClosed(dataset: Dataset | undefined): boolean {
+    if (!this.disposed) return false
+    if (dataset) this.client.dispose(dataset.id)
+    return true
+  }
+
   dispose(): void {
+    if (this.disposed) return
     this.disposed = true
     if (this.warmupTimer) { clearTimeout(this.warmupTimer); this.warmupTimer = undefined }
     this.queue.clear()
+    if (this.state.dataset) this.releaseDatasetCache(this.state.dataset)
     if (this.ownsCache) this.cache.clear()
     const datasetId = this.state.dataset?.id
     if (datasetId) this.client.dispose(datasetId)

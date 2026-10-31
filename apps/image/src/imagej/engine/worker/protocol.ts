@@ -222,6 +222,8 @@ export interface RestructureRequest {
   type: 'restructure'
   id: number
   datasetId: string
+  recipe?: Recipe
+  throughStepId?: string
   op: 'reverse' | 'reduce' | 'substack' | 'delete' | 'add'
   /** reduce 的步长。 */
   factor?: number

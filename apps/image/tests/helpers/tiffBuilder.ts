@@ -27,6 +27,7 @@ export interface BuildPage {
   pixels?: Uint8Array
   /** Compression，默认 1（未压缩）。 */
   compression?: number
+  predictor?: number
   layout?: 'strip' | 'tile'
   tileWidth?: number
   tileHeight?: number
@@ -91,6 +92,7 @@ function planEntries(spec: BuildPage, big: boolean): EntryPlan[] {
     add(284, [1])
   }
   add(339, [spec.sampleFormat ?? 1])
+  if (spec.predictor !== undefined) add(317, [spec.predictor])
   return list
 }
 
@@ -121,7 +123,7 @@ export function buildTiffBytes(pages: BuildPage[], options: { big?: boolean; big
   const pixelStart = cursor
 
   const bytesPerPage = pages.map((spec) =>
-    (spec.width * spec.height * (spec.bits ?? 16) * (spec.components ?? 1)) / 8)
+    ((spec.layout === 'tile' ? segmentCountOf(spec) * (spec.tileWidth ?? 16) * (spec.tileHeight ?? 16) : spec.width * spec.height) * (spec.bits ?? 16) * (spec.components ?? 1)) / 8)
   // 显式标注为 Uint8Array<ArrayBuffer>，以便调用方直接用作 BlobPart。
   const bytes: Uint8Array<ArrayBuffer> = new Uint8Array(pixelStart + bytesPerPage.reduce((a, b) => a + b, 0))
   const view = new DataView(bytes.buffer)
@@ -144,6 +146,7 @@ export function buildTiffBytes(pages: BuildPage[], options: { big?: boolean; big
     values.set(277, [components])
     values.set(284, [1])
     values.set(339, [spec.sampleFormat ?? 1])
+    if (spec.predictor !== undefined) values.set(317, [spec.predictor])
     if (spec.layout === 'tile') {
       values.set(322, [spec.tileWidth ?? 16])
       values.set(323, [spec.tileHeight ?? 16])
