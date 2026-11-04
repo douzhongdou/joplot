@@ -7,9 +7,8 @@
  *   因此不需要重排，只需按 BITPIX 解释并做 BSCALE/BZERO 变换。
  * - BITPIX 只有 8/16/32/64/-32/-64；内部 dtype 只有四种，超出部分统一转 float32 并提示。
  *
- * BSCALE/BZERO 的两个「无损特例」保持整数 dtype：
+ * BSCALE/BZERO 的「无损特例」保持整数 dtype：
  * - `BITPIX=16, BZERO=32768, BSCALE=1` 表示无符号 16 位，读成 `uint16`；
- * - `BITPIX=8, BZERO=128, BSCALE=1` 表示有符号字节存储的无符号 8 位，读成 `uint8`。
  * 其余非平凡变换落到 float32，并提示已应用物理值。
  */
 
@@ -18,7 +17,7 @@ import { readBlobBytes, indexFits, type FitsHdu, type FitsIndex } from './index.
 import type { DecodedImage } from '../importer.ts'
 
 /** 原始样本的读取方式。 */
-export type FitsRawKind = 'u8' | 'i8' | 'i16' | 'i32' | 'i64' | 'f32' | 'f64'
+export type FitsRawKind = 'u8' | 'i16' | 'i32' | 'i64' | 'f32' | 'f64'
 
 export interface FitsDecodePlan {
   /** 按此类型从字节中取出原始样本。 */
@@ -56,9 +55,8 @@ export function fitsDecodePlan(hdu: FitsHdu): FitsDecodePlan {
   switch (bitpix) {
     case 8:
       if (bscale === 1 && bzero === 0) return plan('u8', 'uint8')
-      if (bscale === 1 && bzero === 128) return plan('i8', 'uint8')
       physics()
-      return plan('i8', 'float32', bscale, bzero)
+      return plan('u8', 'float32', bscale, bzero)
     case 16:
       if (bscale === 1 && bzero === 0) return plan('i16', 'int16')
       if (bscale === 1 && bzero === 32768) return plan('i16', 'uint16')
@@ -90,12 +88,7 @@ export function decodeFitsSamples(bytes: Uint8Array, plan: FitsDecodePlan, count
   switch (plan.dtype) {
     case 'uint8': {
       const out = new Uint8Array(count)
-      if (plan.kind === 'i8') {
-        // 有符号字节 + 128 ≡ 与 0x80 异或，值域回到 0..255 且无需分支。
-        for (let i = 0; i < count; i += 1) out[i] = bytes[i]! ^ 0x80
-      } else {
-        for (let i = 0; i < count; i += 1) out[i] = bytes[i]!
-      }
+      for (let i = 0; i < count; i += 1) out[i] = bytes[i]!
       return out
     }
     case 'int16': {
@@ -121,7 +114,6 @@ export function decodeFitsSamples(bytes: Uint8Array, plan: FitsDecodePlan, count
 function readRaw(view: DataView, bytes: Uint8Array, index: number, kind: FitsRawKind): number {
   switch (kind) {
     case 'u8': return bytes[index]!
-    case 'i8': return view.getInt8(index)
     case 'i16': return view.getInt16(index * 2, false)
     case 'i32': return view.getInt32(index * 4, false)
     case 'i64': return Number(view.getBigInt64(index * 8, false))

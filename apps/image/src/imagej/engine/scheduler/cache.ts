@@ -84,7 +84,7 @@ export class ByteCache<T> {
     return this.entries.has(key)
   }
 
-  /** 写入一个条目；若超预算则先淘汰。pin 表示活跃期间不允许淘汰。 */
+  /** 替换值保留已有 pin；pinned=true 为当前调用方再取得一份固定引用。 */
   set(key: string, value: T, bytes: number, pinned = false): void {
     if (!Number.isFinite(bytes) || bytes < 0) throw new RangeError('ByteCache 条目字节数非法')
     const previous = this.entries.get(key)
@@ -94,7 +94,7 @@ export class ByteCache<T> {
     }
     // 单条超过整个预算时仍保留，但会立刻把其它条目挤出去。
     this.clock += 1
-    this.entries.set(key, { value, bytes, pinned: pinned ? 1 : 0, lastAccess: this.clock })
+    this.entries.set(key, { value, bytes, pinned: (previous?.pinned ?? 0) + (pinned ? 1 : 0), lastAccess: this.clock })
     this.bytes += bytes
     this.evictIfNeeded()
   }
@@ -121,6 +121,11 @@ export class ByteCache<T> {
   clear(): void {
     this.entries.clear()
     this.bytes = 0
+  }
+
+  /** 关闭一个文档时，只移除属于它的条目。 */
+  deleteWhere(predicate: (key: string) => boolean): void {
+    for (const key of this.entries.keys()) if (predicate(key)) this.delete(key)
   }
 
   private evictIfNeeded(): void {

@@ -18,7 +18,7 @@
  * 约束与其它 Storage 一致：每次只能读一页（切片轴长度为 1），页内容必须与源同 dtype、同尺寸。
  */
 import { allocateBuffer, elementCount, type ImageBlock, type Region } from './types.ts'
-import { validateRegion, type Storage, type StorageCapabilities, type StorageMetadata, type ReadRegionOptions } from './storage.ts'
+import { SharedStorage, validateRegion, type Storage, type StorageCapabilities, type StorageMetadata, type ReadRegionOptions } from './storage.ts'
 
 /** 目标页指向的源页；`'blank'` 表示空白页（全 0）。 */
 export type PageRef = number | 'blank'
@@ -48,7 +48,7 @@ export class PageMapStorage implements Storage {
     }
     this.id = id
     this.meta = meta
-    this.source = source
+    this.source = source instanceof SharedStorage ? source.retain() : source
     this.pages = pages
     this.sliceAxis = sliceAxis
   }
@@ -87,11 +87,13 @@ export class PageMapStorage implements Storage {
     const sourceRegion: Region = axis >= 0
       ? { start: region.start.map((value, i) => (i === axis ? reference : value)), shape: [...region.shape] }
       : { start: [...region.start], shape: [...region.shape] }
-    return this.source.readRegion(sourceRegion, options)
+    const block = await this.source.readRegion(sourceRegion, options)
+    return { ...block, region: { start: [...region.start], shape: [...region.shape] } }
   }
 
   release(): void {
-    // 源 Storage 由拥有者释放（同一个源可能被多个映射共享）。
+    if (this.released) return
     this.released = true
+    if (this.source instanceof SharedStorage) this.source.release()
   }
 }

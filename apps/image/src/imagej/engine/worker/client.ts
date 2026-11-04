@@ -132,6 +132,8 @@ export interface StackProfilesOptions {
 /** 栈结构编辑的请求参数。 */
 export interface RestructureOptions {
   datasetId: string
+  recipe?: Recipe
+  throughStepId?: string
   op: 'reverse' | 'reduce' | 'substack' | 'delete' | 'add'
   factor?: number
   pages?: number[]
@@ -351,6 +353,8 @@ class WorkerEngineClient implements EngineClient {
       type: 'restructure',
       id: this.nextId++,
       datasetId: options.datasetId,
+      recipe: options.recipe,
+      throughStepId: options.throughStepId,
       op: options.op,
       factor: options.factor,
       pages: options.pages,

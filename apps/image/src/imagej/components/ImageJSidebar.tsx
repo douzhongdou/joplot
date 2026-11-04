@@ -175,20 +175,21 @@ export function ImageJSidebar({ language, registry, onRun, onCommand, disabled =
                 }}
                 className="group/collapsible"
               >
-                <SidebarGroup className="p-1">
+                <SidebarGroup className="px-1 pb-0.5 pt-2">
                   <SidebarGroupLabel
                     asChild
-                    className="group/label h-auto w-full gap-1 px-2 py-1.5 text-sm font-semibold uppercase tracking-wider text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    className="group/label h-auto w-full gap-1 px-1.5 pb-0.5 pt-1 text-[11px] font-semibold uppercase tracking-widest text-base-content/45 hover:text-base-content/70"
                   >
                     <CollapsibleTrigger>
+                      <ChevronRight className="size-3 shrink-0 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
                       <span>{labels.groups[group.label] ?? group.label}</span>
-                      <span className="ml-auto font-mono text-xs font-normal tabular-nums opacity-60">{group.items.length}</span>
-                      <ChevronRight className="size-4 shrink-0 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                      <span className="ml-auto font-mono text-[10px] font-normal tabular-nums opacity-60">{group.items.length}</span>
                     </CollapsibleTrigger>
                   </SidebarGroupLabel>
                   <CollapsibleContent>
                     <SidebarGroupContent>
-                      <SidebarMenu className="gap-1">
+                      {/* 树状引导线：命令项明显从属于组头，不再与组头同一层级。 */}
+                      <SidebarMenu className="ml-1 gap-0.5 border-l border-base-300 pl-1">
                         {group.items.map((item) => {
                           const operator = item.op ? operators.get(item.op) : undefined
                           const action = item.label === 'Next Slice' ? stackActions?.next : item.label === 'Previous Slice' ? stackActions?.previous : undefined
@@ -210,7 +211,9 @@ export function ImageJSidebar({ language, registry, onRun, onCommand, disabled =
                           const unavailableText = item.label === 'White Balance' ? labels.rgbOnly : labels.unavailable
                           const blocked = disabled || !available || (item.label === 'Next Slice' && !stackActions?.canNext) || (item.label === 'Previous Slice' && !stackActions?.canPrevious)
                           return (
-                            <SidebarMenuItem key={item.label}>
+                            // 展开时标题行与面板合成一张卡片：淡纯色底、无边框（在 SidebarMenuItem 上着色）。
+                            // -ml/pl 让卡片向左越过引导线（ul 的 border-l + pl-1 共 5px），左右留白对称，标题文字位置不变。
+                            <SidebarMenuItem key={item.label} className={open ? '-ml-[5px] rounded-[var(--radius-field)] bg-base-200/50 pl-[5px]' : undefined}>
                               <SidebarMenuButton
                                 type="button"
                                 disabled={blocked}
@@ -223,17 +226,18 @@ export function ImageJSidebar({ language, registry, onRun, onCommand, disabled =
                                   else if (item.command && onCommand) onCommand(item.command)
                                   else if (item.op && operator) onRun(item.op)
                                 }}
-                                className="h-auto justify-between px-2 py-1.5 text-sm font-normal"
+                                className="h-auto justify-between rounded-[var(--radius-field)] px-2 py-1 text-[13px] font-normal data-[active=true]:bg-transparent data-[active=true]:shadow-none"
                               >
                                 <span className="truncate text-left">{localize(item.label)}{item.shortcut ? <span className="ml-1.5 font-mono text-xs opacity-60">[{item.shortcut}]</span> : null}</span>
                                 {!available
-                                  ? <span className="text-xs">{unavailableText}</span>
+                                  ? <span className="text-[11px] text-base-content/40">{unavailableText}</span>
                                   : hasPanel
                                     ? (open ? <ChevronDown size={13} className="opacity-60" /> : <ChevronRight size={13} className="opacity-40" />)
                                     : null}
                               </SidebarMenuButton>
                               {open ? (
-                                <div ref={panelRef} className="mb-1.5">{panel}</div>
+                                // 面板在卡片内部透明平铺：标题行与面板是一张卡。
+                                <div ref={panelRef} className="px-1 pb-1">{panel}</div>
                               ) : null}
                             </SidebarMenuItem>
                           )

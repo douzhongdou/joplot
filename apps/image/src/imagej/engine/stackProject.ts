@@ -119,6 +119,7 @@ export async function projectFrames(options: ProjectFramesOptions): Promise<Imag
   }
   if (options.signal?.aborted) throw new DOMException('已取消', 'AbortError')
 
+  assertSameShape(blocks)
   const first = blocks[0]!
   const count = blocks.length
   const outputDtype = projectionDtype(method, first.dtype)
@@ -171,8 +172,8 @@ export function assertSameShape(pages: readonly ImageBlock[]): void {
   const first = pages[0]
   if (!first) return
   for (const page of pages) {
-    if (page.dtype !== first.dtype || page.axes.join('') !== first.axes.join('') || elementCount(page.shape) !== elementCount(first.shape)) {
-      throw new Error('投影要求各页同数据类型、同尺寸')
+    if (page.dtype !== first.dtype || page.axes.join('') !== first.axes.join('') || page.shape.join(',') !== first.shape.join(',') || page.data.length !== elementCount(page.shape)) {
+      throw new Error('投影要求处理后的各页同数据类型、同轴、同尺寸和通道数')
     }
   }
 }

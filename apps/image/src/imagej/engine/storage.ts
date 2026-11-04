@@ -61,6 +61,45 @@ export interface Storage {
   release(): void
 }
 
+/** 独立的引用句柄：最后一个文档、派生存储及在途读取退出后才释放源。 */
+export class SharedStorage implements Storage {
+  readonly id: string
+  private readonly shared: { source: Storage; references: number }
+  private released = false
+
+  constructor(source: Storage, shared?: { source: Storage; references: number }) {
+    this.id = source.id
+    this.shared = shared ?? { source, references: 0 }
+    this.shared.references += 1
+  }
+
+  retain(): SharedStorage {
+    if (this.released) throw new Error('SharedStorage 已释放')
+    return new SharedStorage(this.shared.source, this.shared)
+  }
+
+  metadata(): StorageMetadata { return this.shared.source.metadata() }
+  capabilities(): StorageCapabilities { return this.shared.source.capabilities() }
+
+  async readRegion(region: Region, options?: ReadRegionOptions): Promise<ImageBlock> {
+    if (this.released) throw new Error('SharedStorage 已释放')
+    this.shared.references += 1
+    try { return await this.shared.source.readRegion(region, options) }
+    finally { this.dropReference() }
+  }
+
+  private dropReference(): void {
+    this.shared.references -= 1
+    if (this.shared.references === 0) this.shared.source.release()
+  }
+
+  release(): void {
+    if (this.released) return
+    this.released = true
+    this.dropReference()
+  }
+}
+
 /** 计算区域覆盖的元素数与字节数。 */
 export function regionBytes(region: Region, dtype: Dtype): number {
   return elementCount(region.shape) * DTYPE_BYTES[dtype]
